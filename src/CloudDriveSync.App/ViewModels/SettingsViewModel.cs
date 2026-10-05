@@ -25,7 +25,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public IReadOnlyList<Choice<int>> TrashChoices { get; } =
     [
-        new(7, "7 Tage"), new(14, "14 Tage"), new(30, "30 Tage"), new(60, "60 Tage"), new(90, "90 Tage"), new(365, "1 Jahr"),
+        new(0, "Aus"), new(7, "7 Tage"), new(14, "14 Tage"), new(30, "30 Tage"), new(60, "60 Tage"), new(90, "90 Tage"), new(365, "1 Jahr"),
     ];
 
     /// <summary>Only the normal installation starts with Windows - not a copy with another data folder.</summary>
@@ -71,7 +71,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnTrashDaysChanged(int value)
     {
-        if (!_loading && value > 0) _main.Host.Settings.Update(s => s.Preferences.TrashDays = value);
+        if (!_loading && value >= 0) _main.Host.Settings.Update(s => s.Preferences.TrashDays = value);
     }
 
     /// <summary>CloudDrives, the drives program, is installed and can be opened from here.</summary>

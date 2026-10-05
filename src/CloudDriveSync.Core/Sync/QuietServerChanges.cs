@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CloudDriveSync.Core.Diagnostics;
@@ -37,8 +37,11 @@ internal sealed class QuietServerChanges
     /// <summary>What happened before a run, with the cloud listing it was based on.</summary>
     public sealed record Result(IReadOnlyDictionary<string, CloudFile> Listing, int Fetched, int ConflictCopies);
 
-    /// <summary>Before a run: finds files changed quietly on the server and brings them to the PC.</summary>
-    public async Task<Result?> FetchAsync(string trashFolder, CancellationToken cancellationToken)
+    /// <summary>
+    /// Before a run: finds files changed quietly on the server and brings them to the PC. The replaced local versions go
+    /// to <paramref name="trashFolder"/> (null: the recycle bin is switched off).
+    /// </summary>
+    public async Task<Result?> FetchAsync(string? trashFolder, CancellationToken cancellationToken)
     {
         var snapshot = Load();
         if (snapshot is null) return null;
@@ -54,12 +57,16 @@ internal sealed class QuietServerChanges
             if (info.Length == before[2] && info.LastWriteTimeUtc.Ticks == before[3])
             {
                 // Unchanged on the PC: the server's version replaces it; the local one waits in the recycle bin.
-                // rclone would skip the copy (same size, no usable time), so it goes to a temporary file first.
-                var temporary = Path.Combine(SyncFilters.TrashFolder, $".holen-{Guid.NewGuid():N}.tmp");
-                await CopyToPcAsync(path, temporary.Replace('\\', '/'), cancellationToken);
-                var backup = Path.Combine(trashFolder, path.Replace('/', '\\'));
-                Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-                File.Copy(local, backup, overwrite: true);
+                // rclone would skip the copy (same size, no usable time), so it goes to a temporary file first (".tmp"
+                // and CloudDrive-Sync's own name keep it out of the synchronisation).
+                var temporary = $".clouddrive-holen-{Guid.NewGuid():N}.tmp";
+                await CopyToPcAsync(path, temporary, cancellationToken);
+                if (trashFolder is not null)
+                {
+                    var backup = Path.Combine(trashFolder, path.Replace('/', '\\'));
+                    Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+                    File.Copy(local, backup, overwrite: true);
+                }
                 File.Move(LocalPath(temporary), local, overwrite: true);
                 fetched++;
             }

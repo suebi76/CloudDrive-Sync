@@ -21,8 +21,8 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
   - Wächterdatei auf beiden Seiten: Ist ein Ordner weg oder verschoben (z. B. USB-Stick abgezogen), wird nichts
     gelöscht.
   - Konflikte: Wurde eine Datei auf beiden Seiten geändert, bleiben beide Fassungen erhalten.
-  - Papierkorb: Gelöschte und ersetzte Dateien landen im versteckten Ordner `.clouddrive-papierkorb` – am PC und bei
-    Servern ohne eigenen Papierkorb (IServ, WebDAV) auch in der Cloud.
+  - Papierkorb: Was der Abgleich am PC löscht oder ersetzt, landet im versteckten Ordner `.clouddrive-papierkorb`.
+    Was du selbst am PC löschst, liegt im Papierkorb von Windows; Nextcloud hat zusätzlich einen eigenen Papierkorb.
 - **IServ-Besonderheit:** IServ speichert keine eigenen Änderungszeiten. CloudDrive-Sync merkt sich die Zeiten des
   Servers selbst und erkennt so auch Änderungen, die die Dateigröße nicht verändern.
 - **Im Hintergrund:** Symbol im Infobereich mit Statuspunkt, Windows-Benachrichtigungen bei Konflikten und

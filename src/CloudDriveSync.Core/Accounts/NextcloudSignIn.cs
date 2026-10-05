@@ -132,7 +132,7 @@ public sealed class NextcloudSignIn : IDisposable
         if (status == HttpStatusCode.OK && TryParse(text)?["ocs"]?["data"]?["apppassword"]?.GetValue<string>() is { Length: > 0 } appPassword)
         {
             password = appPassword;
-            Log.Info("Nextcloud", "Password exchanged for an app password of CloudDrives.");
+            Log.Info("Nextcloud", "Password exchanged for an app password of CloudDrive-Sync.");
         }
         // Any other answer (403: it already is an app password) keeps the password as entered.
         var url = string.IsNullOrEmpty(davUrl) ? await GetDavUrlAsync(server, user, password, cancellationToken) : davUrl;

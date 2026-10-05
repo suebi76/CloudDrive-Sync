@@ -238,6 +238,9 @@ public sealed partial class SyncPairViewModel : ObservableObject
     private void ShowConflicts() => _main.ShowActivity();
 
     [RelayCommand]
+    private void ShowTrash() => _main.ShowTrash();
+
+    [RelayCommand]
     private async Task PrimaryActionAsync()
     {
         var state = _state;

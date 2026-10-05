@@ -3,6 +3,21 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.1.1] – 2026-10-05
+
+### Changed
+
+- A file deleted on the PC is deleted on the server as well. Version 0.1.0 moved it into a folder
+  ".clouddrive-papierkorb" inside the cloud folder (IServ, WebDAV) - visible on the server, also to others in shared
+  folders. What you delete yourself is still in the Windows recycle bin; Nextcloud keeps its own.
+
+### Added
+
+- Page "Papierkorb": per account and folder the files the synchronisation deleted or replaced on the PC - restore,
+  delete for good, empty, open the folder; also from the menu of a synchronisation or an account
+- The recycle bin on the PC can be switched off (Einstellungen › Papierkorb › Aus)
+- A recycle bin folder left by version 0.1.0 on the server is shown on the page and can be deleted there
+
 ## [0.1.0] – 2026-10-05
 
 ### Added

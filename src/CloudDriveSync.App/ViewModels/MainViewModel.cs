@@ -16,6 +16,7 @@ public enum Page
     Overview,
     Accounts,
     Activity,
+    Trash,
     Settings,
 }
 
@@ -61,16 +62,19 @@ public sealed partial class MainViewModel : ObservableObject
             new NavItem(Page.Overview, "Übersicht", Glyphs.Home),
             new NavItem(Page.Accounts, "Konten", Glyphs.Accounts),
             new NavItem(Page.Activity, "Aktivität", Glyphs.History),
+            new NavItem(Page.Trash, "Papierkorb", Glyphs.Trash),
             new NavItem(Page.Settings, "Einstellungen", Glyphs.Settings),
         ];
         SelectedNav = Navigation[0];
         Settings = new SettingsViewModel(this);
+        Trash = new TrashViewModel(this);
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(30), DispatcherPriority.Background, (_, _) => Tick(), dispatcher);
     }
 
     public CloudDriveSyncHost Host { get; }
     public IDialogs Dialogs { get; }
     public SettingsViewModel Settings { get; }
+    public TrashViewModel Trash { get; }
     public IReadOnlyList<NavItem> Navigation { get; }
 
     public ObservableCollection<SyncPairViewModel> Pairs { get; } = [];
@@ -102,7 +106,11 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The summary changed (for the symbol in the notification area).</summary>
     public event EventHandler? SummaryChanged;
 
-    partial void OnSelectedNavChanged(NavItem value) => OnPropertyChanged(nameof(CurrentPage));
+    partial void OnSelectedNavChanged(NavItem value)
+    {
+        OnPropertyChanged(nameof(CurrentPage));
+        if (value.Page == Page.Trash) Trash.Refresh();
+    }
 
     partial void OnHasAccountsChanged(bool value) => NotifyEmptyStates();
 
@@ -210,6 +218,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _lastRuns[state.Id] = state.LastRun;
             RefreshActivity();
+            if (CurrentPage == Page.Trash) Trash.Refresh();
         }
         UpdateSummary();
     }
@@ -379,6 +388,8 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public void ShowActivity() => SelectedNav = Navigation[2];
+
+    public void ShowTrash() => SelectedNav = Navigation.First(n => n.Page == Page.Trash);
 
     [RelayCommand]
     private void ShowAccounts() => SelectedNav = Navigation[1];

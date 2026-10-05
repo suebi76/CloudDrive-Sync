@@ -1,4 +1,4 @@
-using CloudDriveSync.Core.Settings;
+﻿using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.IntegrationTests;
@@ -31,7 +31,7 @@ public class SyncTests
         Assert.True(File.GetAttributes(world.Pc(SyncFilters.SentinelFile)).HasFlag(FileAttributes.Hidden));
         // The file that differed: both sides agree now, and the other version still exists.
         Assert.Equal(world.ReadCloud("Beide.txt"), world.ReadPc("Beide.txt"));
-        var everything = world.PcFiles().Select(world.ReadPc).Concat(world.PcTrash()).Concat(world.CloudTrash()).ToList();
+        var everything = world.PcFiles().Select(world.ReadPc).Concat(world.PcTrash()).ToList();
         Assert.Contains("Cloud-Fassung", everything);
         Assert.Contains("PC-Fassung, etwas länger", everything);
         Assert.Equal(world.CloudFiles(), world.PcFiles());
@@ -65,15 +65,37 @@ public class SyncTests
         Assert.False(File.Exists(world.Cloud("D.txt")));
         Assert.Equal(world.CloudFiles(), world.PcFiles());
         Assert.Empty(outcome.Conflicts);
-        // Deleted and replaced files wait in the recycle bins - on the PC, and in the cloud folder (IServ has none).
+        // What the synchronisation deleted or replaced on the PC waits in its recycle bin there; deleted on the PC means
+        // deleted on the server - no recycle bin folder appears there.
         Assert.Equal(["b", "c"], world.PcTrash().Order());
-        Assert.Equal(["a", "d"], world.CloudTrash().Order());
+        Assert.False(Directory.Exists(world.Cloud(SyncFilters.TrashFolder)));
 
         // Nothing to do: a further run changes nothing.
         var quiet = await world.RunAsync();
         Assert.True(quiet.Success, quiet.ErrorDetail);
         Assert.Equal(0, quiet.Final.Transfers);
         Assert.Equal(0, quiet.Deletes);
+    }
+
+    [Fact]
+    public async Task With_the_recycle_bin_switched_off_nothing_is_kept()
+    {
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("A.txt", "a");
+        world.WriteCloud("B.txt", "b");
+        world.WriteCloud("C.txt", "c");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync, keepTrash: false)).Success);
+
+        File.Delete(world.Cloud("A.txt"));
+        world.WriteCloud("B.txt", "b - in der Cloud geändert", later: true);
+        var outcome = await world.RunAsync(keepTrash: false);
+
+        Assert.True(outcome.Success, outcome.ErrorDetail);
+        Assert.False(File.Exists(world.Pc("A.txt")));
+        Assert.Equal("b - in der Cloud geändert", world.ReadPc("B.txt"));
+        Assert.Empty(world.PcTrash());
     }
 
     [Fact]

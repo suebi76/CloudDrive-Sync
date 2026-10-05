@@ -1,4 +1,4 @@
-using CloudDriveSync.App.Infrastructure;
+﻿using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -59,6 +59,9 @@ public sealed partial class AccountViewModel : ObservableObject
 
     [RelayCommand]
     private void Relogin() => _main.Relogin(Id);
+
+    [RelayCommand]
+    private void ShowTrash() => _main.ShowTrash();
 
     [RelayCommand]
     private Task RemoveAsync() => _main.RemoveAccountAsync(this);

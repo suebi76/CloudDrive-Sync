@@ -34,7 +34,7 @@ public sealed partial class SyncRunner
         _engine = engine;
     }
 
-    public async Task<SyncRunOutcome> RunAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, string resyncMode, Action<JobProgress>? progress, CancellationToken cancellationToken)
+    public async Task<SyncRunOutcome> RunAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, string resyncMode, Action<JobProgress>? progress, CancellationToken cancellationToken, bool keepTrash = true)
     {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath))
@@ -63,7 +63,7 @@ public sealed partial class SyncRunner
         {
             try
             {
-                var trash = Path.Combine(pair.LocalPath, SyncFilters.TrashFolder, DateTimeOffset.Now.ToString("yyyy-MM-dd_HH-mm-ss"));
+                var trash = keepTrash ? Path.Combine(pair.LocalPath, SyncFilters.TrashFolder, SyncTrash.NewStamp()) : null;
                 before = await quiet.FetchAsync(trash, cancellationToken);
             }
             catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException)
@@ -74,7 +74,7 @@ public sealed partial class SyncRunner
 
         var group = $"sync/{pair.Id}";
         await TryCallAsync(rc, "core/stats-reset", new JsonObject { ["group"] = group });
-        var body = BisyncCommand.Build(pair, account, workDir, filtersFile, mode, resyncMode);
+        var body = BisyncCommand.Build(pair, account, workDir, filtersFile, mode, resyncMode, keepTrash: keepTrash);
         Log.Info("Sync", $"Run of '{pair.Id}' started ({mode}).");
         var result = await rc.RunJobAsync("sync/bisync", body, group, progress, cancellationToken);
 

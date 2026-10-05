@@ -1,4 +1,4 @@
-using CloudDriveSync.Core.Sync;
+﻿using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.IntegrationTests;
 
@@ -28,13 +28,13 @@ public class SafetyTests
         Assert.Equal(10, world.PcFiles().Count);
         Assert.Equal("Inhalt 3", world.ReadPc("Datei 03.txt"));
 
-        // "Apply": the deletions are confirmed and carried out - into the cloud recycle bin.
+        // "Apply": the deletions are confirmed and carried out on the server.
         for (var i = 1; i <= 8; i++) File.Delete(world.Pc($"Datei {i:00}.txt"));
         Assert.Equal("CD-4502", (await world.RunAsync()).ErrorCode);
         var applied = await world.RunAsync(BisyncMode.Force);
         Assert.True(applied.Success, applied.ErrorDetail);
         Assert.Equal(["Datei 09.txt", "Datei 10.txt"], world.CloudFiles());
-        Assert.Equal(8, world.CloudTrash().Count);
+        Assert.False(Directory.Exists(world.Cloud(SyncFilters.TrashFolder)));
     }
 
     [Fact]

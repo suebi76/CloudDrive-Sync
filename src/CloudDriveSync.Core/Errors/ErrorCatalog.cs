@@ -23,7 +23,7 @@ public static class ErrorCatalog
         ["CD-2001"] = new("Einstellungen beschädigt", "CloudDrive-Sync hat die Einstellungen aus der Sicherung wiederhergestellt oder neu angelegt.",
             "Settings damaged", "CloudDrive-Sync restored the settings from the backup or created new ones."),
         ["CD-2002"] = new("Konfiguration konnte nicht verschlüsselt werden", "Prüfe, ob der Datenordner beschreibbar ist, und starte CloudDrive-Sync neu.",
-            "The configuration could not be encrypted", "Check that the data folder is writable and restart CloudDrives."),
+            "The configuration could not be encrypted", "Check that the data folder is writable and restart CloudDrive-Sync."),
         ["CD-2003"] = new("Schlüssel der Konfiguration fehlt", "Der Schlüssel in der Windows-Anmeldeinformationsverwaltung fehlt. Melde die Konten neu an.",
             "Key of the configuration missing", "The key in the Windows Credential Manager is missing. Sign the accounts in again."),
         ["CD-3004"] = new("Anmeldung abgebrochen", "Die Anmeldung wurde abgebrochen. Du kannst es jederzeit erneut versuchen.",

@@ -97,6 +97,7 @@
                                     <MenuItem Header="{Binding PauseText}" Command="{Binding TogglePauseCommand}" />
                                     <MenuItem Header="Auswahl und Optionen ändern …" Command="{Binding EditCommand}" />
                                     <MenuItem Header="Neu aufbauen …" Command="{Binding RebuildCommand}" />
+                                    <MenuItem Header="Papierkorb anzeigen" Command="{Binding ShowTrashCommand}" />
                                     <Separator />
                                     <MenuItem Header="Synchronisation beenden …" Command="{Binding RemoveCommand}" />
                                 </ContextMenu>
@@ -135,6 +136,7 @@
                             <Button.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="Neu anmelden …" Command="{Binding ReloginCommand}" />
+                                    <MenuItem Header="Papierkorb anzeigen" Command="{Binding ShowTrashCommand}" />
                                     <Separator />
                                     <MenuItem Header="Konto entfernen …" Command="{Binding RemoveCommand}" />
                                 </ContextMenu>
@@ -186,6 +188,62 @@
                     </StackPanel>
                 </Grid>
             </Border>
+        </DataTemplate>
+        <!-- A file in the recycle bin -->
+        <DataTemplate x:Key="TrashRow" DataType="{x:Type vm:TrashItemViewModel}">
+            <Border BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0">
+                        <TextBlock Text="{Binding Name}" Style="{StaticResource Strong}" />
+                        <TextBlock Text="{Binding Details}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="Wiederherstellen" Command="{Binding RestoreCommand}" />
+                        <Button Style="{StaticResource SubtleButton}" ToolTip="Weitere Aktionen" Click="OnMoreClick" Margin="4,0,0,0" AutomationProperties.Name="Weitere Aktionen zur Datei">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE712;" />
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Im Ordner zeigen" Command="{Binding ShowInFolderCommand}" />
+                                    <Separator />
+                                    <MenuItem Header="Endgültig löschen …" Command="{Binding DeleteCommand}" />
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- The recycle bin of one synchronisation -->
+        <DataTemplate x:Key="TrashGroup" DataType="{x:Type vm:TrashGroupViewModel}">
+            <StackPanel Margin="0,20,0,0" Visibility="{Binding IsVisible, Converter={StaticResource Visible}}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding HasItems, Converter={StaticResource Visible}}">
+                        <Button Content="Ordner öffnen" Command="{Binding OpenFolderCommand}" />
+                        <Button Content="Leeren …" Command="{Binding EmptyCommand}" Margin="8,0,0,0" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource Strong}" FontSize="15" />
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </DockPanel>
+                <Border Style="{StaticResource InfoBarCaution}" Margin="0,10,0,0" Visibility="{Binding HasCloudLeftover, Converter={StaticResource Visible}}">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Auf dem Server löschen …" Command="{Binding RemoveCloudLeftoverCommand}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="{Binding CloudLeftoverText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Padding="0" Margin="0,10,0,0" Visibility="{Binding HasItems, Converter={StaticResource Visible}}">
+                    <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource TrashRow}" />
+                </Border>
+                <TextBlock Text="{Binding MoreText}" Style="{StaticResource Caption}" Margin="0,6,0,0" Visibility="{Binding MoreText, Converter={StaticResource Visible}}" />
+            </StackPanel>
         </DataTemplate>
     </Window.Resources>
 
@@ -303,7 +361,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Welcher Ordner soll auf diesen PC?" FontSize="16" FontWeight="SemiBold" />
                                     <TextBlock Style="{StaticResource Secondary}" Margin="0,10,0,0"
-                                               Text="Wähle einen Cloud-Ordner und einen Speicherort. Änderungen auf beiden Seiten werden automatisch abgeglichen; gelöschte und ersetzte Dateien landen im Papierkorb von CloudDrives." />
+                                               Text="Wähle einen Cloud-Ordner und einen Speicherort. Änderungen und Löschungen auf beiden Seiten werden automatisch abgeglichen; was der Abgleich am PC löscht oder ersetzt, bleibt im versteckten Papierkorb-Ordner erhalten." />
                                     <Button Content="Ordner synchronisieren …" Style="{StaticResource AccentButtonStyle}" Command="{Binding AddSyncCommand}" HorizontalAlignment="Left" Margin="0,18,0,0" />
                                 </StackPanel>
                             </Border>
@@ -357,6 +415,20 @@
                         </StackPanel>
                     </ScrollViewer>
 
+                    <!-- Recycle bin -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding CurrentPage, Converter={StaticResource VisibleIf}, ConverterParameter=Trash}">
+                        <StackPanel Margin="36,28,36,36" DataContext="{Binding Trash}">
+                            <TextBlock Text="Papierkorb" Style="{StaticResource PageTitle}" />
+                            <TextBlock Style="{StaticResource Secondary}" Margin="0,8,0,0"
+                                       Text="Hier liegen Dateien, die der Abgleich auf diesem PC gelöscht oder ersetzt hat – weil sie in der Cloud gelöscht oder geändert wurden. Was du selbst am PC löschst, liegt im Papierkorb von Windows; Nextcloud hat dazu einen eigenen Papierkorb." />
+                            <TextBlock Text="{Binding RetentionText}" Style="{StaticResource Caption}" Margin="0,8,0,0" />
+                            <Border Style="{StaticResource Card}" Padding="24" Margin="0,20,0,0" Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}">
+                                <TextBlock Style="{StaticResource Secondary}" Text="Der Papierkorb ist leer." />
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding Groups}" ItemTemplate="{StaticResource TrashGroup}" />
+                        </StackPanel>
+                    </ScrollViewer>
+
                     <!-- Settings -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding CurrentPage, Converter={StaticResource VisibleIf}, ConverterParameter=Settings}">
                         <StackPanel Margin="36,28,36,36" DataContext="{Binding Settings}">
@@ -387,7 +459,7 @@
                                     <StackPanel Margin="0,0,16,0">
                                         <TextBlock Text="Papierkorb von CloudDrive-Sync" Style="{StaticResource Strong}" />
                                         <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0"
-                                                   Text="Gelöschte und ersetzte Dateien bleiben so lange im versteckten Ordner „.clouddrive-papierkorb“ der Synchronisation." />
+                                                   Text="Was der Abgleich am PC löscht oder ersetzt, bleibt so lange im Papierkorb von CloudDrive-Sync – ansehen und wiederherstellen kannst du es unter „Papierkorb“. „Aus“: nichts wird aufbewahrt." />
                                     </StackPanel>
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding TrashChoices}" DisplayMemberPath="Title" SelectedValuePath="Value"
                                               SelectedValue="{Binding TrashDays}" MinWidth="140" VerticalAlignment="Center" />

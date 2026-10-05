@@ -20,6 +20,7 @@ public static class Glyphs
     public const string Error = "\uEA39";
     public const string Folder = "\uE8B7";
     public const string Document = "\uE8A5";
+    public const string Trash = "\uE74D";
 
     public static string Of(WebDavKind kind) => kind switch
     {

@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Settings;
 
@@ -23,9 +23,9 @@ public static class BisyncCommand
 {
     public const string ConflictSuffix = "Konflikt-Cloud,Konflikt-PC";
 
-    public static JsonObject Build(SyncPairSettings pair, AccountSettings account, string workDir, string filtersFile, BisyncMode mode, string resyncMode = "newer", DateTimeOffset? now = null)
+    public static JsonObject Build(SyncPairSettings pair, AccountSettings account, string workDir, string filtersFile, BisyncMode mode, string resyncMode = "newer", DateTimeOffset? now = null, bool keepTrash = true)
     {
-        var stamp = (now ?? DateTimeOffset.Now).ToString("yyyy-MM-dd_HH-mm-ss");
+        var stamp = SyncTrash.NewStamp(now);
         var (resolve, _) = Conflicts(pair.Conflicts);
         var body = new JsonObject
         {
@@ -49,8 +49,6 @@ public static class BisyncCommand
             ["resilient"] = true,
             ["maxLock"] = "30m",
             ["createEmptySrcDirs"] = true,
-            // Deleted or overwritten local files go to a recycle bin next to them (excluded from the sync).
-            ["backupDir2"] = Path.Combine(pair.LocalPath, SyncFilters.TrashFolder, stamp),
             ["_config"] = new JsonObject
             {
                 // Renamed or moved files are not uploaded again; conflict copies keep their extension (".docx").
@@ -58,9 +56,12 @@ public static class BisyncCommand
                 ["SuffixKeepExtension"] = true,
             },
         };
-        // Servers without their own recycle bin (IServ, other WebDAV) get one in the cloud folder.
-        if (account.Kind != WebDavKind.Nextcloud)
-            body["backupDir1"] = $"{AccountService.RemoteName(account.Id)}:{Join(pair.RemotePath, SyncFilters.TrashFolder, stamp)}";
+        // Files the synchronisation deletes or replaces on the PC go to its recycle bin there (excluded from the sync) -
+        // unless the user switched it off.
+        if (keepTrash) body["backupDir2"] = Path.Combine(pair.LocalPath, SyncFilters.TrashFolder, stamp);
+        // No recycle bin folder in the cloud: a file deleted on the PC is deleted on the server, as everyone expects
+        // (it is still in the Windows recycle bin; Nextcloud keeps its own). A folder in the cloud folder would stay
+        // visible on the server - in shared folders even to everybody else.
         if (mode == BisyncMode.Resync)
         {
             body["resync"] = true;

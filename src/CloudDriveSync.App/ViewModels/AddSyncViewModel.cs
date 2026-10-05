@@ -295,7 +295,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
         catch (CdException)
         {
             LocalError = showErrors || LocalPath.Trim().Length > 0
-                ? "Bitte gib einen vollständigen Ordnerpfad auf einem verfügbaren Laufwerk an, z. B. C:\\Users\\Name\\CloudDrives."
+                ? "Bitte gib einen vollständigen Ordnerpfad auf einem verfügbaren Laufwerk an, z. B. C:\\Users\\Name\\CloudDrive-Sync."
                 : "";
             return false;
         }

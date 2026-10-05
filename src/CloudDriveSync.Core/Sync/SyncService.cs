@@ -207,6 +207,41 @@ public sealed class SyncService : IAsyncDisposable
     }
 
     /// <summary>The most recent runs of a synchronisation, newest first.</summary>
+    /// <summary>What the synchronisation deleted or replaced on the PC, newest first.</summary>
+    public IReadOnlyList<TrashEntry> Trash(string id) => FindPair(id) is { } pair ? SyncTrash.List(pair.Id, pair.LocalPath) : [];
+
+    /// <summary>
+    /// Version 0.1.0 kept a recycle bin folder in the cloud folder as well (IServ, WebDAV). Files and bytes still
+    /// there, or null when there is none.
+    /// </summary>
+    public async Task<(long Files, long Bytes)?> GetCloudTrashAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (FindPair(id) is not { } pair) return null;
+        try
+        {
+            var (bytes, count) = await _accounts.GetSizeAsync(pair.AccountId, Join(pair.RemotePath, SyncFilters.TrashFolder), cancellationToken);
+            return count > 0 ? (count, bytes) : null;
+        }
+        catch (CdException)
+        {
+            // Not there (or the server cannot be reached right now).
+            return null;
+        }
+    }
+
+    /// <summary>Deletes the recycle bin folder of version 0.1.0 in the cloud folder.</summary>
+    public async Task RemoveCloudTrashAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var pair = FindPair(id) ?? throw new CdException("CD-9000", $"unknown synchronisation '{id}'");
+        var rc = await _engine.EnsureRunningAsync(cancellationToken);
+        await rc.CallAsync("operations/purge", new JsonObject
+        {
+            ["fs"] = AccountService.RemoteName(pair.AccountId) + ":",
+            ["remote"] = Join(pair.RemotePath, SyncFilters.TrashFolder),
+        }, TimeSpan.FromMinutes(5), cancellationToken);
+        Log.Info("Sync", $"Recycle bin folder of '{id}' in the cloud removed.");
+    }
+
     public IReadOnlyList<SyncRunRecord> History(string id, int count = 50)
     {
         var file = Path.Combine(_paths.SyncPairDir(id), "runs.jsonl");
@@ -407,7 +442,7 @@ public sealed class SyncService : IAsyncDisposable
                 if (_pending is null || Rank(mode) > Rank(_pending.Value.Mode) || answersDecision) _pending = (mode, answersDecision);
                 if (_running)
                 {
-                    // A request without delay ("now") ends the pause after the start of CloudDrives.
+                    // A request without delay ("now") ends the pause after the start of CloudDrive-Sync.
                     if (delay is null) _skipDelay?.Cancel();
                     return;
                 }
@@ -501,7 +536,8 @@ public sealed class SyncService : IAsyncDisposable
             SyncRunOutcome outcome;
             try
             {
-                outcome = await _service._runner.RunAsync(pair, account, mode, "newer", progress => Publish(State with { Progress = progress }), _stop.Token);
+                var keepTrash = _service._settings.Current.Preferences.TrashDays > 0;
+                outcome = await _service._runner.RunAsync(pair, account, mode, "newer", progress => Publish(State with { Progress = progress }), _stop.Token, keepTrash);
             }
             catch (OperationCanceledException)
             {
@@ -588,27 +624,19 @@ public sealed class SyncService : IAsyncDisposable
         }
 
         /// <summary>Removes recycle-bin folders older than the configured days, at most once a day.</summary>
+        /// <summary>
+        /// Removes recycle bin folders older than the configured days, at most once a day. Switched off, nothing new
+        /// arrives there and what is there stays until the user empties it.
+        /// </summary>
         private void CleanTrash(SyncPairSettings pair)
         {
             if (DateTime.Now - _lastTrashCleanUp < TimeSpan.FromDays(1)) return;
             _lastTrashCleanUp = DateTime.Now;
-            var trash = Path.Combine(pair.LocalPath, SyncFilters.TrashFolder);
+            var trash = SyncTrash.FolderOf(pair.LocalPath);
             if (!Directory.Exists(trash)) return;
-            var keep = TimeSpan.FromDays(Math.Max(1, _service._settings.Current.Preferences.TrashDays));
-            foreach (var folder in Directory.EnumerateDirectories(trash))
-            {
-                try
-                {
-                    if (DateTime.Now - Directory.GetCreationTime(folder) > keep) Directory.Delete(folder, recursive: true);
-                }
-                catch (IOException)
-                {
-                }
-                catch (UnauthorizedAccessException)
-                {
-                }
-            }
-            File.SetAttributes(trash, File.GetAttributes(trash) | FileAttributes.Hidden);
+            var days = _service._settings.Current.Preferences.TrashDays;
+            if (days > 0) SyncTrash.CleanUp(pair.LocalPath, TimeSpan.FromDays(days));
+            if (Directory.Exists(trash)) File.SetAttributes(trash, File.GetAttributes(trash) | FileAttributes.Hidden);
         }
 
         public async Task StopAsync()

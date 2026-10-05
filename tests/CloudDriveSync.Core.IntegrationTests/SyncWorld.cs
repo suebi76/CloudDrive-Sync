@@ -97,11 +97,11 @@ internal sealed class SyncWorld : IAsyncDisposable
     }
 
     /// <summary>One run like the service does it, but in the test's own rhythm.</summary>
-    public async Task<SyncRunOutcome> RunAsync(BisyncMode mode = BisyncMode.Normal)
+    public async Task<SyncRunOutcome> RunAsync(BisyncMode mode = BisyncMode.Normal, bool keepTrash = true)
     {
         using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         var pair = Host.Sync.FindPair(Pair.Id) ?? Pair;
-        return await Runner.RunAsync(pair, Account, mode, "newer", null, limit.Token);
+        return await Runner.RunAsync(pair, Account, mode, "newer", null, limit.Token, keepTrash);
     }
 
     public string Cloud(string relative) => Path.Combine(CloudRoot, CloudFolder, relative.Replace('/', '\\'));
@@ -122,7 +122,6 @@ internal sealed class SyncWorld : IAsyncDisposable
 
     public IReadOnlyList<string> PcFiles() => Files(Local);
 
-    public IReadOnlyList<string> CloudTrash() => Contents(Cloud(SyncFilters.TrashFolder));
 
     public IReadOnlyList<string> PcTrash() => Contents(Pc(SyncFilters.TrashFolder));
 
