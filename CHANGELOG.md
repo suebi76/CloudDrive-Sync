@@ -3,6 +3,17 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.5] – 2026-10-05
+
+Test version on the way to 0.2.
+
+### Fixed
+
+- Setting up a synchronisation of a cloud folder the server takes no files in (on IServ "Groups" itself, or a folder
+  with the right to read only) ended in "Unerwarteter Fehler". Now the assistant explains it and goes back to the
+  choice of the folder; folders it had created on the PC for it are removed again. On IServ it says so already in
+  the first step for "Groups" and for the whole account.
+
 ## [0.2.0-preview.4] – 2026-10-05
 
 Test version on the way to 0.2.

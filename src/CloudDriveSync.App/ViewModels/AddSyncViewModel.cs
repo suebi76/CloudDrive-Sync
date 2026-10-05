@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
@@ -143,6 +143,20 @@ public sealed partial class AddSyncViewModel : ObservableObject
 
     private string BasePath => ChosenFolder?.Path ?? "";
 
+    /// <summary>
+    /// IServ's top folders only hold other folders: "Files" (Eigene Dateien) and "Groups" with a folder per group. Files
+    /// cannot be stored at the top or in "Groups" itself, so neither can be synchronised as a whole.
+    /// </summary>
+    private string? IServFolderWithoutFiles(string path)
+    {
+        if (Account?.Kind != WebDavKind.IServ) return null;
+        if (path.Length == 0)
+            return "Bei IServ lässt sich das Konto nicht als Ganzes synchronisieren. Wähle „Files“ (Eigene Dateien), einen Ordner darin oder einen Gruppenordner in „Groups“.";
+        if (path.Equals("Groups", StringComparison.OrdinalIgnoreCase))
+            return "„Groups“ enthält bei IServ nur die Ordner deiner Gruppen und nimmt selbst keine Dateien auf. Öffne den Ordner und wähle die Gruppe, die du synchronisieren möchtest.";
+        return null;
+    }
+
     private async Task LoadSelectionAsync()
     {
         try
@@ -236,6 +250,11 @@ public sealed partial class AddSyncViewModel : ObservableObject
                     Error = "Bitte wähle einen Ordner aus.";
                     return;
                 }
+                if (IServFolderWithoutFiles(SelectedFolder.Path) is { } hint)
+                {
+                    Error = hint;
+                    return;
+                }
                 if (ChosenFolder?.Path != SelectedFolder.Path || Selection.Roots.Count == 0)
                 {
                     ChosenFolder = SelectedFolder;
@@ -314,6 +333,13 @@ public sealed partial class AddSyncViewModel : ObservableObject
         {
             Result = await _host.Sync.AddAsync(BuildDraft());
             CloseRequested?.Invoke(this, EventArgs.Empty);
+        }
+        catch (CdException e) when (e.Code == "CD-4511")
+        {
+            // The cloud folder itself is the problem: back to choosing it.
+            Step = AddSyncStep.Folder;
+            var entry = ErrorCatalog.Get(e.Code);
+            Error = $"{entry.Title}. {entry.Fix}";
         }
         catch (CdException e)
         {

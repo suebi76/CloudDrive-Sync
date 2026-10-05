@@ -64,6 +64,8 @@ public static class ErrorCatalog
             "Unusually many changes - synchronisation stopped", "All files changed on one side, e.g. after a time change or a copy. Decide whether to apply the changes or to rebuild the synchronisation (nothing is deleted)."),
         ["CD-4510"] = new("Datei ist in einem anderen Programm geöffnet", "Eine geänderte Datei ist gerade in einem anderen Programm geöffnet und gesperrt, z. B. in Word oder Excel. CloudDrive-Sync versucht es jede Minute erneut und überträgt sie, sobald sie frei ist. Es geht nichts verloren.",
             "File is open in another program", "A changed file is open and locked in another program right now, e.g. in Word or Excel. CloudDrive-Sync tries again every minute and transfers it once it is free. Nothing is lost."),
+        ["CD-4511"] = new("In diesen Cloud-Ordner darf nichts geschrieben werden", "Der Server nimmt dort keine neuen Dateien an – meist, weil du in diesem Ordner nur lesen darfst. Bei IServ gilt das für den Ordner „Groups“ (Gruppen) selbst: Er enthält nur die Ordner deiner Gruppen. Wähle den Ordner der Gruppe, die du synchronisieren möchtest.",
+            "Nothing may be written to this cloud folder", "The server does not accept new files there - usually because you may only read in this folder. On IServ this applies to the folder \"Groups\" itself: it only holds the folders of your groups. Choose the folder of the group you want to synchronise."),
         ["CD-5001"] = new("Keine Verbindung zum Server", "Prüfe die Internetverbindung. CloudDrive-Sync versucht es automatisch erneut.",
             "No connection to the server", "Check the internet connection. CloudDrive-Sync tries again automatically."),
         ["CD-5002"] = new("Die Engine startet nicht", "rclone konnte nicht gestartet werden. Starte CloudDrive-Sync neu; hilft das nicht, erstelle ein Support-Paket.",
@@ -85,6 +87,8 @@ public static class ErrorCatalog
         ("CD-4510", new Regex(@"(?i)being used by another process|cannot access the file because", RegexOptions.Compiled)),
         ("CD-3012", new Regex(@"(?im):\s*401 Unauthorized\s*$|NotAuthenticated|Username or password was incorrect", RegexOptions.Compiled)),
         ("CD-3006", new Regex(@"(?i)507 Insufficient Storage|quota (?:limit )?(?:reached|exceeded)|insufficient storage", RegexOptions.Compiled)),
+        // IServ answers a write into a folder without the right to write with "Failed to write file … 500".
+        ("CD-4511", new Regex(@"(?i)Failed to write file|403 Forbidden|read[- ]only file system", RegexOptions.Compiled)),
         ("CD-5001", new Regex(@"(?i)no such host|dial tcp|i/o timeout|TLS handshake timeout|network is unreachable|No connection could be made|connection reset", RegexOptions.Compiled)),
     ];
 

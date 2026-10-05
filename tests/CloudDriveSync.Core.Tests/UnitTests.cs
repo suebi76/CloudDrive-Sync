@@ -165,6 +165,8 @@ public class ErrorCatalogTests
     [InlineData("couldn't list files: No public access to this resource.: Sabre\\DAV\\Exception\\NotAuthenticated: 401 Unauthorized", "CD-3012")]
     [InlineData("error listing: : 401 Unauthorized", "CD-3012")]
     [InlineData("Post \"https://x/\": dial tcp: lookup x: no such host", "CD-5001")]
+    [InlineData("operations/copyfile: unchunked simple update failed: Failed to write file.: IServ\\Library\\Sudo\\Exception\\SudoException: 500 Internal Server Error", "CD-4511")]
+    [InlineData("Put \"https://webdav.example.org/Groups/.clouddrive-sync\": 403 Forbidden", "CD-4511")]
     [InlineData("something else entirely", "CD-9000")]
     public void Recognises_errors(string text, string code) => Assert.Equal(code, ErrorCatalog.Classify(text));
 

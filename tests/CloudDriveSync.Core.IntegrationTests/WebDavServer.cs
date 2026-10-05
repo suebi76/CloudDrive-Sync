@@ -28,7 +28,7 @@ internal sealed class WebDavServer : IAsyncDisposable
     public string Url { get; }
 
     /// <param name="basePath">Path the files are served under, e.g. "/remote.php/dav/files/lehrer" like Nextcloud.</param>
-    public static async Task<WebDavServer> StartAsync(string rclone, string root, string user, string password, string configFile, string basePath = "")
+    public static async Task<WebDavServer> StartAsync(string rclone, string root, string user, string password, string configFile, string basePath = "", bool readOnly = false)
     {
         var port = FreePort();
         var start = new ProcessStartInfo(rclone)
@@ -45,6 +45,7 @@ internal sealed class WebDavServer : IAsyncDisposable
                      "--local-case-sensitive", "--vfs-case-insensitive=false",
                  })
             start.ArgumentList.Add(argument);
+        if (readOnly) start.ArgumentList.Add("--read-only");
         if (basePath.Length > 0)
         {
             start.ArgumentList.Add("--baseurl");

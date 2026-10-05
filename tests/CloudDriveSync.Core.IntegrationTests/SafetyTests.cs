@@ -1,10 +1,24 @@
-﻿using CloudDriveSync.Core.Sync;
+﻿using CloudDriveSync.Core.Errors;
+using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.IntegrationTests;
 
 /// <summary>The safety nets: nothing is deleted on a hunch, and every stop can be resolved by the user.</summary>
 public class SafetyTests
 {
+    [Fact]
+    public async Task A_cloud_folder_without_the_right_to_write_is_explained_and_leaves_nothing_behind()
+    {
+        await using var world = await SyncWorld.CreateAsync(readOnlyServer: true);
+        await world.AddAccountAsync();
+        var error = await Assert.ThrowsAsync<CdException>(() => world.AddPairAsync());
+        Assert.Equal("CD-4511", error.Code);
+        // The folders the setup had created on the PC are gone again.
+        Assert.False(Directory.Exists(world.Local));
+        Assert.False(Directory.Exists(Path.GetDirectoryName(world.Local)));
+        Assert.Empty(world.Host.Sync.Pairs);
+    }
+
     [Fact]
     public async Task Too_many_deletions_stop_until_the_user_restores_or_confirms_them()
     {

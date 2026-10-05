@@ -84,8 +84,21 @@ public sealed class SyncService : IAsyncDisposable
         var account = _accounts.Find(draft.AccountId) ?? throw new CdException("CD-9000", $"unknown account '{draft.AccountId}'");
         var local = Path.TrimEndingDirectorySeparator(Path.GetFullPath(draft.LocalPath));
         var remotePath = draft.RemotePath.Trim('/');
+        var createdFrom = FirstMissingFolder(local);
+        var sentinel = Path.Combine(local, SyncFilters.SentinelFile);
+        var newSentinel = !File.Exists(sentinel);
         Directory.CreateDirectory(local);
-        await PlaceSentinelsAsync(account, remotePath, local, cancellationToken);
+        try
+        {
+            await PlaceSentinelsAsync(account, remotePath, local, cancellationToken);
+        }
+        catch (CdException)
+        {
+            // A setup that did not come about leaves nothing behind on the PC.
+            if (createdFrom is not null) RemoveCreatedFolders(local, createdFrom);
+            else if (newSentinel) TryDelete(sentinel);
+            throw;
+        }
 
         var pair = new SyncPairSettings
         {
@@ -274,13 +287,22 @@ public sealed class SyncService : IAsyncDisposable
         var cloud = AccountService.RemoteName(account.Id) + ":";
         if (remotePath.Length > 0)
             await rc.CallAsync("operations/mkdir", new JsonObject { ["fs"] = cloud, ["remote"] = remotePath }, cancellationToken: cancellationToken);
-        await rc.CallAsync("operations/copyfile", new JsonObject
+        try
         {
-            ["srcFs"] = local,
-            ["srcRemote"] = SyncFilters.SentinelFile,
-            ["dstFs"] = cloud,
-            ["dstRemote"] = Join(remotePath, SyncFilters.SentinelFile),
-        }, TimeSpan.FromMinutes(2), cancellationToken);
+            await rc.CallAsync("operations/copyfile", new JsonObject
+            {
+                ["srcFs"] = local,
+                ["srcRemote"] = SyncFilters.SentinelFile,
+                ["dstFs"] = cloud,
+                ["dstRemote"] = Join(remotePath, SyncFilters.SentinelFile),
+            }, TimeSpan.FromMinutes(2), cancellationToken);
+        }
+        catch (CdException e) when (e.Code == "CD-9000")
+        {
+            // The folder is there, but the server refuses a new file in it - servers answer that in many ways
+            // (IServ: 500, others 403 or 404). A two-way synchronisation needs to write there.
+            throw new CdException("CD-4511", e.Detail, e);
+        }
     }
 
     private PairWorker WorkerFor(string id)
@@ -299,6 +321,33 @@ public sealed class SyncService : IAsyncDisposable
     }
 
     private static string Join(params string[] parts) => string.Join('/', parts.Select(p => p.Trim('/')).Where(p => p.Length > 0));
+
+    /// <summary>The topmost folder on the way to <paramref name="folder"/> that does not exist yet; null when it exists.</summary>
+    private static string? FirstMissingFolder(string folder)
+    {
+        string? missing = null;
+        for (var current = folder; current is not null && !Directory.Exists(current); current = Path.GetDirectoryName(current))
+            missing = current;
+        return missing;
+    }
+
+    /// <summary>Removes the folders a setup created itself, as long as nothing but the sentinel file is in them.</summary>
+    private static void RemoveCreatedFolders(string folder, string topmost)
+    {
+        TryDelete(Path.Combine(folder, SyncFilters.SentinelFile));
+        for (var current = folder; current is not null; current = Path.GetDirectoryName(current))
+        {
+            try
+            {
+                Directory.Delete(current, recursive: false);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+            if (string.Equals(current, topmost, StringComparison.OrdinalIgnoreCase)) return;
+        }
+    }
 
     private static void TryDelete(string file)
     {

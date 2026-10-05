@@ -40,7 +40,7 @@ internal sealed class SyncWorld : IAsyncDisposable
     public AccountSettings Account { get; private set; } = null!;
     public SyncPairSettings Pair { get; private set; } = null!;
 
-    public static async Task<SyncWorld> CreateAsync(WebDavKind kind = WebDavKind.IServ)
+    public static async Task<SyncWorld> CreateAsync(WebDavKind kind = WebDavKind.IServ, bool readOnlyServer = false)
     {
         var root = Path.Combine(Path.GetTempPath(), "clouddrive-sync-it", $"{DateTime.Now:HHmmss}-{Guid.NewGuid():N}"[..13]);
         var cloudRoot = Path.Combine(root, "cloud");
@@ -57,7 +57,7 @@ internal sealed class SyncWorld : IAsyncDisposable
         await File.WriteAllTextAsync(serverConfig, "");
         // Nextcloud's WebDAV address always ends with /remote.php/dav/files/<user>; rclone relies on it.
         var basePath = kind == WebDavKind.Nextcloud ? $"/remote.php/dav/files/{User}" : "";
-        var server = await WebDavServer.StartAsync(await TestRclone.ExeAsync(), cloudRoot, User, Password, serverConfig, basePath);
+        var server = await WebDavServer.StartAsync(await TestRclone.ExeAsync(), cloudRoot, User, Password, serverConfig, basePath, readOnlyServer);
         var host = new CloudDriveSyncHost(paths);
         var world = new SyncWorld(root, cloudRoot, caseSensitive, local, kind, server, host);
         try
