@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace CloudDriveSync.Core.Sync;
 
@@ -74,6 +74,28 @@ internal static partial class RunSafety
 
     public static bool IsFileInUse(string text) => FileInUsePattern().IsMatch(text);
 
+    /// <summary>
+    /// Files bisync could not upload because the server did not take them (a folder to read only), relative to the
+    /// synchronised folder. Only uploads count - bisync's queue of copies to path 1 names them.
+    /// </summary>
+    public static IReadOnlyList<string> RefusedUploads(string report, string cloudPath)
+    {
+        var prefix = cloudPath.EndsWith(':') ? cloudPath : cloudPath + "/";
+        var uploads = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match queued in UploadQueuePattern().Matches(report))
+        {
+            var target = queued.Groups[1].Value;
+            if (target.StartsWith(prefix, StringComparison.Ordinal)) uploads.Add(target[prefix.Length..]);
+        }
+        var refused = new List<string>();
+        foreach (Match failed in FailedCopyPattern().Matches(report))
+        {
+            var path = failed.Groups["path"].Value;
+            if (uploads.Contains(path) && RefusalPattern().IsMatch(failed.Groups["reason"].Value) && !refused.Contains(path)) refused.Add(path);
+        }
+        return refused;
+    }
+
     private static IEnumerable<string> Listings(string workDir) =>
         Directory.Exists(workDir)
             ? Directory.EnumerateFiles(workDir, "*.lst").Where(f => f.EndsWith(".path1.lst", StringComparison.Ordinal) || f.EndsWith(".path2.lst", StringComparison.Ordinal))
@@ -87,4 +109,14 @@ internal static partial class RunSafety
 
     [GeneratedRegex(@"(?i)being used by another process|cannot access the file")]
     private static partial Regex FileInUsePattern();
+
+    [GeneratedRegex(@"(?m)Queue copy to Path1\s+-\s+(.+?)\s*$")]
+    private static partial Regex UploadQueuePattern();
+
+    [GeneratedRegex(@"(?m)ERROR : (?<path>.+?): Failed to copy: (?<reason>.+?)\s*$")]
+    private static partial Regex FailedCopyPattern();
+
+    // IServ: "Failed to write file … 500", Nextcloud: 403, others 404, 405, 409 or 423.
+    [GeneratedRegex(@"(?i)Failed to write file|403 Forbidden|404 Not Found|405 Method Not Allowed|409 Conflict|423 Locked|read[- ]only|permission denied")]
+    private static partial Regex RefusalPattern();
 }

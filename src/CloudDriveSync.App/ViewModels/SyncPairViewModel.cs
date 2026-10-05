@@ -1,5 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 using CloudDriveSync.App.Infrastructure;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
@@ -54,6 +55,9 @@ public sealed partial class SyncPairViewModel : ObservableObject
     [ObservableProperty] public partial string? PrimaryActionText { get; set; }
     [ObservableProperty] public partial string? SecondaryActionText { get; set; }
     [ObservableProperty] public partial int ConflictCount { get; set; }
+    [ObservableProperty] public partial bool HasLocalOnly { get; set; }
+    [ObservableProperty] public partial string LocalOnlyTitle { get; set; } = "";
+    [ObservableProperty] public partial string LocalOnlyList { get; set; } = "";
     [ObservableProperty] public partial string ConflictText { get; set; } = "";
 
     public bool NeedsUser => _state?.Status == SyncStatus.NeedsAttention;
@@ -92,7 +96,7 @@ public sealed partial class SyncPairViewModel : ObservableObject
     public void Refresh()
     {
         var accountName = _account?.Label ?? _pair.AccountId;
-        FolderTitle = _pair.RemotePath.Length > 0 ? _pair.RemotePath.Replace("/", " › ") : "Alles";
+        FolderTitle = CloudFolderNames.ShowPath(_account?.Kind ?? WebDavKind.Other, _pair.RemotePath);
         Title = $"{accountName} › {FolderTitle}";
         OnPropertyChanged(nameof(IntervalMinutes));
         LocalPath = _pair.LocalPath;
@@ -143,6 +147,14 @@ public sealed partial class SyncPairViewModel : ObservableObject
                 DescribeError(state);
                 AttentionIsCritical = false;
                 break;
+            case SyncStatus.Error when state?.ErrorCode == "CD-4511":
+                // Everything else keeps being synchronised; the changes the server did not take stay on the PC.
+                Tone = Tone.Warning;
+                StatusGlyph = Glyphs.Warning;
+                StatusText = "Nicht alles hochgeladen – in manchen Ordnern darfst du nur lesen";
+                DescribeError(state);
+                AttentionIsCritical = false;
+                break;
             case SyncStatus.Error:
                 Tone = Tone.Error;
                 StatusGlyph = Glyphs.Error;
@@ -155,6 +167,14 @@ public sealed partial class SyncPairViewModel : ObservableObject
                 StatusText = state?.FirstSyncDone == true ? $"Aktuell · zuletzt abgeglichen {Format.Ago(state.LastSuccess)}" : "Erster Abgleich startet gleich …";
                 break;
         }
+
+        // Files the server did not take (a folder to read only) stay on the PC.
+        var localOnly = _pair.LocalOnly;
+        HasLocalOnly = localOnly.Count > 0;
+        LocalOnlyTitle = localOnly.Count == 1
+            ? $"„{System.IO.Path.GetFileName(localOnly[0])}“ bleibt nur auf diesem PC"
+            : $"{localOnly.Count} Dateien bleiben nur auf diesem PC";
+        LocalOnlyList = string.Join(Environment.NewLine, localOnly.Take(50)) + (localOnly.Count > 50 ? Environment.NewLine + "…" : "");
 
         var conflicts = state?.Conflicts.Count ?? 0;
         ConflictCount = conflicts;
@@ -265,6 +285,15 @@ public sealed partial class SyncPairViewModel : ObservableObject
 
     [RelayCommand]
     private void ShowTrash() => _main.ShowTrash();
+
+    [RelayCommand]
+    private void ShowLocalOnly()
+    {
+        if (_pair.LocalOnly.FirstOrDefault() is { } first) Shell.ShowInFolder(System.IO.Path.Combine(_pair.LocalPath, first.Replace('/', '\\')));
+    }
+
+    [RelayCommand]
+    private void RetryLocalOnly() => _main.Host.Sync.RetryLocalOnly(Id);
 
     [RelayCommand]
     private async Task PrimaryActionAsync()

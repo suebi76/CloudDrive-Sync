@@ -10,7 +10,7 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
 
 - **Konten verbinden:** Nextcloud (Anmeldung im Browser, auch mit Zwei-Faktor-Anmeldung, oder mit App-Passwort),
   IServ (Adresse der Schule genügt, CloudDrive-Sync nutzt `webdav.<schule>`) und andere WebDAV-Speicher.
-- **Ordner synchronisieren:** einen Cloud-Ordner oder das ganze Konto – alles oder nur ausgewählte Ordner und Dateien –
+- **Ordner synchronisieren:** einen Cloud-Ordner, bei IServ auch alle Gruppen auf einmal, oder das ganze Konto – alles oder nur ausgewählte Ordner und Dateien –
   in einen frei wählbaren Ordner auf diesem PC. Nichts ist verboten: Bei ungewöhnlichen Speicherorten (Netzlaufwerk,
   USB-Stick, Ordner eines anderen Sync-Programms …) gibt es Hinweise, die Entscheidung triffst du.
 - **In beide Richtungen:** Änderungen am PC gehen kurz nach dem Speichern hoch, Änderungen in der Cloud kommen im

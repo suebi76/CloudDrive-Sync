@@ -3,6 +3,23 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.6] – 2026-10-05
+
+Test version on the way to 0.2.
+
+### Added
+
+- IServ: all groups at once ("Gruppen") or the whole account - everything, or ticked groups and folders. Folders that
+  take no files of their own get no protection file in the cloud; instead CloudDrive-Sync checks before each run that
+  the cloud folder is there and does not suddenly look empty, and stops before anything is deleted (CD-4512).
+- Files the server does not take (e.g. in a group to read only) stay on the PC: the rest of the run goes on without a
+  rebuild, and the card names the files with "Im Ordner zeigen" and "Erneut versuchen".
+- The top folders of IServ carry the names of its web pages: "Eigene Dateien" and "Gruppen".
+
+### Changed
+
+- The assistant explains the IServ folder "Gruppen" and the whole account instead of stopping there (as preview.5 did).
+
 ## [0.2.0-preview.5] – 2026-10-05
 
 Test version on the way to 0.2.

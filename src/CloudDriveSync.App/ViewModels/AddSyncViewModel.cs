@@ -2,6 +2,7 @@
 using System.IO;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
@@ -93,7 +94,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
     public bool HasLocalError => LocalError.Length > 0;
     public bool CloudWithoutTimes => Account is { Kind: not WebDavKind.Nextcloud };
 
-    public string ChosenFolderText => ChosenFolder is null ? "" : $"{Account?.Label} › {(ChosenFolder.Path.Length == 0 ? "Alles" : ChosenFolder.Path.Replace("/", " › "))}";
+    public string ChosenFolderText => ChosenFolder is null || Account is null ? "" : $"{Account.Label} › {CloudFolderNames.ShowPath(Account.Kind, ChosenFolder.Path)}";
 
     public string SummarySelection => SelectAll ? "Alles in diesem Ordner" : Format.Count(Selection.Collect().Count, "ausgewähltes Element", "ausgewählte Elemente");
 
@@ -105,7 +106,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
     partial void OnStepChanged(AddSyncStep value)
     {
         Error = "";
-        foreach (var name in new[] { nameof(StepTitle), nameof(StepText), nameof(CanGoBack), nameof(PrimaryText), nameof(IsLastStep), nameof(SummarySelection), nameof(SummaryOptions), nameof(ChosenFolderText) })
+        foreach (var name in new[] { nameof(StepTitle), nameof(StepText), nameof(CanGoBack), nameof(PrimaryText), nameof(IsLastStep), nameof(SummarySelection), nameof(SummaryOptions), nameof(ChosenFolderText), nameof(SelectionHint), nameof(HasSelectionHint) })
             OnPropertyChanged(name);
     }
 
@@ -138,24 +139,23 @@ public sealed partial class AddSyncViewModel : ObservableObject
     private async Task<IReadOnlyList<FolderNode>> LoadFoldersAsync(FolderNode parent)
     {
         var entries = await _host.Accounts.ListAsync(Account!.Id, parent.Path, includeFiles: false);
-        return entries.Select(e => new FolderNode(e.Name, e.Path, true, 0, parent, LoadFoldersAsync)).ToList();
+        return entries.Select(e => new FolderNode(CloudFolderNames.Show(Account.Kind, e.Name, e.Path), e.Path, true, 0, parent, LoadFoldersAsync)).ToList();
     }
 
     private string BasePath => ChosenFolder?.Path ?? "";
 
     /// <summary>
-    /// IServ's top folders only hold other folders: "Files" (Eigene Dateien) and "Groups" with a folder per group. Files
-    /// cannot be stored at the top or in "Groups" itself, so neither can be synchronised as a whole.
+    /// For IServ's top folders, which hold nothing but other folders: the whole account ("Eigene Dateien" and "Gruppen")
+    /// and "Gruppen" with a folder per group. Everything can be synchronised, or the folders ticked one by one.
     /// </summary>
-    private string? IServFolderWithoutFiles(string path)
+    public string SelectionHint => Account?.Kind != WebDavKind.IServ || ChosenFolder is null ? "" : ChosenFolder.Path.Trim('/') switch
     {
-        if (Account?.Kind != WebDavKind.IServ) return null;
-        if (path.Length == 0)
-            return "Bei IServ lässt sich das Konto nicht als Ganzes synchronisieren. Wähle „Files“ (Eigene Dateien), einen Ordner darin oder einen Gruppenordner in „Groups“.";
-        if (path.Equals("Groups", StringComparison.OrdinalIgnoreCase))
-            return "„Groups“ enthält bei IServ nur die Ordner deiner Gruppen und nimmt selbst keine Dateien auf. Öffne den Ordner und wähle die Gruppe, die du synchronisieren möchtest.";
-        return null;
-    }
+        "" => "Das ganze Konto: „Eigene Dateien“ und „Gruppen“. Synchronisiere alles – oder hake an, welche Ordner und Gruppen auf diesen PC sollen.",
+        "Groups" => "Hier liegen die Ordner deiner Gruppen. Synchronisiere alle Gruppen – oder hake an, welche auf diesen PC sollen.",
+        _ => "",
+    };
+
+    public bool HasSelectionHint => SelectionHint.Length > 0;
 
     private async Task LoadSelectionAsync()
     {
@@ -250,11 +250,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
                     Error = "Bitte wähle einen Ordner aus.";
                     return;
                 }
-                if (IServFolderWithoutFiles(SelectedFolder.Path) is { } hint)
-                {
-                    Error = hint;
-                    return;
-                }
+
                 if (ChosenFolder?.Path != SelectedFolder.Path || Selection.Roots.Count == 0)
                 {
                     ChosenFolder = SelectedFolder;
@@ -334,13 +330,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
             Result = await _host.Sync.AddAsync(BuildDraft());
             CloseRequested?.Invoke(this, EventArgs.Empty);
         }
-        catch (CdException e) when (e.Code == "CD-4511")
-        {
-            // The cloud folder itself is the problem: back to choosing it.
-            Step = AddSyncStep.Folder;
-            var entry = ErrorCatalog.Get(e.Code);
-            Error = $"{entry.Title}. {entry.Fix}";
-        }
+
         catch (CdException e)
         {
             var entry = ErrorCatalog.Get(e.Code);

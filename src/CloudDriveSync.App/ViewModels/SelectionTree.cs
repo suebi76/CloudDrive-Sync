@@ -1,7 +1,8 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CloudDriveSync.Core;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;
+using CloudDriveSync.Core.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CloudDriveSync.App.ViewModels;
@@ -16,6 +17,7 @@ public sealed partial class SelectionTree(CloudDriveSyncHost host) : ObservableO
     private readonly List<string> _saved = [];
     private string _accountId = "";
     private string _basePath = "";
+    private WebDavKind _kind;
 
     public ObservableCollection<FolderNode> Roots { get; } = [];
 
@@ -32,6 +34,7 @@ public sealed partial class SelectionTree(CloudDriveSyncHost host) : ObservableO
     {
         _accountId = accountId;
         _basePath = basePath;
+        _kind = host.Accounts.Find(accountId)?.Kind ?? WebDavKind.Other;
         _saved.Clear();
         _saved.AddRange(saved);
         Roots.Clear();
@@ -83,7 +86,7 @@ public sealed partial class SelectionTree(CloudDriveSyncHost host) : ObservableO
     }
 
     private FolderNode Node(RemoteEntry entry, FolderNode? parent) =>
-        new(entry.Name, entry.Path, entry.IsDirectory, entry.Size, parent, entry.IsDirectory ? LoadChildrenAsync : null, InitialCheck(entry, parent));
+        new(CloudFolderNames.Show(_kind, entry.Name, entry.Path), entry.Path, entry.IsDirectory, entry.Size, parent, entry.IsDirectory ? LoadChildrenAsync : null, InitialCheck(entry, parent));
 
     /// <summary>Ticks as they were saved; inside a ticked folder everything is ticked.</summary>
     private bool? InitialCheck(RemoteEntry entry, FolderNode? parent)

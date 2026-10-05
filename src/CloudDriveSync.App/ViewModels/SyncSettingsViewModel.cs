@@ -1,5 +1,6 @@
-using CloudDriveSync.App.Infrastructure;
+﻿using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -22,7 +23,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         _pair = pair;
         Selection = new SelectionTree(host);
         var account = host.Accounts.Find(pair.AccountId);
-        CloudText = $"{account?.Label ?? pair.AccountId} › {(pair.RemotePath.Length == 0 ? "Alles" : pair.RemotePath.Replace("/", " › "))}";
+        CloudText = $"{account?.Label ?? pair.AccountId} › {CloudFolderNames.ShowPath(account?.Kind ?? WebDavKind.Other, pair.RemotePath)}";
         CloudWithoutTimes = account is { Kind: not WebDavKind.Nextcloud };
         SelectAll = pair.Selection.Mode == SelectionMode.All;
         IntervalMinutes = pair.IntervalMinutes;

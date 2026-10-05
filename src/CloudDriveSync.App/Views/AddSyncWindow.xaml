@@ -62,6 +62,9 @@
             <!-- 2. Everything or a selection -->
             <DockPanel Visibility="{Binding Step, Converter={StaticResource VisibleIf}, ConverterParameter=Selection}">
                 <TextBlock DockPanel.Dock="Top" Text="{Binding ChosenFolderText}" Style="{StaticResource Strong}" Margin="0,0,0,12" />
+                <Border DockPanel.Dock="Top" Style="{StaticResource InfoBar}" Margin="0,0,0,12" Visibility="{Binding HasSelectionHint, Converter={StaticResource Visible}}">
+                    <TextBlock Text="{Binding SelectionHint}" TextWrapping="Wrap" />
+                </Border>
                 <RadioButton DockPanel.Dock="Top" GroupName="Selection" IsChecked="{Binding SelectAll}" Margin="0,0,0,8" AutomationProperties.Name="Alles in diesem Ordner">
                     <StackPanel>
                         <TextBlock Text="Alles in diesem Ordner" />

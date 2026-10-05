@@ -88,9 +88,10 @@ public sealed class SyncService : IAsyncDisposable
         var sentinel = Path.Combine(local, SyncFilters.SentinelFile);
         var newSentinel = !File.Exists(sentinel);
         Directory.CreateDirectory(local);
+        bool cloudCheckFile;
         try
         {
-            await PlaceSentinelsAsync(account, remotePath, local, cancellationToken);
+            cloudCheckFile = await PlaceSentinelsAsync(account, remotePath, local, tryCloud: true, cancellationToken);
         }
         catch (CdException)
         {
@@ -113,6 +114,7 @@ public sealed class SyncService : IAsyncDisposable
             OnLocalChange = draft.OnLocalChange,
             MaxDeletePercent = Math.Clamp(draft.MaxDeletePercent, 1, 100),
             Created = DateTimeOffset.Now,
+            CloudCheckFile = cloudCheckFile,
         };
         var folder = _paths.SyncPairDir(pair.Id);
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
@@ -181,9 +183,9 @@ public sealed class SyncService : IAsyncDisposable
         {
             var pair = s.Syncs.FirstOrDefault(p => p.Id == id);
             if (pair is null) return;
-            before = SyncFilters.Build(pair.Selection);
+            before = SyncFilters.Build(pair.Selection, pair.CloudCheckFile);
             change(pair);
-            after = SyncFilters.Build(pair.Selection);
+            after = SyncFilters.Build(pair.Selection, pair.CloudCheckFile);
         });
         var worker = Worker(id);
         worker?.SettingsChanged();
@@ -209,17 +211,31 @@ public sealed class SyncService : IAsyncDisposable
     /// <summary>After the account was signed in again.</summary>
     public void Retry(string id) => Worker(id)?.Request(BisyncMode.Normal, answersDecision: true);
 
+    /// <summary>Files the server did not take stay on the PC and out of the synchronisation - without a rebuild.</summary>
+    public void KeepLocalOnly(string id, IEnumerable<string> paths) => _settings.Update(s =>
+    {
+        if (s.Syncs.FirstOrDefault(p => p.Id == id) is not { } pair) return;
+        foreach (var path in paths)
+            if (!pair.LocalOnly.Contains(path, StringComparer.OrdinalIgnoreCase)) pair.LocalOnly.Add(path);
+    });
+
+    /// <summary>The files that stayed on the PC take part again; those the server still does not take stay again.</summary>
+    public void RetryLocalOnly(string id)
+    {
+        _settings.Update(s => s.Syncs.FirstOrDefault(p => p.Id == id)?.LocalOnly.Clear());
+        Worker(id)?.Request(BisyncMode.Normal, answersDecision: true);
+    }
+
     /// <summary>Puts the sentinel files back (the folder was moved or the file deleted) and rebuilds.</summary>
     public async Task RepairAsync(string id, CancellationToken cancellationToken = default)
     {
         var pair = FindPair(id) ?? throw new CdException("CD-9000", $"unknown synchronisation '{id}'");
         var account = _accounts.Find(pair.AccountId) ?? throw new CdException("CD-9000", $"unknown account '{pair.AccountId}'");
         if (!Directory.Exists(pair.LocalPath)) throw new CdException("CD-4501", pair.LocalPath);
-        await PlaceSentinelsAsync(account, pair.RemotePath, pair.LocalPath, cancellationToken);
+        await PlaceSentinelsAsync(account, pair.RemotePath, pair.LocalPath, tryCloud: pair.CloudCheckFile, cancellationToken);
         Worker(id)?.Request(BisyncMode.Resync, answersDecision: true);
     }
 
-    /// <summary>The most recent runs of a synchronisation, newest first.</summary>
     /// <summary>What the synchronisation deleted or replaced on the PC, newest first.</summary>
     public IReadOnlyList<TrashEntry> Trash(string id) => FindPair(id) is { } pair ? SyncTrash.List(pair.Id, pair.LocalPath) : [];
 
@@ -273,7 +289,12 @@ public sealed class SyncService : IAsyncDisposable
         return records;
     }
 
-    private async Task PlaceSentinelsAsync(AccountSettings account, string remotePath, string local, CancellationToken cancellationToken)
+    /// <summary>
+    /// Puts the protection file into the folder on the PC and - with <paramref name="tryCloud"/> - into the cloud folder.
+    /// False when the server takes no file there (IServ: "Groups" itself, the whole account; folders to read only):
+    /// the synchronisation then checks the cloud folder itself (<see cref="CloudFolderCheck"/>).
+    /// </summary>
+    private async Task<bool> PlaceSentinelsAsync(AccountSettings account, string remotePath, string local, bool tryCloud, CancellationToken cancellationToken)
     {
         var sentinel = Path.Combine(local, SyncFilters.SentinelFile);
         if (!File.Exists(sentinel))
@@ -283,6 +304,7 @@ public sealed class SyncService : IAsyncDisposable
                 cancellationToken);
         }
         File.SetAttributes(sentinel, File.GetAttributes(sentinel) | FileAttributes.Hidden);
+        if (!tryCloud) return false;
         var rc = await _engine.EnsureRunningAsync(cancellationToken);
         var cloud = AccountService.RemoteName(account.Id) + ":";
         if (remotePath.Length > 0)
@@ -297,12 +319,14 @@ public sealed class SyncService : IAsyncDisposable
                 ["dstRemote"] = Join(remotePath, SyncFilters.SentinelFile),
             }, TimeSpan.FromMinutes(2), cancellationToken);
         }
-        catch (CdException e) when (e.Code == "CD-9000")
+        catch (CdException e) when (e.Code is "CD-9000" or "CD-4511")
         {
-            // The folder is there, but the server refuses a new file in it - servers answer that in many ways
-            // (IServ: 500, others 403 or 404). A two-way synchronisation needs to write there.
-            throw new CdException("CD-4511", e.Detail, e);
+            // The folder is there, but the server takes no new file in it - servers answer that in many ways (IServ:
+            // 500, others 403 or 404). No connection or sign-in still end the setup.
+            Log.Info("Sync", $"No protection file in the cloud folder '{remotePath}' ({e.Detail}); it is checked before each run instead.");
+            return false;
         }
+        return true;
     }
 
     private PairWorker WorkerFor(string id)
@@ -649,6 +673,13 @@ public sealed class SyncService : IAsyncDisposable
                 _saved.Decision, outcome.Conflicts, _saved.FirstSyncDone));
 
             var name = Describe(pair, account);
+            if (outcome.LocalOnlyAdded is { Count: > 0 } kept)
+            {
+                _service.KeepLocalOnly(_id, kept);
+                _service.Notice?.Invoke(_service, new SyncNotice(_id, SyncNoticeKind.NeedsAttention, name,
+                    kept.Count == 1 ? $"„{Path.GetFileName(kept[0])}“ bleibt nur auf diesem PC – der Server hat die Datei nicht angenommen."
+                        : $"{kept.Count} Dateien bleiben nur auf diesem PC – der Server hat sie nicht angenommen."));
+            }
             if (outcome.Conflicts.Count > previousConflicts)
                 _service.Notice?.Invoke(_service, new SyncNotice(_id, SyncNoticeKind.Conflicts, name,
                     $"{outcome.Conflicts.Count - previousConflicts} Konflikt(e): Beide Fassungen sind erhalten. Bitte prüfen."));

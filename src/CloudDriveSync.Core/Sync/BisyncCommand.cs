@@ -34,7 +34,8 @@ public static class BisyncCommand
             ["workdir"] = workDir,
             ["filtersFile"] = filtersFile,
             // A sentinel file on both sides: is a folder gone or moved, bisync stops instead of deleting everything.
-            ["checkAccess"] = true,
+            // Without one in the cloud, SyncRunner checks the cloud folder itself before the run (CloudFolderCheck).
+            ["checkAccess"] = pair.CloudCheckFile,
             ["checkFilename"] = SyncFilters.SentinelFile,
             // More deletions than allowed stop the run until the user decides.
             ["maxDelete"] = Math.Clamp(pair.MaxDeletePercent, 1, 100),

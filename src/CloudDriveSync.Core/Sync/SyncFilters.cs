@@ -25,14 +25,21 @@ public static class SyncFilters
         "*.partial",
     ];
 
-    public static string Build(SyncSelection selection)
+    /// <summary>The filter of a synchronisation, with the files that stay on the PC.</summary>
+    public static string Build(SyncPairSettings pair) => Build(pair.Selection, pair.CloudCheckFile, pair.LocalOnly);
+
+    /// <param name="cloudCheckFile">The protection file lies in the cloud, too (see <see cref="SyncPairSettings.CloudCheckFile"/>).</param>
+    /// <param name="localOnly">Files that stay on the PC (see <see cref="SyncPairSettings.LocalOnly"/>).</param>
+    public static string Build(SyncSelection selection, bool cloudCheckFile = true, IEnumerable<string>? localOnly = null)
     {
         var text = new StringBuilder();
         text.AppendLine("# CloudDrive-Sync - automatisch erzeugt, nicht von Hand ändern");
         foreach (var pattern in StandardExcludes) text.AppendLine("- " + pattern);
         foreach (var pattern in selection.Exclude.Where(p => !string.IsNullOrWhiteSpace(p)))
             text.AppendLine("- " + pattern.Trim());
-        text.AppendLine($"+ /{SentinelFile}");
+        // On both sides the protection file is part of the synchronisation; where only the PC has it, it stays out.
+        text.AppendLine(cloudCheckFile ? $"+ /{SentinelFile}" : $"- /{SentinelFile}");
+        foreach (var path in localOnly ?? []) text.AppendLine($"- /{EscapeGlob(path)}");
         if (selection.Mode == SelectionMode.Selected)
         {
             foreach (var path in Normalise(selection.Include))
@@ -40,6 +47,31 @@ public static class SyncFilters
             text.AppendLine("- **");
         }
         return text.ToString();
+    }
+
+    /// <summary>
+    /// Writes the filter file of a synchronisation. bisync demands a rebuild whenever the file changes - right for a
+    /// new selection, needless when only files that stay on the PC came or went: then bisync's checksum of the file
+    /// (filter.txt.md5) is renewed, too. "filter-base.txt" keeps the filter without those files to tell both apart.
+    /// </summary>
+    internal static void Write(string pairFolder, string filtersFile, SyncPairSettings pair)
+    {
+        var baseFile = Path.Combine(pairFolder, "filter-base.txt");
+        var baseContent = Build(pair.Selection, pair.CloudCheckFile);
+        var content = Build(pair);
+        var current = File.Exists(filtersFile) ? File.ReadAllText(filtersFile) : null;
+        // Filters written before files could stay on the PC are their own base.
+        var knownBase = File.Exists(baseFile) ? File.ReadAllText(baseFile) : current;
+        if (current == content)
+        {
+            if (!File.Exists(baseFile)) File.WriteAllText(baseFile, baseContent);
+            return;
+        }
+        File.WriteAllText(filtersFile, content);
+        File.WriteAllText(baseFile, baseContent);
+        var checksum = filtersFile + ".md5";
+        if (knownBase == baseContent && File.Exists(checksum))
+            File.WriteAllText(checksum, Convert.ToHexStringLower(System.Security.Cryptography.MD5.HashData(File.ReadAllBytes(filtersFile))));
     }
 
     /// <summary>Selected paths with "/" separators, without duplicates and without entries inside chosen folders.</summary>

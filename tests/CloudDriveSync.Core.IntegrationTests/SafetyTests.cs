@@ -6,17 +6,89 @@ namespace CloudDriveSync.Core.IntegrationTests;
 /// <summary>The safety nets: nothing is deleted on a hunch, and every stop can be resolved by the user.</summary>
 public class SafetyTests
 {
-    [Fact]
-    public async Task A_cloud_folder_without_the_right_to_write_is_explained_and_leaves_nothing_behind()
+    /// <summary>Like IServ's "Groups": the folder takes no files, the groups below it bring theirs.</summary>
+    private static async Task<SyncWorld> FolderWithoutFilesAsync()
     {
-        await using var world = await SyncWorld.CreateAsync(readOnlyServer: true);
+        var world = await SyncWorld.CreateAsync(readOnlyServer: true);
+        world.WriteCloud("Gruppe A/Plan.txt", "Plan");
+        world.WriteCloud("Gruppe A/Material/Blatt 1.txt", "Blatt 1");
+        world.WriteCloud("Gruppe B/Liste.txt", "Liste");
         await world.AddAccountAsync();
-        var error = await Assert.ThrowsAsync<CdException>(() => world.AddPairAsync());
-        Assert.Equal("CD-4511", error.Code);
-        // The folders the setup had created on the PC are gone again.
-        Assert.False(Directory.Exists(world.Local));
-        Assert.False(Directory.Exists(Path.GetDirectoryName(world.Local)));
-        Assert.Empty(world.Host.Sync.Pairs);
+        await world.AddPairAsync();
+        return world;
+    }
+
+    [Fact]
+    public async Task A_cloud_folder_that_takes_no_files_is_synchronised_without_a_protection_file_there()
+    {
+        await using var world = await FolderWithoutFilesAsync();
+        Assert.False(world.Pair.CloudCheckFile);
+        Assert.False(File.Exists(world.Cloud(SyncFilters.SentinelFile)));
+        Assert.True(File.Exists(world.Pc(SyncFilters.SentinelFile)));
+        var first = await world.RunAsync(BisyncMode.Resync);
+        Assert.True(first.Success, $"{first.ErrorCode}: {first.ErrorDetail}");
+        Assert.Equal("Blatt 1", world.ReadPc("Gruppe A/Material/Blatt 1.txt"));
+        Assert.Equal("Liste", world.ReadPc("Gruppe B/Liste.txt"));
+        // News from the server arrive as usual.
+        world.WriteCloud("Gruppe B/Neu.txt", "Neu", later: true);
+        var second = await world.RunAsync();
+        Assert.True(second.Success, $"{second.ErrorCode}: {second.ErrorDetail}");
+        Assert.Equal("Neu", world.ReadPc("Gruppe B/Neu.txt"));
+        var quiet = await world.RunAsync();
+        Assert.True(quiet.Success, $"{quiet.ErrorCode}: {quiet.ErrorDetail}");
+        Assert.Equal(0, quiet.Final.Transfers);
+    }
+
+    [Fact]
+    public async Task A_change_the_server_does_not_take_stays_on_the_PC_and_the_rest_goes_on()
+    {
+        await using var world = await FolderWithoutFilesAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        world.WritePc("Gruppe A/Meins.txt", "Meins");
+        world.WriteCloud("Gruppe B/Neu.txt", "Neu", later: true);
+        // The server does not take the file: it stays on the PC, the rest of the run goes on - no rebuild.
+        var refused = await world.RunAsync();
+        Assert.True(refused.Success, $"{refused.ErrorCode}: {refused.ErrorDetail}");
+        Assert.Equal(["Gruppe A/Meins.txt"], refused.LocalOnlyAdded);
+        Assert.Equal("Neu", world.ReadPc("Gruppe B/Neu.txt"));
+        Assert.True(File.Exists(world.Pc("Gruppe A/Meins.txt")));
+        Assert.False(File.Exists(world.Cloud("Gruppe A/Meins.txt")));
+        world.Host.Sync.KeepLocalOnly(world.Pair.Id, refused.LocalOnlyAdded!);
+        // The following runs are quiet; news from the server still arrive.
+        world.WriteCloud("Gruppe B/Später.txt", "Später", later: true);
+        var next = await world.RunAsync();
+        Assert.True(next.Success, $"{next.ErrorCode}: {next.ErrorDetail}");
+        Assert.Equal("Später", world.ReadPc("Gruppe B/Später.txt"));
+        var quiet = await world.RunAsync();
+        Assert.True(quiet.Success, $"{quiet.ErrorCode}: {quiet.ErrorDetail}");
+        Assert.Equal(0, quiet.Final.Transfers);
+        Assert.Equal("Meins", world.ReadPc("Gruppe A/Meins.txt"));
+        Assert.Equal("Plan", world.ReadPc("Gruppe A/Plan.txt"));
+        // Trying again: still refused, so it stays on the PC again - without a rebuild.
+        world.Host.Sync.RetryLocalOnly(world.Pair.Id);
+        var retried = await world.RunAsync();
+        Assert.True(retried.Success, $"{retried.ErrorCode}: {retried.ErrorDetail}");
+        Assert.Equal(["Gruppe A/Meins.txt"], retried.LocalOnlyAdded);
+    }
+
+    [Fact]
+    public async Task A_cloud_folder_without_a_protection_file_that_suddenly_looks_empty_stops_the_run()
+    {
+        await using var world = await FolderWithoutFilesAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        Assert.True((await world.RunAsync()).Success);
+        // On the server everything is gone at once (renamed, access taken away, a wrong answer).
+        foreach (var entry in Directory.EnumerateFileSystemEntries(world.Cloud("")))
+        {
+            if (Directory.Exists(entry)) Directory.Delete(entry, recursive: true);
+            else File.Delete(entry);
+        }
+        var stopped = await world.RunAsync();
+        Assert.False(stopped.Success);
+        Assert.Equal("CD-4512", stopped.ErrorCode);
+        Assert.Equal(SyncDecision.Folder, stopped.Decision);
+        Assert.Equal("Plan", world.ReadPc("Gruppe A/Plan.txt"));
+        Assert.Equal("Liste", world.ReadPc("Gruppe B/Liste.txt"));
     }
 
     [Fact]

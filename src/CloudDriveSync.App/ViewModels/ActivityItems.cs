@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Sync;
@@ -14,7 +14,7 @@ public sealed class ActivityItem
         Started = run.Started;
         PairTitle = pairTitle;
         Time = Format.Time(run.Started);
-        Tone = run.Success ? Tone.Ok : run.ErrorCode is "CD-4502" or "CD-4503" or "CD-4504" or "CD-4509" or "CD-3012" ? Tone.Warning : Tone.Error;
+        Tone = run.Success ? Tone.Ok : run.ErrorCode is "CD-4502" or "CD-4503" or "CD-4504" or "CD-4509" or "CD-4510" or "CD-4511" or "CD-4512" or "CD-3012" ? Tone.Warning : Tone.Error;
         Glyph = run.Success ? Glyphs.Done : Tone == Tone.Warning ? Glyphs.Warning : Glyphs.Error;
         if (run.Success)
         {

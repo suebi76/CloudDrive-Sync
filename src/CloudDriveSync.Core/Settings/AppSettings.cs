@@ -93,6 +93,16 @@ public sealed class SyncPairSettings
     public int MaxDeletePercent { get; set; } = 50;
     public bool Paused { get; set; }
     public DateTimeOffset Created { get; set; }
+    /// <summary>
+    /// The protection file lies in the cloud folder as well. Some folders take no files (IServ: "Groups" itself, the
+    /// whole account; folders to read only) - then CloudDrive-Sync checks the cloud folder itself before each run.
+    /// </summary>
+    public bool CloudCheckFile { get; set; } = true;
+    /// <summary>
+    /// Files the server did not take (a folder to read only), relative and "/" separated. They stay on this PC and out
+    /// of the synchronisation until the user tries them again.
+    /// </summary>
+    public List<string> LocalOnly { get; set; } = [];
 }
 
 public sealed class Preferences

@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
@@ -16,7 +17,8 @@ public sealed record SyncRunOutcome(
     JobProgress Final,
     long Deletes,
     IReadOnlyList<string> Conflicts,
-    bool Retryable);
+    bool Retryable,
+    IReadOnlyList<string>? LocalOnlyAdded = null);
 
 /// <summary>
 /// Carries out one run of a synchronisation: checks first (folder and sentinel file there, engine running), then
@@ -64,7 +66,12 @@ public sealed partial class SyncRunner
         var workDir = Path.Combine(folder, "bisync");
         Directory.CreateDirectory(workDir);
         var filtersFile = Path.Combine(folder, "filter.txt");
-        WriteIfChanged(filtersFile, SyncFilters.Build(pair.Selection));
+        SyncFilters.Write(folder, filtersFile, pair);
+        if (!pair.CloudCheckFile && await CloudFolderCheck.ProblemAsync(rc, pair, folder, cancellationToken) is { } problem)
+        {
+            Log.Warn("Sync", $"Run of '{pair.Id}' stopped: {problem}.");
+            return Failed("CD-4512", problem, SyncDecision.Folder, retryable: false);
+        }
         if (mode != BisyncMode.Resync)
         {
             try
@@ -145,6 +152,17 @@ public sealed partial class SyncRunner
         }
 
         var text = report + "\n" + result.Error;
+        // Files the server did not take (a folder to read only) stay on the PC and out of the synchronisation; the run
+        // is repeated without them - nothing is lost and no rebuild is needed.
+        if (repeatAllowed && RunSafety.RefusedUploads(report, BisyncCommand.CloudPath(pair)) is { Count: > 0 } refused
+            && (mode == BisyncMode.Resync || RunSafety.RestoreGoodState(workDir, folder)))
+        {
+            var kept = Copy(pair);
+            kept.LocalOnly = kept.LocalOnly.Union(refused, StringComparer.OrdinalIgnoreCase).ToList();
+            Log.Info("Sync", $"'{pair.Id}': {refused.Count} file(s) the server did not take stay on the PC; the run is repeated without them.");
+            var again = await RunCoreAsync(kept, account, mode, resyncMode, progress, cancellationToken, keepTrash, repeatAllowed: false);
+            return again with { LocalOnlyAdded = refused };
+        }
         // Names that differ only in upper and lower case: the PC takes the server's spelling and the run is repeated once.
         if (repeatAllowed && mode != BisyncMode.Resync && CaseRenames.OutOfSync(report) is { Count: > 0 } outOfSync)
         {
@@ -181,7 +199,9 @@ public sealed partial class SyncRunner
             "CD-3012" => SyncDecision.SignIn,
             _ => SyncDecision.None,
         };
-        var retryable = decision == SyncDecision.None;
+        // Changes the server does not take (a folder to read only) stay on the PC; trying again every minute would
+        // not help - the next regular run tries again.
+        var retryable = decision == SyncDecision.None && code != "CD-4511";
         var detail = Summarise(report, result.Error);
         Log.Warn("Sync", $"Run of '{pair.Id}' failed: {code} {detail}");
         return new SyncRunOutcome(false, code, detail, decision, final, deletes, conflicts, retryable);
@@ -208,12 +228,8 @@ public sealed partial class SyncRunner
     private static SyncRunOutcome Failed(string code, string detail, SyncDecision decision, bool retryable) =>
         new(false, code, detail, decision, JobProgress.None, 0, [], retryable);
 
-    private static void WriteIfChanged(string file, string content)
-    {
-        // Rewriting the same content keeps bisync's checksum of the filter file - no needless rebuild.
-        if (File.Exists(file) && File.ReadAllText(file) == content) return;
-        File.WriteAllText(file, content);
-    }
+    private static SyncPairSettings Copy(SyncPairSettings pair) =>
+        JsonSerializer.Deserialize<SyncPairSettings>(JsonSerializer.Serialize(pair, SettingsStore.JsonOptions), SettingsStore.JsonOptions)!;
 
     private static void WriteReport(string folder, string report)
     {
