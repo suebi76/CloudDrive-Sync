@@ -13,9 +13,10 @@ internal static class TestBuildMigration
 {
     private const string OldName = "CloudDrives2";
 
-    public static void Run(AppPaths paths)
+    /// <summary>Takes the data over; returns how many items moved (logged by the caller once the log is set up).</summary>
+    public static int Run(AppPaths paths)
     {
-        if (!paths.IsDefaultHome) return;
+        if (!paths.IsDefaultHome) return 0;
         var oldHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), OldName);
         var moved = 0;
         try
@@ -48,6 +49,6 @@ internal static class TestBuildMigration
             moved++;
         }
         Autostart.Apply(false, OldName);
-        if (moved > 0) Log.Info("App", $"Data of the test build \"CloudDrives 2\" taken over ({moved} item(s)).");
+        return moved;
     }
 }
