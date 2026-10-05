@@ -1,4 +1,6 @@
-﻿using CloudDriveSync.Core.Accounts;
+﻿using System.ComponentModel;
+using System.Diagnostics;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
 
@@ -14,9 +16,10 @@ internal sealed class SyncWorld : IAsyncDisposable
     public const string Password = "test-passwort-7f3k";
     public const string CloudFolder = "Eigene Dateien";
 
-    private SyncWorld(string root, string cloudRoot, string local, WebDavKind kind, WebDavServer server, CloudDriveSyncHost host)
+    private SyncWorld(string root, string cloudRoot, bool caseSensitive, string local, WebDavKind kind, WebDavServer server, CloudDriveSyncHost host)
     {
         Root = root;
+        CaseSensitiveCloud = caseSensitive;
         CloudRoot = cloudRoot;
         Local = local;
         Kind = kind;
@@ -27,6 +30,8 @@ internal sealed class SyncWorld : IAsyncDisposable
 
     public string Root { get; }
     public string CloudRoot { get; }
+    /// <summary>The server tells upper and lower case apart, like IServ and Nextcloud.</summary>
+    public bool CaseSensitiveCloud { get; }
     public string Local { get; }
     public WebDavKind Kind { get; }
     public WebDavServer Server { get; }
@@ -41,6 +46,9 @@ internal sealed class SyncWorld : IAsyncDisposable
         var cloudRoot = Path.Combine(root, "cloud");
         // Spaces and umlauts on purpose.
         var local = Path.Combine(root, "pc", "Schule Übungen");
+        Directory.CreateDirectory(cloudRoot);
+        // Folders created in it later take the flag over.
+        var caseSensitive = MakeCaseSensitive(cloudRoot);
         Directory.CreateDirectory(Path.Combine(cloudRoot, CloudFolder));
         var paths = new AppPaths(Path.Combine(root, "home"));
         paths.EnsureCreated();
@@ -51,7 +59,7 @@ internal sealed class SyncWorld : IAsyncDisposable
         var basePath = kind == WebDavKind.Nextcloud ? $"/remote.php/dav/files/{User}" : "";
         var server = await WebDavServer.StartAsync(await TestRclone.ExeAsync(), cloudRoot, User, Password, serverConfig, basePath);
         var host = new CloudDriveSyncHost(paths);
-        var world = new SyncWorld(root, cloudRoot, local, kind, server, host);
+        var world = new SyncWorld(root, cloudRoot, caseSensitive, local, kind, server, host);
         try
         {
             await host.Engine.StartAsync();
@@ -61,6 +69,28 @@ internal sealed class SyncWorld : IAsyncDisposable
         {
             await world.DisposeAsync();
             throw;
+        }
+    }
+
+    private static bool MakeCaseSensitive(string folder)
+    {
+        try
+        {
+            var start = new ProcessStartInfo("fsutil.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (var argument in new[] { "file", "setCaseSensitiveInfo", folder, "enable" }) start.ArgumentList.Add(argument);
+            using var process = Process.Start(start)!;
+            process.WaitForExit(15000);
+            return process.HasExited && process.ExitCode == 0;
+        }
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException)
+        {
+            return false;
         }
     }
 
@@ -144,6 +174,45 @@ internal sealed class SyncWorld : IAsyncDisposable
 
     private static IReadOnlyList<string> Contents(string folder) =>
         Directory.Exists(folder) ? Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Select(File.ReadAllText).ToList() : [];
+
+    /// <summary>Folders of the synchronised cloud folder (without CloudDrive-Sync's own), relative, sorted.</summary>
+    public IReadOnlyList<string> CloudFolders() => Folders(Path.Combine(CloudRoot, CloudFolder));
+
+    public IReadOnlyList<string> PcFolders() => Folders(Local);
+
+    /// <summary>Both sides hold exactly the same folders and files, byte for byte.</summary>
+    public void AssertInStep()
+    {
+        Assert.Equal(CloudFolders(), PcFolders());
+        var files = PcFiles();
+        Assert.Equal(CloudFiles(), files);
+        foreach (var file in files)
+            Assert.True(File.ReadAllBytes(Cloud(file)).AsSpan().SequenceEqual(File.ReadAllBytes(Pc(file))), $"content differs: {file}");
+    }
+
+    /// <summary>One run brings both sides in step; the next one has nothing left to do (no back and forth).</summary>
+    public async Task<SyncRunOutcome> SyncAndAssertInStepAsync()
+    {
+        var outcome = await RunAsync();
+        Assert.True(outcome.Success, $"{outcome.ErrorCode}: {outcome.ErrorDetail}");
+        AssertInStep();
+        var again = await RunAsync();
+        Assert.True(again.Success, $"{again.ErrorCode}: {again.ErrorDetail}");
+        Assert.Equal(0, again.Final.Transfers);
+        Assert.Equal(0, again.Deletes);
+        AssertInStep();
+        return outcome;
+    }
+
+    private static IReadOnlyList<string> Folders(string folder)
+    {
+        if (!Directory.Exists(folder)) return [];
+        return Directory.EnumerateDirectories(folder, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(folder, f).Replace('\\', '/'))
+            .Where(f => !f.StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+    }
 
     /// <summary>Reads a file another process still has open (the engine's log).</summary>
     public static string ReadShared(string file)

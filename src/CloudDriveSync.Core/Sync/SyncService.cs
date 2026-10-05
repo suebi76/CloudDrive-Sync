@@ -331,7 +331,8 @@ public sealed class SyncService : IAsyncDisposable
     /// <summary>Keeps one synchronisation in step: interval timer, folder watcher, one run at a time.</summary>
     private sealed class PairWorker
     {
-        private static readonly TimeSpan LocalChangeDelay = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan LocalChangeDelay = TimeSpan.FromSeconds(5);
+
         private readonly SyncService _service;
         private readonly string _id;
         private readonly object _lock = new();
@@ -340,6 +341,8 @@ public sealed class SyncService : IAsyncDisposable
         private FileSystemWatcher? _watcher;
         private Timer? _interval;
         private Timer? _debounce;
+        private Timer? _retry;
+        private int _failures;
         private (BisyncMode Mode, bool AnswersDecision)? _pending;
         private CancellationTokenSource? _skipDelay;
         private bool _running;
@@ -427,6 +430,19 @@ public sealed class SyncService : IAsyncDisposable
                 // Waits until changes have calmed down for a moment (e.g. Office saving a document in several steps).
                 _debounce ??= new Timer(_ => Request(BisyncMode.Normal));
                 _debounce.Change(LocalChangeDelay, Timeout.InfiniteTimeSpan);
+            }
+            // Shown at once, so nobody wonders whether the change was noticed.
+            if (State.Status == SyncStatus.Idle) Publish(State with { Status = SyncStatus.Waiting, Activity = "Änderung am PC erkannt – wird gleich übertragen …" });
+        }
+
+        /// <summary>After a failure that passes by itself (a file in use, the network): tries again soon.</summary>
+        private void ScheduleRetry(TimeSpan delay)
+        {
+            lock (_lock)
+            {
+                if (_stopped) return;
+                _retry ??= new Timer(_ => Request(BisyncMode.Normal));
+                _retry.Change(delay, Timeout.InfiniteTimeSpan);
             }
         }
 
@@ -527,7 +543,12 @@ public sealed class SyncService : IAsyncDisposable
                 mode = BisyncMode.Resync;
                 kind = "Erster Abgleich";
             }
-            else if (mode == BisyncMode.Resync) kind = "Neuaufbau";
+            else if (mode == BisyncMode.Resync || _saved.ResyncPending)
+            {
+                // A rebuild that broke off is finished first; it never deletes anything.
+                mode = BisyncMode.Resync;
+                kind = "Neuaufbau";
+            }
             else if (mode == BisyncMode.Force) kind = "Änderungen übernehmen";
 
             var started = DateTimeOffset.Now;
@@ -551,6 +572,8 @@ public sealed class SyncService : IAsyncDisposable
             var finished = DateTimeOffset.Now;
             var previousError = _saved.ErrorCode;
             _saved.LastRun = finished;
+            if (mode == BisyncMode.Resync && _saved.FirstSyncDone) _saved.ResyncPending = !outcome.Success;
+            _failures = outcome.Success ? 0 : _failures + 1;
             if (outcome.Success)
             {
                 _saved.FirstSyncDone = true;
@@ -566,8 +589,10 @@ public sealed class SyncService : IAsyncDisposable
                 if (outcome.Decision != SyncDecision.None) _saved.Decision = outcome.Decision;
             }
             SaveState();
-            Record(new SyncRunRecord(started, finished - started, outcome.Success, kind, outcome.Final.Transfers, outcome.Final.Bytes, outcome.Deletes,
-                outcome.Conflicts.Count, outcome.ErrorCode, outcome.ErrorDetail));
+            // A failure that only repeats itself (e.g. a file still open every minute) is recorded once.
+            if (outcome.Success || outcome.ErrorCode != previousError)
+                Record(new SyncRunRecord(started, finished - started, outcome.Success, kind, outcome.Final.Transfers, outcome.Final.Bytes, outcome.Deletes,
+                    outcome.Conflicts.Count, outcome.ErrorCode, outcome.ErrorDetail));
 
             var status = outcome.Success ? (pair.Paused ? SyncStatus.Paused : SyncStatus.Idle)
                 : _saved.Decision != SyncDecision.None ? SyncStatus.NeedsAttention : SyncStatus.Error;
@@ -583,6 +608,13 @@ public sealed class SyncService : IAsyncDisposable
             else if (!outcome.Success && outcome.ErrorCode != previousError)
                 _service.Notice?.Invoke(_service, new SyncNotice(_id, SyncNoticeKind.Error, name, ErrorCatalog.Get(outcome.ErrorCode ?? "CD-9000").Title));
 
+            if (!outcome.Success && outcome.Retryable && _saved.Decision == SyncDecision.None)
+            {
+                // A file in use costs only a look at the PC, so it is checked every minute; trouble with the network or the
+                // server gets more time with each try (1, 2, 4 … minutes, at most the interval).
+                var minutes = outcome.ErrorCode == "CD-4510" ? 1 : Math.Min(1 << Math.Min(_failures - 1, 6), Math.Max(1, pair.IntervalMinutes));
+                ScheduleRetry(TimeSpan.FromMinutes(minutes));
+            }
             CleanTrash(pair);
         }
 
@@ -623,7 +655,6 @@ public sealed class SyncService : IAsyncDisposable
             }
         }
 
-        /// <summary>Removes recycle-bin folders older than the configured days, at most once a day.</summary>
         /// <summary>
         /// Removes recycle bin folders older than the configured days, at most once a day. Switched off, nothing new
         /// arrives there and what is there stays until the user empties it.
@@ -647,6 +678,7 @@ public sealed class SyncService : IAsyncDisposable
                 _stopped = true;
                 _interval?.Dispose();
                 _debounce?.Dispose();
+                _retry?.Dispose();
                 _watcher?.Dispose();
                 loop = _loop;
             }

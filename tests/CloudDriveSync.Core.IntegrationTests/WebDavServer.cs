@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -7,8 +7,9 @@ namespace CloudDriveSync.Core.IntegrationTests;
 
 /// <summary>
 /// A WebDAV server for the tests: "rclone serve webdav" over a local folder, with user and password. Like IServ it
-/// keeps no modification times of its own and has no recycle bin. Directory listings are never cached, so files the
-/// tests change directly in the folder are seen at once.
+/// keeps no modification times of its own and has no recycle bin, and like any Linux server it tells upper and lower
+/// case apart (with a folder that is marked case-sensitive). Directory listings are never cached, so files the tests
+/// change directly in the folder are seen at once.
 /// </summary>
 internal sealed class WebDavServer : IAsyncDisposable
 {
@@ -41,6 +42,7 @@ internal sealed class WebDavServer : IAsyncDisposable
                  {
                      "serve", "webdav", root, "--addr", $"127.0.0.1:{port}", "--user", user, "--pass", password,
                      "--config", configFile, "--dir-cache-time", "0s", "--poll-interval", "0s", "--log-level", "NOTICE",
+                     "--local-case-sensitive", "--vfs-case-insensitive=false",
                  })
             start.ArgumentList.Add(argument);
         if (basePath.Length > 0)

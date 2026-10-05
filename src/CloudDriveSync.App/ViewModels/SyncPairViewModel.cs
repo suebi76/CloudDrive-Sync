@@ -104,7 +104,7 @@ public sealed partial class SyncPairViewModel : ObservableObject
             case SyncStatus.Waiting:
                 Tone = Tone.Busy;
                 StatusGlyph = Glyphs.Clock;
-                StatusText = "Wartet, bis ein anderer Abgleich fertig ist …";
+                StatusText = string.IsNullOrEmpty(state?.Activity) ? "Wartet, bis ein anderer Abgleich fertig ist …" : state!.Activity;
                 break;
             case SyncStatus.Paused:
                 Tone = Tone.Paused;
@@ -116,6 +116,14 @@ public sealed partial class SyncPairViewModel : ObservableObject
                 StatusGlyph = Glyphs.Warning;
                 StatusText = "Angehalten – deine Entscheidung ist nötig";
                 DescribeDecision(state!);
+                break;
+            case SyncStatus.Error when state?.ErrorCode == "CD-4510":
+                // Not an error of its own: the file goes as soon as the other program lets it go.
+                Tone = Tone.Warning;
+                StatusGlyph = Glyphs.Clock;
+                StatusText = "Wartet auf eine geöffnete Datei – neuer Versuch jede Minute";
+                DescribeError(state);
+                AttentionIsCritical = false;
                 break;
             case SyncStatus.Error:
                 Tone = Tone.Error;

@@ -334,7 +334,7 @@ public class DeleteGuardTests : IDisposable
     {
         var pair = Pair(SelectionMode.Selected, "Mathe/", "Plan.txt");
         Write("Mathe/1.txt", "Plan.txt", "Privat/a.txt", "Privat/b.txt", "Privat/c.txt", "~$Brief.docx", "x.tmp", ".clouddrive-papierkorb/old.txt");
-        Assert.Equal(["Mathe/1.txt", "Plan.txt"], DeleteGuard.LocalFiles(pair).Order());
+        Assert.Equal(["Mathe/1.txt", "Plan.txt"], DeleteGuard.LocalFiles(pair).Keys.Order());
     }
 
     [Fact]
@@ -347,6 +347,103 @@ public class DeleteGuardTests : IDisposable
         Delete("1.txt", "2.txt", "3.txt");
         pair.MaxDeletePercent = 100;
         Assert.Null(DeleteGuard.TooManyMissing(Path.Combine(_root, "state"), pair));
+    }
+
+    [Fact]
+    public void Finds_new_files_and_files_changed_without_a_new_size()
+    {
+        var pair = Pair();
+        var state = Path.Combine(_root, "state");
+        Write("Plan.txt", "Alt.txt");
+        Assert.Empty(DeleteGuard.ChangedSinceLastRun(state, pair));
+        DeleteGuard.Remember(state, pair);
+        Assert.Empty(DeleteGuard.ChangedSinceLastRun(state, pair));
+        var plan = Path.Combine(_root, "pc", "Plan.txt");
+        File.WriteAllText(plan, "Plan.tx!"); // same size
+        File.SetLastWriteTimeUtc(plan, File.GetLastWriteTimeUtc(plan).AddSeconds(5));
+        Write("Neu.txt");
+        Assert.Equal(["Neu.txt", "Plan.txt"], DeleteGuard.ChangedSinceLastRun(state, pair).Order());
+    }
+
+    [Fact]
+    public void A_list_of_an_earlier_version_counts_every_file_as_changed()
+    {
+        var pair = Pair();
+        var state = Path.Combine(_root, "state");
+        Write("1.txt", "2.txt");
+        File.WriteAllLines(Path.Combine(state, "local-files.txt"), ["1.txt", "2.txt"]);
+        Assert.Equal(["1.txt", "2.txt"], DeleteGuard.ChangedSinceLastRun(state, pair).Order());
+        Assert.Null(DeleteGuard.TooManyMissing(state, pair));
+    }
+}
+
+public class RunSafetyTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"cd-sync-safety-{Guid.NewGuid():N}");
+
+    public RunSafetyTests()
+    {
+        Directory.CreateDirectory(_root);
+    }
+
+    public void Dispose() => Directory.Delete(_root, recursive: true);
+
+    [Fact]
+    public void Finds_files_another_program_holds_exclusively()
+    {
+        File.WriteAllText(Path.Combine(_root, "frei.txt"), "f");
+        File.WriteAllText(Path.Combine(_root, "offen.txt"), "o");
+        File.WriteAllText(Path.Combine(_root, "gelesen.txt"), "g");
+        using var exclusive = new FileStream(Path.Combine(_root, "offen.txt"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        // Word and Excel let others read: such files are not in the way.
+        using var shared = new FileStream(Path.Combine(_root, "gelesen.txt"), FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+        Assert.Equal(["offen.txt"], RunSafety.LockedFiles(_root, ["frei.txt", "offen.txt", "gelesen.txt", "weg.txt"]));
+    }
+
+    [Fact]
+    public void Puts_the_listings_of_the_last_good_run_back()
+    {
+        var work = Path.Combine(_root, "bisync");
+        Directory.CreateDirectory(work);
+        File.WriteAllText(Path.Combine(work, "a..b.path1.lst"), "gut 1");
+        File.WriteAllText(Path.Combine(work, "a..b.path2.lst"), "gut 2");
+        RunSafety.RememberGoodState(work, _root);
+        // A run that broke off leaves its listings renamed and half-written ones behind.
+        File.Move(Path.Combine(work, "a..b.path1.lst"), Path.Combine(work, "a..b.path1.lst-err"));
+        File.Move(Path.Combine(work, "a..b.path2.lst"), Path.Combine(work, "a..b.path2.lst-err"));
+        File.WriteAllText(Path.Combine(work, "a..b.path1.lst-new"), "halb");
+        Assert.True(RunSafety.RestoreGoodState(work, _root));
+        Assert.Equal(["a..b.path1.lst", "a..b.path2.lst"], Directory.GetFiles(work).Select(Path.GetFileName).Order());
+        Assert.Equal("gut 2", File.ReadAllText(Path.Combine(work, "a..b.path2.lst")));
+    }
+
+    [Fact]
+    public void Without_a_good_state_nothing_is_put_back()
+    {
+        var work = Path.Combine(_root, "bisync");
+        Directory.CreateDirectory(work);
+        File.WriteAllText(Path.Combine(work, "a..b.path1.lst-err"), "x");
+        Assert.False(RunSafety.RestoreGoodState(work, _root));
+        Assert.True(File.Exists(Path.Combine(work, "a..b.path1.lst-err")));
+    }
+
+    [Fact]
+    public void Tells_passing_trouble_from_real_trouble()
+    {
+        const string locked = """
+            ERROR : Offen.docx: Failed to copy: failed to open source object: open C:\x\Offen.docx: The process cannot access the file because it is being used by another process.
+            ERROR : Bisync critical error: bisync aborted
+            ERROR : Bisync aborted. Must run --resync to recover.
+            """;
+        Assert.True(RunSafety.IsCritical(locked));
+        Assert.True(RunSafety.IsPassing(locked));
+        Assert.True(RunSafety.IsFileInUse(locked));
+        const string network = "ERROR : Bisync critical error: dial tcp: lookup webdav.example.org: i/o timeout";
+        Assert.True(RunSafety.IsPassing(network));
+        Assert.False(RunSafety.IsFileInUse(network));
+        const string broken = "ERROR : Bisync critical error: path1 listing is corrupt";
+        Assert.True(RunSafety.IsCritical(broken));
+        Assert.False(RunSafety.IsPassing(broken));
     }
 }
 public class SyncTrashTests : IDisposable

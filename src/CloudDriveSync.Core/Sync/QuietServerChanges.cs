@@ -35,26 +35,31 @@ internal sealed class QuietServerChanges
     }
 
     /// <summary>What happened before a run, with the cloud listing it was based on.</summary>
-    public sealed record Result(IReadOnlyDictionary<string, CloudFile> Listing, int Fetched, int ConflictCopies);
+    public sealed record Result(IReadOnlyDictionary<string, CloudFile> Listing, int Fetched, int ConflictCopies, int Uploaded)
+    {
+        public bool ChangedAnything => Fetched + ConflictCopies + Uploaded > 0;
+    }
 
     /// <summary>
-    /// Before a run: finds files changed quietly on the server and brings them to the PC. The replaced local versions go
-    /// to <paramref name="trashFolder"/> (null: the recycle bin is switched off).
+    /// Before a run: carries same-size changes over that rclone cannot tell apart - from the server to the PC and from
+    /// the PC to the server. Replaced local versions go to <paramref name="trashFolder"/> (null: recycle bin off).
     /// </summary>
     public async Task<Result?> FetchAsync(string? trashFolder, CancellationToken cancellationToken)
     {
         var snapshot = Load();
         if (snapshot is null) return null;
         var listing = await ListCloudAsync(cancellationToken);
-        int fetched = 0, copies = 0;
+        int fetched = 0, copies = 0, uploaded = 0;
         foreach (var (path, now) in listing)
         {
             if (!snapshot.TryGetValue(path, out var before)) continue;
-            if (now.Size != before[0] || Math.Abs(now.Time - before[1]) < 1) continue;
             var local = LocalPath(path);
             var info = new FileInfo(local);
             if (!info.Exists) continue;
-            if (info.Length == before[2] && info.LastWriteTimeUtc.Ticks == before[3])
+            var serverChanged = now.Size == before[0] && Math.Abs(now.Time - before[1]) >= 1;
+            var localChanged = info.Length != before[2] || info.LastWriteTimeUtc.Ticks != before[3];
+            var serverTime = now.Time;
+            if (serverChanged && !localChanged)
             {
                 // Unchanged on the PC: the server's version replaces it; the local one waits in the recycle bin.
                 // rclone would skip the copy (same size, no usable time), so it goes to a temporary file first (".tmp"
@@ -70,26 +75,64 @@ internal sealed class QuietServerChanges
                 File.Move(LocalPath(temporary), local, overwrite: true);
                 fetched++;
             }
-            else
+            else if (serverChanged)
             {
                 // Changed on both sides: the server's version is kept beside the local one - unless both are the same.
                 var copy = ConflictName(path, listing);
                 await CopyToPcAsync(path, copy, cancellationToken);
                 if (SameContent(local, LocalPath(copy))) File.Delete(LocalPath(copy));
                 else copies++;
+                // The local version has the same size as the server's: rclone would take them for equal and skip it.
+                if (info.Length == now.Size)
+                {
+                    serverTime = await UploadAsync(path, cancellationToken) ?? serverTime;
+                    uploaded++;
+                }
+            }
+            else if (localChanged && info.Length == before[2] && info.Length == now.Size && now.Size == before[0])
+            {
+                // Changed on the PC without changing its size: without times of its own on the server, rclone would take
+                // both versions for equal and never upload it.
+                serverTime = await UploadAsync(path, cancellationToken) ?? serverTime;
+                uploaded++;
+            }
+            else
+            {
+                continue;
             }
             // Remembered at once, so a run that breaks off afterwards does not see the same change again.
             var current = new FileInfo(local);
-            snapshot[path] = [now.Size, now.Time, current.Length, current.LastWriteTimeUtc.Ticks];
+            snapshot[path] = [now.Size, serverTime, current.Length, current.LastWriteTimeUtc.Ticks];
         }
-        if (fetched + copies > 0)
+        if (fetched + copies + uploaded > 0)
         {
             Save(snapshot);
-            Log.Info("Sync", $"'{_pair.Id}': {fetched} file(s) changed on the server with the same size fetched, {copies} conflict copy(ies) kept.");
+            Log.Info("Sync", $"'{_pair.Id}': same-size changes - {fetched} fetched, {uploaded} uploaded, {copies} conflict copy(ies) kept.");
         }
-        return new Result(listing, fetched, copies);
+        return new Result(listing, fetched, copies, uploaded);
     }
 
+    /// <summary>Uploads a file even when rclone takes it for unchanged; returns the server's new time (Unix seconds).</summary>
+    private async Task<long?> UploadAsync(string path, CancellationToken cancellationToken)
+    {
+        await _rc.CallAsync("operations/copyfile", new JsonObject
+        {
+            ["srcFs"] = _pair.LocalPath,
+            ["srcRemote"] = path,
+            ["dstFs"] = _cloud,
+            ["dstRemote"] = path,
+            ["_config"] = new JsonObject { ["IgnoreTimes"] = true },
+        }, TimeSpan.FromMinutes(30), cancellationToken);
+        var stat = await _rc.CallAsync("operations/stat", new JsonObject
+        {
+            ["fs"] = _cloud,
+            ["remote"] = path,
+            ["opt"] = new JsonObject { ["noMimeType"] = true },
+        }, TimeSpan.FromSeconds(30), cancellationToken);
+        return DateTimeOffset.TryParse(stat["item"]?["ModTime"]?.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+            ? time.ToUnixTimeSeconds()
+            : null;
+    }
     /// <summary>After a successful run: remembers both sides. <paramref name="listing"/> is reused when nothing changed in the cloud.</summary>
     public async Task RememberAsync(IReadOnlyDictionary<string, CloudFile>? listing, CancellationToken cancellationToken)
     {
@@ -124,6 +167,11 @@ internal sealed class QuietServerChanges
                 ? modified.ToUnixTimeSeconds() : 0;
             files[path] = new CloudFile(size, time);
         }
+        // Two names that differ only in upper and lower case cannot both live in one Windows folder: rclone keeps one of
+        // them on the PC and leaves the other on the server only. This check keeps out of such names, so the file on the
+        // PC is never taken for the other one (and its content never carried over to it).
+        foreach (var clash in files.Keys.GroupBy(p => p, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).SelectMany(g => g).ToList())
+            files.Remove(clash);
         return files;
     }
 

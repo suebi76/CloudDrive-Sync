@@ -34,7 +34,10 @@ public sealed partial class SyncRunner
         _engine = engine;
     }
 
-    public async Task<SyncRunOutcome> RunAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, string resyncMode, Action<JobProgress>? progress, CancellationToken cancellationToken, bool keepTrash = true)
+    public Task<SyncRunOutcome> RunAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, string resyncMode, Action<JobProgress>? progress, CancellationToken cancellationToken, bool keepTrash = true) =>
+        RunCoreAsync(pair, account, mode, resyncMode, progress, cancellationToken, keepTrash, repeatAllowed: true);
+
+    private async Task<SyncRunOutcome> RunCoreAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, string resyncMode, Action<JobProgress>? progress, CancellationToken cancellationToken, bool keepTrash, bool repeatAllowed)
     {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath))
@@ -50,11 +53,29 @@ public sealed partial class SyncRunner
             return Failed("CD-4502", $"too many deletes (>{pair.MaxDeletePercent}%, {missing.Missing} of {missing.Known}) on Path2 (CloudDrive-Sync)", SyncDecision.Deletions, retryable: false);
         }
 
+        // A changed file another program holds exclusively would make rclone give the whole run up; wait for it instead.
+        if (mode != BisyncMode.Resync && RunSafety.LockedFiles(pair.LocalPath, DeleteGuard.ChangedSinceLastRun(folder, pair)) is { Count: > 0 } locked)
+        {
+            Log.Info("Sync", $"Run of '{pair.Id}' waits: {locked.Count} changed file(s) are open in another program.");
+            return Failed("CD-4510", string.Join(", ", locked.Take(5)) + (locked.Count > 5 ? $" (+{locked.Count - 5})" : ""), SyncDecision.None, retryable: true);
+        }
+
         var rc = await _engine.EnsureRunningAsync(cancellationToken);
         var workDir = Path.Combine(folder, "bisync");
         Directory.CreateDirectory(workDir);
         var filtersFile = Path.Combine(folder, "filter.txt");
         WriteIfChanged(filtersFile, SyncFilters.Build(pair.Selection));
+        if (mode != BisyncMode.Resync)
+        {
+            try
+            {
+                await CaseRenames.CarryPcRenamesAsync(rc, pair, folder, cancellationToken);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn("Sync", $"'{pair.Id}': renames of upper and lower case not checked: {e.Message}");
+            }
+        }
 
         // Servers without modification times of their own: CloudDrive-Sync catches same-size changes there itself.
         var quiet = account.Kind == WebDavKind.Nextcloud ? null : new QuietServerChanges(rc, pair, folder, filtersFile);
@@ -101,7 +122,7 @@ public sealed partial class SyncRunner
                 try
                 {
                     // The listing from before the run still holds when the run changed nothing in the cloud.
-                    var unchanged = before is { Fetched: 0, ConflictCopies: 0 } && final.Transfers == 0 && deletes == 0 && Number(stats, "renames") == 0;
+                    var unchanged = before is { ChangedAnything: false } && final.Transfers == 0 && deletes == 0 && Number(stats, "renames") == 0;
                     await quiet.RememberAsync(unchanged ? before!.Listing : null, cancellationToken);
                 }
                 catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException)
@@ -109,11 +130,48 @@ public sealed partial class SyncRunner
                     Log.Warn("Sync", $"'{pair.Id}': server times not remembered: {(e as CdException)?.Detail ?? e.Message}");
                 }
             }
+            try
+            {
+                RunSafety.RememberGoodState(workDir, folder);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn("Sync", $"'{pair.Id}': last good state not kept: {e.Message}");
+            }
+            // Same-size changes CloudDrive-Sync carried over itself count as transfers, too.
+            if (before is { ChangedAnything: true }) final = final with { Transfers = final.Transfers + before.Fetched + before.Uploaded + before.ConflictCopies };
             Log.Info("Sync", $"Run of '{pair.Id}' succeeded: {final.Transfers} transfers, {deletes} deletions, {conflicts.Count} conflict copies.");
             return new SyncRunOutcome(true, null, null, SyncDecision.None, final, deletes, conflicts, false);
         }
 
         var text = report + "\n" + result.Error;
+        // Names that differ only in upper and lower case: the PC takes the server's spelling and the run is repeated once.
+        if (repeatAllowed && mode != BisyncMode.Resync && CaseRenames.OutOfSync(report) is { Count: > 0 } outOfSync)
+        {
+            var aligned = false;
+            try
+            {
+                aligned = await CaseRenames.PcFollowsServerAsync(rc, pair, outOfSync, cancellationToken);
+            }
+            catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException)
+            {
+                Log.Warn("Sync", $"'{pair.Id}': spelling not aligned: {(e as CdException)?.Detail ?? e.Message}");
+            }
+            if (aligned && RunSafety.RestoreGoodState(workDir, folder))
+            {
+                Log.Info("Sync", $"Run of '{pair.Id}' is repeated after aligning upper and lower case.");
+                return await RunCoreAsync(pair, account, mode, resyncMode, progress, cancellationToken, keepTrash, repeatAllowed: false);
+            }
+        }
+        // Broke off on something that passes (a file in use, the network): back to the last good state, try again soon -
+        // no rebuild. A rebuild that broke off is simply repeated.
+        if (RunSafety.IsCritical(text) && RunSafety.IsPassing(text) && (mode == BisyncMode.Resync || RunSafety.RestoreGoodState(workDir, folder)))
+        {
+            var passing = RunSafety.IsFileInUse(text) ? "CD-4510" : "CD-5001";
+            var why = Summarise(report, result.Error);
+            Log.Warn("Sync", $"Run of '{pair.Id}' broke off ({passing}); the last good state is kept and the run follows soon: {why}");
+            return new SyncRunOutcome(false, passing, why, SyncDecision.None, final, deletes, conflicts, true);
+        }
         var code = ErrorCatalog.Classify(text);
         var decision = code switch
         {

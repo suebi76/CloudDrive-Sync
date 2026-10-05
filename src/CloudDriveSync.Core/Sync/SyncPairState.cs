@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Settings;
 
@@ -60,6 +60,8 @@ public sealed class PersistedSyncState
     public string? ErrorCode { get; set; }
     public string? ErrorDetail { get; set; }
     public SyncDecision Decision { get; set; }
+    /// <summary>A rebuild broke off and is finished before anything else.</summary>
+    public bool ResyncPending { get; set; }
 
     public static PersistedSyncState Load(string file)
     {

@@ -1,7 +1,28 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
+
+## [0.1.2] – 2026-10-05
+
+### Fixed
+
+- A file changed on the PC without changing its size (e.g. one letter replaced) is uploaded. IServ and other WebDAV
+  servers keep no modification times of their own, so both versions looked equal.
+- A changed file another program holds open exclusively no longer stops the synchronisation with "must be rebuilt":
+  CloudDrive-Sync waits ("Wartet auf eine geöffnete Datei"), tries again every minute and transfers the file once it is
+  free - in both directions. After a run that broke off, the last good state is kept instead of demanding a rebuild.
+- Renames that only change upper and lower case ("bericht.docx" to "Bericht.docx") are carried over in both directions
+  instead of stopping the synchronisation.
+- Two server files whose names differ only in case (impossible in one Windows folder): both stay on the server, and a
+  change to one of them never ends up in the other.
+
+### Changed
+
+- Changes on the PC are uploaded about 5 seconds after the last change (before: 30 seconds), and the overview shows at
+  once "Änderung am PC erkannt – wird gleich übertragen …".
+- After network or server trouble the next try follows after 1, 2, 4 … minutes (at most the interval); a rebuild that
+  broke off is finished on its own. A failure that only repeats itself appears once in the activity list.
 
 ## [0.1.1] – 2026-10-05
 
