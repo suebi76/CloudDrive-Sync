@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything below the user interface: engine (rclone), accounts, synchronisation, settings, secrets. -->
+  <PropertyGroup>
+    <RootNamespace>CloudDriveSync.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CloudDriveSync.Core.Tests" />
+    <InternalsVisibleTo Include="CloudDriveSync.Core.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,140 @@
+﻿<Window x:Class="CloudDriveSync.App.Views.AddAccountWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:settings="clr-namespace:CloudDriveSync.Core.Settings;assembly=CloudDriveSync.Core"
+        Title="Konto verbinden" Width="600" Height="680" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Icon="/Assets/clouddrive-sync.ico">
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource DialogFooter}">
+            <DockPanel>
+                <Button DockPanel.Dock="Left" Content="Zurück" Command="{Binding BackCommand}" MinWidth="96"
+                        Visibility="{Binding CanGoBack, Converter={StaticResource Visible}}" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{Binding PrimaryText}" Style="{StaticResource AccentButtonStyle}" Command="{Binding PrimaryCommand}" IsDefault="True"
+                            MinWidth="120" IsEnabled="{Binding CanEdit}" Visibility="{Binding PrimaryText, Converter={StaticResource Visible}}" />
+                    <Button Content="{Binding CloseText}" IsCancel="True" MinWidth="96" Margin="8,0,0,0" Click="OnClose" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Grid Margin="28,24,28,16">
+            <!-- Which kind of storage -->
+            <StackPanel Visibility="{Binding Step, Converter={StaticResource VisibleIf}, ConverterParameter=Choose}">
+                <TextBlock Text="Welchen Speicher möchtest du verbinden?" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Style="{StaticResource Secondary}" Margin="0,8,0,20"
+                           Text="Zugangsdaten gibst du nur hier ein. CloudDrive-Sync prüft sie beim Server und speichert sie verschlüsselt auf diesem PC – nirgends sonst." />
+                <Button Style="{StaticResource OptionCard}" Command="{Binding ChooseCommand}" CommandParameter="{x:Static settings:WebDavKind.Nextcloud}" AutomationProperties.Name="Nextcloud">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE753;" FontSize="18" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Nextcloud" Style="{StaticResource Strong}" FontSize="15" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Text="Anmeldung im Browser – auch mit Zwei-Faktor-Anmeldung." />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Style="{StaticResource Icon}" Text="&#xE76C;" FontSize="12" />
+                    </Grid>
+                </Button>
+                <Button Style="{StaticResource OptionCard}" Command="{Binding ChooseCommand}" CommandParameter="{x:Static settings:WebDavKind.IServ}" AutomationProperties.Name="IServ">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE7BE;" FontSize="18" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="IServ" Style="{StaticResource Strong}" FontSize="15" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Text="Schulserver – Anmeldung mit deinem IServ-Account." />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Style="{StaticResource Icon}" Text="&#xE76C;" FontSize="12" />
+                    </Grid>
+                </Button>
+                <Button Style="{StaticResource OptionCard}" Command="{Binding ChooseCommand}" CommandParameter="{x:Static settings:WebDavKind.Other}" AutomationProperties.Name="Anderer WebDAV-Speicher">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE774;" FontSize="18" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Anderer WebDAV-Speicher" Style="{StaticResource Strong}" FontSize="15" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Text="z. B. ownCloud, Synology, Hetzner Storage Box, HiDrive." />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Style="{StaticResource Icon}" Text="&#xE76C;" FontSize="12" />
+                    </Grid>
+                </Button>
+            </StackPanel>
+
+            <!-- Address and sign-in -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding Step, Converter={StaticResource VisibleIf}, ConverterParameter=Details}">
+                <StackPanel Margin="0,0,8,0">
+                    <TextBlock Text="{Binding Heading}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Hint}" Style="{StaticResource Secondary}" Margin="0,8,0,18" />
+                    <StackPanel IsEnabled="{Binding CanEdit}">
+                        <TextBlock Text="{Binding AddressLabel}" Margin="0,0,0,6" />
+                        <TextBox x:Name="AddressBox" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{Binding AddressLabel}" />
+                        <TextBlock Text="{Binding AddressExample}" Style="{StaticResource Caption}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding AddressPreview}" Style="{StaticResource Caption}" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="0,2,0,0"
+                                   Visibility="{Binding AddressPreview, Converter={StaticResource Visible}}" />
+                        <StackPanel Margin="0,14,0,0" Visibility="{Binding NeedsPassword, Converter={StaticResource Visible}}">
+                            <TextBlock Text="{Binding UserLabel}" Margin="0,0,0,6" />
+                            <TextBox x:Name="UserBox" Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{Binding UserLabel}" />
+                            <TextBlock Text="{Binding UserExample}" Style="{StaticResource Caption}" Margin="0,4,0,0"
+                                       Visibility="{Binding UserExample, Converter={StaticResource Visible}}" />
+                            <TextBlock Text="{Binding PasswordLabel}" Margin="0,12,0,6" />
+                            <PasswordBox x:Name="PasswordBox" PasswordChanged="OnPasswordChanged" AutomationProperties.Name="{Binding PasswordLabel}" />
+                        </StackPanel>
+                        <CheckBox IsChecked="{Binding AllowInsecure}" Margin="0,12,0,0" Visibility="{Binding ShowInsecureOption, Converter={StaticResource Visible}}">
+                            <TextBlock TextWrapping="Wrap" Text="Unverschlüsselte Verbindung (http) trotzdem verwenden – Passwort und Dateien sind dann im Netzwerk lesbar." />
+                        </CheckBox>
+                        <StackPanel Margin="0,14,0,0" Visibility="{Binding ShowLabel, Converter={StaticResource Visible}}">
+                            <TextBlock Text="Name in CloudDrive-Sync (freiwillig)" Margin="0,0,0,6" />
+                            <TextBox x:Name="LabelBox" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Name in CloudDrive-Sync" />
+                        </StackPanel>
+                        <Button Content="{Binding SwitchText}" Style="{StaticResource LinkButton}" Command="{Binding ToggleAppPasswordCommand}" Margin="0,16,0,0"
+                                Visibility="{Binding IsNextcloud, Converter={StaticResource Visible}}" />
+                    </StackPanel>
+                    <Border Style="{StaticResource InfoBarCritical}" Margin="0,16,0,0" Visibility="{Binding HasError, Converter={StaticResource Visible}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ErrorTitle}" Style="{StaticResource Strong}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding ErrorText}" Style="{StaticResource Secondary}" Margin="0,4,0,0" Visibility="{Binding ErrorText, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                    </Border>
+                    <StackPanel Margin="0,16,0,0" Visibility="{Binding IsBusy, Converter={StaticResource Visible}}">
+                        <ProgressBar IsIndeterminate="True" />
+                        <TextBlock Text="{Binding BusyText}" Style="{StaticResource Caption}" Margin="0,6,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Waiting for the browser (Nextcloud) -->
+            <StackPanel VerticalAlignment="Center" Visibility="{Binding Step, Converter={StaticResource VisibleIf}, ConverterParameter=Browser}">
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE774;" FontSize="48" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Left" />
+                <TextBlock Text="Bitte im Browser anmelden" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,0" />
+                <TextBlock Style="{StaticResource Secondary}" Margin="0,8,0,0"
+                           Text="Im Browser hat sich die Anmeldeseite deiner Nextcloud geöffnet. Melde dich dort an und bestätige mit „Zugriff gewähren“. Danach geht es hier von selbst weiter." />
+                <ProgressBar IsIndeterminate="True" Margin="0,22,0,0" />
+                <Button Content="Anmeldeseite erneut öffnen" Style="{StaticResource LinkButton}" Command="{Binding OpenBrowserAgainCommand}" Margin="0,22,0,0" />
+                <Button Content="Stattdessen mit App-Passwort anmelden" Style="{StaticResource LinkButton}" Command="{Binding UseAppPasswordInsteadCommand}" Margin="0,10,0,0" />
+            </StackPanel>
+
+            <!-- Done -->
+            <StackPanel VerticalAlignment="Center" Visibility="{Binding Step, Converter={StaticResource VisibleIf}, ConverterParameter=Done}">
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE930;" FontSize="48" Foreground="{DynamicResource SystemFillColorSuccessBrush}" HorizontalAlignment="Left" />
+                <TextBlock Text="Verbunden" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,0" />
+                <TextBlock Text="{Binding DoneText}" Style="{StaticResource Secondary}" Margin="0,8,0,0" />
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>

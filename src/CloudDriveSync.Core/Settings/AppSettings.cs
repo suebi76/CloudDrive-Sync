@@ -1,0 +1,104 @@
+﻿using System.Text.Json.Serialization;
+
+namespace CloudDriveSync.Core.Settings;
+
+/// <summary>
+/// Everything CloudDrive-Sync remembers between starts - never a secret. Passwords and tokens live only in the
+/// encrypted rclone configuration.
+/// </summary>
+public sealed class AppSettings
+{
+    public const int CurrentSchema = 1;
+
+    public int SchemaVersion { get; set; } = CurrentSchema;
+    public List<AccountSettings> Accounts { get; set; } = [];
+    public List<SyncPairSettings> Syncs { get; set; } = [];
+    public Preferences Preferences { get; set; } = new();
+}
+
+/// <summary>Kinds of WebDAV servers CloudDrive-Sync knows.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<WebDavKind>))]
+public enum WebDavKind
+{
+    Nextcloud,
+    IServ,
+    Other,
+}
+
+public sealed class AccountSettings
+{
+    public string Id { get; set; } = "";
+    /// <summary>Provider family; CloudDrive-Sync starts with WebDAV (Nextcloud, IServ and others).</summary>
+    public string Provider { get; set; } = "webdav";
+    public WebDavKind Kind { get; set; } = WebDavKind.Other;
+    public string Label { get; set; } = "";
+    /// <summary>Who is signed in (user at server), to recognise the same account again.</summary>
+    public AccountIdentity? Identity { get; set; }
+    public DateTimeOffset Added { get; set; }
+
+    public override string ToString() => Label;
+}
+
+public sealed class AccountIdentity
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<SelectionMode>))]
+public enum SelectionMode
+{
+    /// <summary>Everything below the cloud folder.</summary>
+    All,
+    /// <summary>Only the chosen folders and files.</summary>
+    Selected,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<ConflictPolicy>))]
+public enum ConflictPolicy
+{
+    /// <summary>The newer version keeps the name, the older one stays as a conflict copy.</summary>
+    NewerWins,
+    /// <summary>Both versions are renamed and kept.</summary>
+    KeepBoth,
+    /// <summary>The cloud version keeps the name, the PC version stays as a conflict copy.</summary>
+    CloudWins,
+    /// <summary>The PC version keeps the name, the cloud version stays as a conflict copy.</summary>
+    PcWins,
+}
+
+public sealed class SyncSelection
+{
+    public SelectionMode Mode { get; set; } = SelectionMode.All;
+    /// <summary>Folders and files (relative to the cloud folder, "/" separated) when <see cref="Mode"/> is Selected.</summary>
+    public List<string> Include { get; set; } = [];
+    /// <summary>Additional patterns that are never synchronised, e.g. "**/node_modules/**".</summary>
+    public List<string> Exclude { get; set; } = [];
+}
+
+/// <summary>A cloud folder kept in step with a local folder, in both directions.</summary>
+public sealed class SyncPairSettings
+{
+    public string Id { get; set; } = "";
+    public string AccountId { get; set; } = "";
+    /// <summary>Folder in the cloud, relative to the account ("" = everything).</summary>
+    public string RemotePath { get; set; } = "";
+    public string LocalPath { get; set; } = "";
+    public SyncSelection Selection { get; set; } = new();
+    public ConflictPolicy Conflicts { get; set; } = ConflictPolicy.NewerWins;
+    /// <summary>Cloud changes are fetched this often; local changes go up shortly after they happen.</summary>
+    public int IntervalMinutes { get; set; } = 5;
+    public bool OnLocalChange { get; set; } = true;
+    /// <summary>Stop and ask when more than this share of the files would be deleted.</summary>
+    public int MaxDeletePercent { get; set; } = 50;
+    public bool Paused { get; set; }
+    public DateTimeOffset Created { get; set; }
+}
+
+public sealed class Preferences
+{
+    public bool StartWithWindows { get; set; } = true;
+    public bool Notifications { get; set; } = true;
+    /// <summary>Days deleted or overwritten local files stay in the sync recycle bin.</summary>
+    public int TrashDays { get; set; } = 30;
+}

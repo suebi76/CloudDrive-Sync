@@ -1,0 +1,24 @@
+﻿<Project>
+  <!-- Common settings of every CloudDrive-Sync project. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Product>CloudDrive-Sync</Product>
+    <Company>Steffen Schwabe</Company>
+    <Authors>Steffen Schwabe</Authors>
+    <Copyright>(c) 2026 Steffen Schwabe. MIT License.</Copyright>
+    <Version>0.1.0</Version>
+    <NeutralLanguage>de</NeutralLanguage>
+    <SatelliteResourceLanguages>de;en</SatelliteResourceLanguages>
+
+    <!-- The sources live in a folder that OneDrive synchronises; build output goes outside of it. The folder name of
+         the project is the key, so WPF's temporary markup projects land in the same place. -->
+    <CloudDriveSyncProjectKey>$([System.IO.Path]::GetFileName('$(MSBuildProjectDirectory)'))</CloudDriveSyncProjectKey>
+    <CloudDriveSyncBuildRoot>$(USERPROFILE)\.clouddrive-sync-build\</CloudDriveSyncBuildRoot>
+    <BaseOutputPath>$(CloudDriveSyncBuildRoot)$(CloudDriveSyncProjectKey)\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(CloudDriveSyncBuildRoot)$(CloudDriveSyncProjectKey)\obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

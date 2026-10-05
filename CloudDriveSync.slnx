@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CloudDriveSync.Core/CloudDriveSync.Core.csproj" />
+    <Project Path="src/CloudDriveSync.App/CloudDriveSync.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CloudDriveSync.Core.Tests/CloudDriveSync.Core.Tests.csproj" />
+    <Project Path="tests/CloudDriveSync.Core.IntegrationTests/CloudDriveSync.Core.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

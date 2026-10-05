@@ -1,0 +1,19 @@
+<Application x:Class="CloudDriveSync.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:infra="clr-namespace:CloudDriveSync.App.Infrastructure"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <infra:VisibleWhen x:Key="Visible" />
+            <infra:VisibleWhen x:Key="Hidden" Invert="True" />
+            <infra:VisibleWhenEquals x:Key="VisibleIf" />
+            <infra:VisibleWhenEquals x:Key="HiddenIf" Invert="True" />
+            <infra:EnumIs x:Key="EnumIs" />
+            <infra:Not x:Key="Not" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

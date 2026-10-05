@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The desktop program: WPF with the Windows 11 (Fluent) look, symbol in the notification area. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the symbol in the notification area (NotifyIcon). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>CloudDrive-Sync</AssemblyName>
+    <!-- Shown by Windows as the program's name (task manager, notifications). -->
+    <AssemblyTitle>CloudDrive-Sync</AssemblyTitle>
+    <Product>CloudDrive-Sync</Product>
+    <RootNamespace>CloudDriveSync.App</RootNamespace>
+    <ApplicationIcon>Assets\clouddrive-sync.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WPF marks its Fluent theme as experimental. WFO0003 is Windows Forms' advice for its own windows; WPF takes
+         its per-monitor DPI awareness from the manifest. -->
+    <NoWarn>$(NoWarn);WPF0001;WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF and Windows Forms share type names (Application, MessageBox ...); Windows Forms is used by full name. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CloudDriveSync.Core\CloudDriveSync.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\clouddrive-sync.ico" />
+  </ItemGroup>
+
+</Project>
