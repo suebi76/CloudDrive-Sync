@@ -15,6 +15,8 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
   USB-Stick, Ordner eines anderen Sync-Programms …) gibt es Hinweise, die Entscheidung triffst du.
 - **In beide Richtungen:** Änderungen am PC gehen kurz nach dem Speichern hoch, Änderungen in der Cloud kommen im
   gewählten Abstand (Standard: alle 5 Minuten). Technisch arbeitet [rclone](https://rclone.org) `bisync`.
+- **Nachvollziehbar:** Unter „Aktivität“ steht zu jedem Abgleich, welche Dateien hoch- oder heruntergeladen und wo
+  gelöscht wurden. „Abgleich überprüfen“ vergleicht auf Knopfdruck jede Datei am PC mit der in der Cloud.
 - **Nichts geht verloren:**
   - Löschschutz: Verschwinden auf einmal viele Dateien, hält CloudDrive-Sync an und fragt – „Dateien
     wiederherstellen“ oder „Löschungen übernehmen“.

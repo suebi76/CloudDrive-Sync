@@ -35,7 +35,7 @@ internal sealed class QuietServerChanges
     }
 
     /// <summary>What happened before a run, with the cloud listing it was based on.</summary>
-    public sealed record Result(IReadOnlyDictionary<string, CloudFile> Listing, int Fetched, int ConflictCopies, int Uploaded)
+    public sealed record Result(IReadOnlyDictionary<string, CloudFile> Listing, int Fetched, int ConflictCopies, int Uploaded, IReadOnlyList<FileChange> Changes)
     {
         public bool ChangedAnything => Fetched + ConflictCopies + Uploaded > 0;
     }
@@ -50,6 +50,7 @@ internal sealed class QuietServerChanges
         if (snapshot is null) return null;
         var listing = await ListCloudAsync(cancellationToken);
         int fetched = 0, copies = 0, uploaded = 0;
+        var changes = new List<FileChange>();
         foreach (var (path, now) in listing)
         {
             if (!snapshot.TryGetValue(path, out var before)) continue;
@@ -74,6 +75,7 @@ internal sealed class QuietServerChanges
                 }
                 File.Move(LocalPath(temporary), local, overwrite: true);
                 fetched++;
+                changes.Add(new FileChange(ChangeKind.Downloaded, path));
             }
             else if (serverChanged)
             {
@@ -81,12 +83,17 @@ internal sealed class QuietServerChanges
                 var copy = ConflictName(path, listing);
                 await CopyToPcAsync(path, copy, cancellationToken);
                 if (SameContent(local, LocalPath(copy))) File.Delete(LocalPath(copy));
-                else copies++;
+                else
+                {
+                    copies++;
+                    changes.Add(new FileChange(ChangeKind.Downloaded, copy));
+                }
                 // The local version has the same size as the server's: rclone would take them for equal and skip it.
                 if (info.Length == now.Size)
                 {
                     serverTime = await UploadAsync(path, cancellationToken) ?? serverTime;
                     uploaded++;
+                    changes.Add(new FileChange(ChangeKind.Uploaded, path));
                 }
             }
             else if (localChanged && info.Length == before[2] && info.Length == now.Size && now.Size == before[0])
@@ -95,6 +102,7 @@ internal sealed class QuietServerChanges
                 // both versions for equal and never upload it.
                 serverTime = await UploadAsync(path, cancellationToken) ?? serverTime;
                 uploaded++;
+                changes.Add(new FileChange(ChangeKind.Uploaded, path));
             }
             else
             {
@@ -109,7 +117,7 @@ internal sealed class QuietServerChanges
             Save(snapshot);
             Log.Info("Sync", $"'{_pair.Id}': same-size changes - {fetched} fetched, {uploaded} uploaded, {copies} conflict copy(ies) kept.");
         }
-        return new Result(listing, fetched, copies, uploaded);
+        return new Result(listing, fetched, copies, uploaded, changes);
     }
 
     /// <summary>Uploads a file even when rclone takes it for unchanged; returns the server's new time (Unix seconds).</summary>

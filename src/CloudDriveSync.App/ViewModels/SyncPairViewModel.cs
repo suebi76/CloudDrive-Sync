@@ -269,6 +269,9 @@ public sealed partial class SyncPairViewModel : ObservableObject
     private void OpenSettings() => _main.OpenSyncSettings(this);
 
     [RelayCommand]
+    private void Verify() => _main.Dialogs.Verify(_pair, Title);
+
+    [RelayCommand]
     private void Rebuild()
     {
         var answer = _main.Dialogs.Ask("Abgleich neu aufbauen?",

@@ -211,6 +211,19 @@ public sealed class SyncService : IAsyncDisposable
     /// <summary>After the account was signed in again.</summary>
     public void Retry(string id) => Worker(id)?.Request(BisyncMode.Normal, answersDecision: true);
 
+    /// <summary>
+    /// "Abgleich überprüfen": compares PC and cloud file by file without changing anything; a running synchronisation of
+    /// the pair is finished first.
+    /// </summary>
+    public async Task<VerifyResult> VerifyAsync(string id, bool compareContent, Action<JobProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var pair = FindPair(id) ?? throw new CdException("CD-9000", $"unknown synchronisation '{id}'");
+        if (!Directory.Exists(pair.LocalPath)) throw new CdException("CD-4501", pair.LocalPath);
+        var rc = await _engine.EnsureRunningAsync(cancellationToken);
+        Task<VerifyResult> Check() => SyncVerifier.VerifyAsync(rc, _paths, pair, compareContent, progress, cancellationToken);
+        return Worker(id) is { } worker ? await worker.ExclusiveAsync(Check, cancellationToken) : await Check();
+    }
+
     /// <summary>Files the server did not take stay on the PC and out of the synchronisation - without a rebuild.</summary>
     public void KeepLocalOnly(string id, IEnumerable<string> paths) => _settings.Update(s =>
     {
@@ -415,6 +428,8 @@ public sealed class SyncService : IAsyncDisposable
         private Timer? _interval;
         private Timer? _debounce;
         private Timer? _retry;
+        // Held during a run - and while the synchronisation is being checked, so both never overlap.
+        private readonly SemaphoreSlim _busy = new(1, 1);
         private int _failures;
         private (BisyncMode Mode, bool AnswersDecision)? _pending;
         private CancellationTokenSource? _skipDelay;
@@ -508,6 +523,20 @@ public sealed class SyncService : IAsyncDisposable
             if (State.Status == SyncStatus.Idle) Publish(State with { Status = SyncStatus.Waiting, Activity = "Änderung am PC erkannt – wird gleich übertragen …" });
         }
 
+        /// <summary>Runs something that must not overlap a run of this synchronisation (checking it).</summary>
+        public async Task<T> ExclusiveAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+        {
+            await _busy.WaitAsync(cancellationToken);
+            try
+            {
+                return await action();
+            }
+            finally
+            {
+                _busy.Release();
+            }
+        }
+
         /// <summary>After a failure that passes by itself (a file in use, the network): tries again soon.</summary>
         private void ScheduleRetry(TimeSpan delay)
         {
@@ -579,7 +608,15 @@ public sealed class SyncService : IAsyncDisposable
                     await _service._slots.WaitAsync(_stop.Token);
                     try
                     {
-                        await RunOnceAsync(request.Mode, request.AnswersDecision);
+                        await _busy.WaitAsync(_stop.Token);
+                        try
+                        {
+                            await RunOnceAsync(request.Mode, request.AnswersDecision);
+                        }
+                        finally
+                        {
+                            _busy.Release();
+                        }
                     }
                     finally
                     {
@@ -664,8 +701,11 @@ public sealed class SyncService : IAsyncDisposable
             SaveState();
             // A failure that only repeats itself (e.g. a file still open every minute) is recorded once.
             if (outcome.Success || outcome.ErrorCode != previousError)
+            {
+                var changes = outcome.Changes ?? [];
                 Record(new SyncRunRecord(started, finished - started, outcome.Success, kind, outcome.Final.Transfers, outcome.Final.Bytes, outcome.Deletes,
-                    outcome.Conflicts.Count, outcome.ErrorCode, outcome.ErrorDetail));
+                    outcome.Conflicts.Count, outcome.ErrorCode, outcome.ErrorDetail, changes.Take(RunChanges.Limit).ToList(), Math.Max(0, changes.Count - RunChanges.Limit)));
+            }
 
             var status = outcome.Success ? (pair.Paused ? SyncStatus.Paused : SyncStatus.Idle)
                 : _saved.Decision != SyncDecision.None ? SyncStatus.NeedsAttention : SyncStatus.Error;

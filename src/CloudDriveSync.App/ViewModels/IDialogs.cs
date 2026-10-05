@@ -22,5 +22,8 @@ public interface IDialogs
     /// <summary>The settings of an existing synchronisation; true when they were saved.</summary>
     bool SyncSettings(SyncPairSettings pair);
 
+    /// <summary>"Abgleich überprüfen" for a synchronisation.</summary>
+    void Verify(SyncPairSettings pair, string title);
+
     DialogChoice Ask(string title, string text, string primary, string? secondary = null, string close = "Abbrechen", bool danger = false);
 }

@@ -3,6 +3,19 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.7] – 2026-10-05
+
+Test version on the way to 0.2.
+
+### Added
+
+- Activity names the files of every run: uploaded, fetched to the PC, deleted in the cloud, deleted on the PC (in the
+  recycle bin) or kept on the PC only - each with a button that shows it in its folder. Same-size changes
+  CloudDrive-Sync carries over itself are named, too.
+- "Abgleich überprüfen" in the menu of each synchronisation: compares every file on the PC with the one in the cloud
+  (names and sizes, checksums where the server has them, on request the content) and lists what is only on the PC,
+  only in the cloud or different. It changes nothing and waits for a running synchronisation of the folder.
+
 ## [0.2.0-preview.6] – 2026-10-05
 
 Test version on the way to 0.2.

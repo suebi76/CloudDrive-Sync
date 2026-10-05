@@ -96,4 +96,6 @@ public sealed record SyncRunRecord(
     long Deletes,
     int Conflicts,
     string? ErrorCode,
-    string? ErrorDetail);
+    string? ErrorDetail,
+    IReadOnlyList<FileChange>? Changes = null,
+    int MoreChanges = 0);

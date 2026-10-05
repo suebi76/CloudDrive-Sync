@@ -114,6 +114,7 @@
                                     <MenuItem Header="Jetzt synchronisieren" Command="{Binding SyncNowCommand}" />
                                     <MenuItem Header="{Binding PauseText}" Command="{Binding TogglePauseCommand}" />
                                     <MenuItem Header="Einstellungen …" Command="{Binding OpenSettingsCommand}" />
+                                    <MenuItem Header="Abgleich überprüfen …" Command="{Binding VerifyCommand}" />
                                     <MenuItem Header="Neu aufbauen …" Command="{Binding RebuildCommand}" />
                                     <MenuItem Header="Papierkorb anzeigen" Command="{Binding ShowTrashCommand}" />
                                     <Separator />
@@ -212,6 +213,30 @@
                         <TextBlock Style="{StaticResource Secondary}" Margin="0,2,0,0">
                             <Run Text="{Binding Summary, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Title, Mode=OneWay}" />
                         </TextBlock>
+                        <Expander Header="{Binding ChangesHeader}" Margin="0,6,0,0" Visibility="{Binding HasChanges, Converter={StaticResource Visible}}">
+                            <infra:CardList ItemsSource="{Binding Changes}" Margin="0,6,0,0">
+                                <infra:CardList.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:ChangeRow}">
+                                        <Grid Margin="0,1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Icon}" Text="{Binding Glyph}" FontSize="13" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Shown}">
+                                                <Run Text="{Binding Shown, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding What, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </TextBlock>
+                                            <Button Grid.Column="2" Style="{StaticResource SubtleButton}" Command="{Binding ShowCommand}" ToolTip="Im Ordner zeigen"
+                                                    AutomationProperties.Name="Im Ordner zeigen" Visibility="{Binding CanShow, Converter={StaticResource Visible}}">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE838;" FontSize="13" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </infra:CardList.ItemTemplate>
+                            </infra:CardList>
+                        </Expander>
                     </StackPanel>
                     <TextBlock Grid.Column="2" Text="{Binding Time}" Style="{StaticResource Caption}" VerticalAlignment="Top" />
                 </Grid>

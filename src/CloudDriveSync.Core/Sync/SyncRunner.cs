@@ -18,7 +18,8 @@ public sealed record SyncRunOutcome(
     long Deletes,
     IReadOnlyList<string> Conflicts,
     bool Retryable,
-    IReadOnlyList<string>? LocalOnlyAdded = null);
+    IReadOnlyList<string>? LocalOnlyAdded = null,
+    IReadOnlyList<FileChange>? Changes = null);
 
 /// <summary>
 /// Carries out one run of a synchronisation: checks first (folder and sentinel file there, engine running), then
@@ -148,7 +149,9 @@ public sealed partial class SyncRunner
             // Same-size changes CloudDrive-Sync carried over itself count as transfers, too.
             if (before is { ChangedAnything: true }) final = final with { Transfers = final.Transfers + before.Fetched + before.Uploaded + before.ConflictCopies };
             Log.Info("Sync", $"Run of '{pair.Id}' succeeded: {final.Transfers} transfers, {deletes} deletions, {conflicts.Count} conflict copies.");
-            return new SyncRunOutcome(true, null, null, SyncDecision.None, final, deletes, conflicts, false);
+            // Which files went where - for the activity list.
+            List<FileChange> changes = [.. before?.Changes ?? [], .. RunChanges.FromReport(report, BisyncCommand.CloudPath(pair), pair.LocalPath)];
+            return new SyncRunOutcome(true, null, null, SyncDecision.None, final, deletes, conflicts, false, Changes: changes);
         }
 
         var text = report + "\n" + result.Error;
@@ -161,7 +164,11 @@ public sealed partial class SyncRunner
             kept.LocalOnly = kept.LocalOnly.Union(refused, StringComparer.OrdinalIgnoreCase).ToList();
             Log.Info("Sync", $"'{pair.Id}': {refused.Count} file(s) the server did not take stay on the PC; the run is repeated without them.");
             var again = await RunCoreAsync(kept, account, mode, resyncMode, progress, cancellationToken, keepTrash, repeatAllowed: false);
-            return again with { LocalOnlyAdded = refused };
+            return again with
+            {
+                LocalOnlyAdded = refused,
+                Changes = [.. again.Changes ?? [], .. refused.Select(path => new FileChange(ChangeKind.KeptOnPc, path))],
+            };
         }
         // Names that differ only in upper and lower case: the PC takes the server's spelling and the run is repeated once.
         if (repeatAllowed && mode != BisyncMode.Resync && CaseRenames.OutOfSync(report) is { Count: > 0 } outOfSync)

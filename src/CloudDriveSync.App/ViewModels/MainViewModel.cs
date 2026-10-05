@@ -294,8 +294,9 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var pair in Pairs)
         {
             // Runs without changes are left out - every few minutes one of them would only crowd the list.
-            foreach (var run in Host.Sync.History(pair.Id, 200).Where(r => !r.Success || r.Transfers > 0 || r.Deletes > 0 || r.Conflicts > 0).Take(40))
-                items.Add(new ActivityItem(pair.Title, run));
+            var trashKept = Host.Settings.Current.Preferences.TrashDays > 0;
+            foreach (var run in Host.Sync.History(pair.Id, 200).Where(r => !r.Success || r.Transfers > 0 || r.Deletes > 0 || r.Conflicts > 0 || r.Changes is { Count: > 0 }).Take(40))
+                items.Add(new ActivityItem(pair.Title, pair.LocalPath, run, trashKept));
             foreach (var conflict in pair.State?.Conflicts ?? []) conflicts.Add(new ConflictItem(pair.Title, pair.LocalPath, conflict));
         }
         Activity.Clear();
