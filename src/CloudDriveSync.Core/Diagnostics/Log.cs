@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace CloudDriveSync.Core.Diagnostics;
 
@@ -30,7 +30,7 @@ public static partial class Log
         var line = $"{DateTimeOffset.Now:yyyy-MM-ddTHH:mm:ss.fffzzz} [{level,-5}] [{component}] {Redact(message)}{Environment.NewLine}";
         try
         {
-            lock (Gate) File.AppendAllText(Path.Combine(directory, $"clouddrives-{DateTime.Now:yyyy-MM-dd}.log"), line);
+            lock (Gate) File.AppendAllText(Path.Combine(directory, $"clouddrive-sync-{DateTime.Now:yyyy-MM-dd}.log"), line);
         }
         catch (IOException)
         {
@@ -55,8 +55,10 @@ public static partial class Log
     {
         try
         {
-            foreach (var file in Directory.EnumerateFiles(directory, "clouddrives-*.log"))
-                if (File.GetLastWriteTime(file) < DateTime.Now - keep) File.Delete(file);
+            // "clouddrives-*.log": the name versions up to 0.2.0-preview.2 used; those files expire as well.
+            foreach (var pattern in new[] { "clouddrive-sync-*.log", "clouddrives-*.log" })
+                foreach (var file in Directory.EnumerateFiles(directory, pattern))
+                    if (File.GetLastWriteTime(file) < DateTime.Now - keep) File.Delete(file);
         }
         catch (IOException)
         {

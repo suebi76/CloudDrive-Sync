@@ -77,7 +77,7 @@ public sealed class RcloneInstaller
 
     private async Task DownloadAndExtractAsync(string url, string sha256, CancellationToken cancellationToken)
     {
-        var zip = Path.Combine(Path.GetTempPath(), $"clouddrives-rclone-{Guid.NewGuid():N}.zip");
+        var zip = Path.Combine(Path.GetTempPath(), $"clouddrive-sync-rclone-{Guid.NewGuid():N}.zip");
         try
         {
             using (var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })

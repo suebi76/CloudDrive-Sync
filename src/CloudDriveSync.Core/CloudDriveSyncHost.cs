@@ -1,4 +1,5 @@
-﻿using CloudDriveSync.Core.Accounts;
+﻿using System.Reflection;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Security;
@@ -34,7 +35,8 @@ public sealed class CloudDriveSyncHost : IAsyncDisposable
     /// <summary>Starts the engine and the synchronisations.</summary>
     public async Task StartAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        Log.Info("App", $"CloudDrive-Sync {typeof(CloudDriveSyncHost).Assembly.GetName().Version} starting (home {Paths.Home}).");
+        var version = typeof(CloudDriveSyncHost).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0];
+        Log.Info("App", $"CloudDrive-Sync {version} starting (home {Paths.Home}).");
         await Engine.StartAsync(progress, cancellationToken);
         Sync.Start();
     }

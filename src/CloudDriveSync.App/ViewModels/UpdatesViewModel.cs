@@ -135,6 +135,7 @@ public sealed partial class UpdatesViewModel : ObservableObject
             }
             if (_update?.Version != update.Version)
             {
+                Log.Info("Update", $"Version {update.Version} is available.");
                 _update = update;
                 _downloaded = false;
             }

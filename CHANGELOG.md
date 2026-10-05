@@ -3,6 +3,15 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.3] – 2026-10-05
+
+Test version on the way to 0.2 - the first one that arrives as an update.
+
+### Changed
+
+- The log files are called "clouddrive-sync-<date>.log" (before: "clouddrives-…", the name of CloudDrives); old ones
+  expire as before. The start entry names the full version, the update check notes each new version it finds.
+
 ## [0.2.0-preview.2] – 2026-10-05
 
 Test version on the way to 0.2.
