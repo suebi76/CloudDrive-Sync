@@ -1,11 +1,11 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using CloudDriveSync.App.ViewModels;
 using Microsoft.Win32;
 
 namespace CloudDriveSync.App.Views;
 
-/// <summary>Setting up or changing a synchronisation.</summary>
+/// <summary>Setting up a synchronisation step by step.</summary>
 public partial class AddSyncWindow : Window
 {
     private readonly AddSyncViewModel _viewModel;
@@ -15,7 +15,6 @@ public partial class AddSyncWindow : Window
         InitializeComponent();
         DataContext = _viewModel = viewModel;
         viewModel.CloseRequested += (_, _) => Close();
-        Loaded += async (_, _) => await viewModel.InitializeAsync();
     }
 
     private void OnFolderSelected(object sender, RoutedPropertyChangedEventArgs<object> e)

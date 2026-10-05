@@ -32,6 +32,8 @@ public sealed partial class SyncPairViewModel : ObservableObject
     public AccountSettings? Account => _account;
 
     [ObservableProperty] public partial string Title { get; set; } = "";
+    /// <summary>The cloud folder without the account ("Unterricht › Mathe"), for the account page.</summary>
+    [ObservableProperty] public partial string FolderTitle { get; set; } = "";
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
     [ObservableProperty] public partial string LocalPath { get; set; } = "";
     [ObservableProperty] public partial string KindGlyph { get; set; } = Glyphs.Cloud;
@@ -58,6 +60,20 @@ public sealed partial class SyncPairViewModel : ObservableObject
     public bool HasError => _state?.Status == SyncStatus.Error;
     public bool IsBusy => _state?.Status is SyncStatus.Syncing or SyncStatus.Waiting;
     public DateTimeOffset? LastSuccess => _state?.LastSuccess;
+    public IReadOnlyList<Choice<int>> IntervalChoices => SyncChoices.Intervals;
+
+    /// <summary>How often the cloud is asked for news; changed directly on the account page.</summary>
+    public int IntervalMinutes
+    {
+        get => _pair.IntervalMinutes;
+        set
+        {
+            if (value <= 0 || value == _pair.IntervalMinutes) return;
+            _pair.IntervalMinutes = value; // shown at once; the saved settings arrive with the next reload
+            _main.Host.Sync.Update(Id, pair => pair.IntervalMinutes = value);
+            Refresh();
+        }
+    }
 
     public void Update(SyncPairSettings pair, AccountSettings? account)
     {
@@ -76,13 +92,15 @@ public sealed partial class SyncPairViewModel : ObservableObject
     public void Refresh()
     {
         var accountName = _account?.Label ?? _pair.AccountId;
-        Title = _pair.RemotePath.Length > 0 ? $"{accountName} › {_pair.RemotePath.Replace("/", " › ")}" : $"{accountName} › Alles";
+        FolderTitle = _pair.RemotePath.Length > 0 ? _pair.RemotePath.Replace("/", " › ") : "Alles";
+        Title = $"{accountName} › {FolderTitle}";
+        OnPropertyChanged(nameof(IntervalMinutes));
         LocalPath = _pair.LocalPath;
         KindGlyph = Glyphs.Of(_account?.Kind ?? WebDavKind.Other);
         var selection = _pair.Selection.Mode == SelectionMode.All
             ? "alles"
             : Format.Count(_pair.Selection.Include.Count, "ausgewähltes Element", "ausgewählte Elemente");
-        Subtitle = $"{Glyphs.NameOf(_account?.Kind ?? WebDavKind.Other)} · {selection} · alle {Format.Count(_pair.IntervalMinutes, "Minute", "Minuten")}";
+        Subtitle = $"{Glyphs.NameOf(_account?.Kind ?? WebDavKind.Other)} · {selection} · {SyncChoices.IntervalTitle(_pair.IntervalMinutes)}";
         IsPaused = _pair.Paused;
         PauseText = _pair.Paused ? "Fortsetzen" : "Anhalten";
 
@@ -228,7 +246,7 @@ public sealed partial class SyncPairViewModel : ObservableObject
     private void TogglePause() => _main.Host.Sync.SetPaused(Id, !_pair.Paused);
 
     [RelayCommand]
-    private void Edit() => _main.EditSync(this);
+    private void OpenSettings() => _main.OpenSyncSettings(this);
 
     [RelayCommand]
     private void Rebuild()

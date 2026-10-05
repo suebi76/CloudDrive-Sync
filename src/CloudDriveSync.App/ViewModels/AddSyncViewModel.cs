@@ -1,8 +1,7 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
-using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
@@ -22,47 +21,31 @@ public enum AddSyncStep
 
 /// <summary>
 /// Setting up a synchronisation step by step: cloud folder, what of it (everything or chosen folders and files),
-/// where on this PC, how (conflicts, interval, deletion guard) - and a summary with the expected size. The same
-/// dialog changes an existing synchronisation (selection and options).
+/// where on this PC, how (conflicts, interval, deletion guard) - and a summary with the expected size. An existing
+/// synchronisation is changed on one page instead (<see cref="SyncSettingsViewModel"/>).
 /// </summary>
 public sealed partial class AddSyncViewModel : ObservableObject
 {
     private readonly CloudDriveSyncHost _host;
-    private readonly SyncPairSettings? _editing;
-    private readonly List<string> _originalIncludes = [];
     private bool _localTyped;
     private bool _settingLocal;
 
-    public AddSyncViewModel(CloudDriveSyncHost host, string? accountId, SyncPairSettings? editing = null)
+    public AddSyncViewModel(CloudDriveSyncHost host, string? accountId)
     {
         _host = host;
-        _editing = editing;
+        Selection = new SelectionTree(host);
         foreach (var account in host.Accounts.Accounts) Accounts.Add(account);
-        ConflictPolicy = editing?.Conflicts ?? ConflictPolicy.NewerWins;
-        IntervalMinutes = editing?.IntervalMinutes ?? 5;
-        OnLocalChange = editing?.OnLocalChange ?? true;
-        MaxDeletePercent = editing?.MaxDeletePercent ?? 50;
-        if (editing is not null)
-        {
-            Account = Accounts.FirstOrDefault(a => a.Id == editing.AccountId);
-            var name = editing.RemotePath.Length == 0 ? "Alles" : editing.RemotePath.Split('/')[^1];
-            ChosenFolder = new FolderNode(name, editing.RemotePath, true, 0, null, null);
-            SelectAll = editing.Selection.Mode == SelectionMode.All;
-            _originalIncludes.AddRange(editing.Selection.Include);
-            SetLocal(editing.LocalPath);
-            Step = AddSyncStep.Selection;
-        }
-        else
-        {
-            Account = Accounts.FirstOrDefault(a => a.Id == accountId) ?? Accounts.FirstOrDefault();
-        }
+        ConflictPolicy = ConflictPolicy.NewerWins;
+        IntervalMinutes = 5;
+        OnLocalChange = true;
+        MaxDeletePercent = 50;
+        Account = Accounts.FirstOrDefault(a => a.Id == accountId) ?? Accounts.FirstOrDefault();
     }
 
-    public bool IsEditing => _editing is not null;
     public ObservableCollection<AccountSettings> Accounts { get; } = [];
-    public bool ShowAccountChoice => !IsEditing && Accounts.Count > 1;
+    public bool ShowAccountChoice => Accounts.Count > 1;
     public ObservableCollection<FolderNode> FolderRoots { get; } = [];
-    public ObservableCollection<FolderNode> SelectionRoots { get; } = [];
+    public SelectionTree Selection { get; }
     public ObservableCollection<FolderWarning> Warnings { get; } = [];
 
     [ObservableProperty] public partial AddSyncStep Step { get; set; }
@@ -70,7 +53,6 @@ public sealed partial class AddSyncViewModel : ObservableObject
     [ObservableProperty] public partial FolderNode? SelectedFolder { get; set; }
     [ObservableProperty] public partial FolderNode? ChosenFolder { get; set; }
     [ObservableProperty] public partial bool SelectAll { get; set; } = true;
-    [ObservableProperty] public partial bool SelectionLoading { get; set; }
     [ObservableProperty] public partial string LocalPath { get; set; } = "";
     [ObservableProperty] public partial string LocalError { get; set; } = "";
     [ObservableProperty] public partial bool AcceptWarnings { get; set; }
@@ -85,24 +67,13 @@ public sealed partial class AddSyncViewModel : ObservableObject
     [ObservableProperty] public partial bool AcceptSpace { get; set; }
 
     public SyncPairSettings? Result { get; private set; }
-    public bool Saved { get; private set; }
 
     public event EventHandler? CloseRequested;
 
-    public IReadOnlyList<Choice<int>> IntervalChoices { get; } =
-    [
-        new(1, "jede Minute"), new(5, "alle 5 Minuten"), new(15, "alle 15 Minuten"), new(30, "alle 30 Minuten"), new(60, "jede Stunde"),
-        new(240, "alle 4 Stunden"),
-    ];
-
-    public IReadOnlyList<Choice<int>> DeleteChoices { get; } =
-    [
-        new(10, "mehr als 10 % der Dateien gelöscht würden"), new(25, "mehr als 25 % der Dateien gelöscht würden"),
-        new(50, "mehr als die Hälfte der Dateien gelöscht würde (empfohlen)"), new(75, "mehr als 75 % der Dateien gelöscht würden"),
-        new(100, "nie – Löschungen immer übernehmen"),
-    ];
-
-    public string Heading => IsEditing ? "Synchronisation ändern" : "Ordner synchronisieren";
+    public IReadOnlyList<Choice<int>> IntervalChoices => SyncChoices.Intervals;
+    public IReadOnlyList<Choice<int>> DeleteChoices => SyncChoices.DeleteLimits;
+    public string IntervalHint => SyncChoices.IntervalHint(IntervalMinutes);
+    public string IntervalExplanation => SyncChoices.IntervalExplanation;
 
     public string StepTitle => Step switch
     {
@@ -110,20 +81,12 @@ public sealed partial class AddSyncViewModel : ObservableObject
         AddSyncStep.Selection => "Was davon?",
         AddSyncStep.Local => "Wo auf diesem PC?",
         AddSyncStep.Options => "Wie synchronisieren?",
-        _ => IsEditing ? "Änderungen speichern" : "Bereit",
+        _ => "Bereit",
     };
 
-    public string StepText
-    {
-        get
-        {
-            var steps = IsEditing ? new[] { AddSyncStep.Selection, AddSyncStep.Options, AddSyncStep.Summary } : Enum.GetValues<AddSyncStep>();
-            return $"Schritt {Array.IndexOf(steps, Step) + 1} von {steps.Length}";
-        }
-    }
-
-    public bool CanGoBack => !IsBusy && (IsEditing ? Step != AddSyncStep.Selection : Step != AddSyncStep.Folder);
-    public string PrimaryText => Step == AddSyncStep.Summary ? (IsEditing ? "Speichern" : "Synchronisation starten") : "Weiter";
+    public string StepText => $"Schritt {(int)Step + 1} von {Enum.GetValues<AddSyncStep>().Length}";
+    public bool CanGoBack => !IsBusy && Step != AddSyncStep.Folder;
+    public string PrimaryText => Step == AddSyncStep.Summary ? "Synchronisation starten" : "Weiter";
     public bool IsLastStep => Step == AddSyncStep.Summary;
     public bool HasWarnings => Warnings.Count > 0;
     public bool HasError => Error.Length > 0;
@@ -132,12 +95,12 @@ public sealed partial class AddSyncViewModel : ObservableObject
 
     public string ChosenFolderText => ChosenFolder is null ? "" : $"{Account?.Label} › {(ChosenFolder.Path.Length == 0 ? "Alles" : ChosenFolder.Path.Replace("/", " › "))}";
 
-    public string SummarySelection => SelectAll ? "Alles in diesem Ordner" : Format.Count(CollectIncludes().Count, "ausgewähltes Element", "ausgewählte Elemente");
+    public string SummarySelection => SelectAll ? "Alles in diesem Ordner" : Format.Count(Selection.Collect().Count, "ausgewähltes Element", "ausgewählte Elemente");
 
     public string SummaryOptions =>
-        $"{ConflictTitle(ConflictPolicy)} · {IntervalChoices.FirstOrDefault(c => c.Value == IntervalMinutes)?.Title ?? $"alle {IntervalMinutes} Minuten"}" +
+        $"{SyncChoices.ConflictTitle(ConflictPolicy)} · {SyncChoices.IntervalTitle(IntervalMinutes)}" +
         (OnLocalChange ? " · Änderungen am PC sofort" : "") +
-        (MaxDeletePercent >= 100 ? " · ohne Löschschutz" : $" · Löschschutz ab {MaxDeletePercent} %");
+        (MaxDeletePercent >= 100 ? " · ohne Löschschutz" : $" · Löschschutz ab {MaxDeletePercent} %");
 
     partial void OnStepChanged(AddSyncStep value)
     {
@@ -152,10 +115,12 @@ public sealed partial class AddSyncViewModel : ObservableObject
 
     partial void OnLocalErrorChanged(string value) => OnPropertyChanged(nameof(HasLocalError));
 
+    partial void OnIntervalMinutesChanged(int value) => OnPropertyChanged(nameof(IntervalHint));
+
     partial void OnAccountChanged(AccountSettings? value)
     {
         OnPropertyChanged(nameof(CloudWithoutTimes));
-        if (IsEditing || value is null) return;
+        if (value is null) return;
         FolderRoots.Clear();
         var root = new FolderNode($"{value.Label} – alles", "", true, 0, null, LoadFoldersAsync);
         FolderRoots.Add(root);
@@ -170,96 +135,36 @@ public sealed partial class AddSyncViewModel : ObservableObject
         CheckLocal(showErrors: false);
     }
 
-    /// <summary>Called when the window has opened.</summary>
-    public async Task InitializeAsync()
-    {
-        if (IsEditing) await LoadSelectionAsync();
-    }
-
     private async Task<IReadOnlyList<FolderNode>> LoadFoldersAsync(FolderNode parent)
     {
         var entries = await _host.Accounts.ListAsync(Account!.Id, parent.Path, includeFiles: false);
         return entries.Select(e => new FolderNode(e.Name, e.Path, true, 0, parent, LoadFoldersAsync)).ToList();
     }
 
-    private async Task<IReadOnlyList<FolderNode>> LoadSelectionChildrenAsync(FolderNode parent)
-    {
-        var entries = await _host.Accounts.ListAsync(Account!.Id, parent.Path, includeFiles: true);
-        return entries.Select(e => Node(e, parent)).ToList();
-    }
-
-    private FolderNode Node(RemoteEntry entry, FolderNode? parent) =>
-        new(entry.Name, entry.Path, entry.IsDirectory, entry.Size, parent, entry.IsDirectory ? LoadSelectionChildrenAsync : null, InitialCheck(entry, parent));
-
-    /// <summary>Ticks as they were (when changing a synchronisation); inside a ticked folder everything is ticked.</summary>
-    private bool? InitialCheck(RemoteEntry entry, FolderNode? parent)
-    {
-        if (parent?.IsChecked is bool inherited) return inherited;
-        var relative = Relative(entry.Path);
-        if (!entry.IsDirectory) return _originalIncludes.Contains(relative, StringComparer.OrdinalIgnoreCase);
-        if (_originalIncludes.Contains(relative + "/", StringComparer.OrdinalIgnoreCase)) return true;
-        return _originalIncludes.Any(i => i.StartsWith(relative + "/", StringComparison.OrdinalIgnoreCase)) ? null : false;
-    }
-
     private string BasePath => ChosenFolder?.Path ?? "";
-
-    private string Relative(string path) =>
-        BasePath.Length == 0 ? path : path.StartsWith(BasePath + "/", StringComparison.Ordinal) ? path[(BasePath.Length + 1)..] : path;
 
     private async Task LoadSelectionAsync()
     {
-        SelectionRoots.Clear();
-        SelectionLoading = true;
         try
         {
-            var entries = await _host.Accounts.ListAsync(Account!.Id, BasePath, includeFiles: true);
-            foreach (var entry in entries) SelectionRoots.Add(Node(entry, null));
+            await Selection.LoadAsync(Account!.Id, BasePath, []);
         }
         catch (CdException e)
         {
             Error = $"Der Ordner konnte nicht gelesen werden: {ErrorCatalog.Get(e.Code).Title}";
         }
-        finally
-        {
-            SelectionLoading = false;
-        }
     }
-
-    /// <summary>The ticked entries as the synchronisation's include list (folders end with "/").</summary>
-    private List<string> CollectIncludes()
-    {
-        var result = new List<string>();
-        void Walk(IEnumerable<FolderNode> nodes)
-        {
-            foreach (var node in nodes)
-            {
-                if (node.IsPlaceholder) continue;
-                var relative = Relative(node.Path);
-                if (node.IsChecked == true) result.Add(node.IsDirectory ? relative + "/" : relative);
-                else if (node.IsChecked is null)
-                {
-                    if (node.IsLoaded) Walk(node.Children);
-                    else result.AddRange(_originalIncludes.Where(i => i.StartsWith(relative + "/", StringComparison.OrdinalIgnoreCase)));
-                }
-            }
-        }
-        Walk(SelectionRoots);
-        return result;
-    }
-
-    private SyncSelection BuildSelection() => new()
-    {
-        Mode = SelectAll ? SelectionMode.All : SelectionMode.Selected,
-        Include = SelectAll ? [] : CollectIncludes(),
-        Exclude = _editing?.Selection.Exclude.ToList() ?? [],
-    };
 
     private SyncPairSettings BuildDraft() => new()
     {
         AccountId = Account!.Id,
         RemotePath = BasePath,
         LocalPath = LocalPath.Trim(),
-        Selection = BuildSelection(),
+        Selection = new SyncSelection
+        {
+            Mode = SelectAll ? SelectionMode.All : SelectionMode.Selected,
+            Include = SelectAll ? [] : Selection.Collect(),
+        },
         Conflicts = ConflictPolicy,
         IntervalMinutes = IntervalMinutes,
         OnLocalChange = OnLocalChange,
@@ -288,7 +193,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
         AcceptWarnings = false;
         try
         {
-            foreach (var warning in _host.Sync.CheckFolder(LocalPath.Trim(), _editing?.Id)) Warnings.Add(warning);
+            foreach (var warning in _host.Sync.CheckFolder(LocalPath.Trim(), null)) Warnings.Add(warning);
             LocalError = "";
             return true;
         }
@@ -316,14 +221,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
     private void Back()
     {
         Error = "";
-        Step = Step switch
-        {
-            AddSyncStep.Selection => AddSyncStep.Folder,
-            AddSyncStep.Local => AddSyncStep.Selection,
-            AddSyncStep.Options => IsEditing ? AddSyncStep.Selection : AddSyncStep.Local,
-            AddSyncStep.Summary => AddSyncStep.Options,
-            _ => Step,
-        };
+        if (Step != AddSyncStep.Folder) Step -= 1;
     }
 
     [RelayCommand]
@@ -338,23 +236,22 @@ public sealed partial class AddSyncViewModel : ObservableObject
                     Error = "Bitte wähle einen Ordner aus.";
                     return;
                 }
-                if (ChosenFolder?.Path != SelectedFolder.Path || SelectionRoots.Count == 0)
+                if (ChosenFolder?.Path != SelectedFolder.Path || Selection.Roots.Count == 0)
                 {
                     ChosenFolder = SelectedFolder;
-                    _originalIncludes.Clear();
                     await LoadSelectionAsync();
                 }
                 if (!_localTyped) SetLocal(DefaultLocalPath());
                 Step = AddSyncStep.Selection;
                 break;
             case AddSyncStep.Selection:
-                if (!SelectAll && CollectIncludes().Count == 0)
+                if (!SelectAll && Selection.Collect().Count == 0)
                 {
                     Error = "Bitte setze bei mindestens einem Ordner oder einer Datei einen Haken – oder wähle „Alles“.";
                     return;
                 }
-                Step = IsEditing ? AddSyncStep.Options : AddSyncStep.Local;
-                if (!IsEditing) CheckLocal(showErrors: false);
+                Step = AddSyncStep.Local;
+                CheckLocal(showErrors: false);
                 break;
             case AddSyncStep.Local:
                 if (!CheckLocal(showErrors: true)) return;
@@ -383,9 +280,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            var draft = BuildDraft();
-            if (IsEditing) draft.LocalPath = _editing!.LocalPath;
-            var preview = await _host.Sync.PreviewAsync(draft);
+            var preview = await _host.Sync.PreviewAsync(BuildDraft());
             var lines = new List<string>
             {
                 $"In der Cloud: {Format.Count(preview.CloudFiles, "Datei", "Dateien")} · {Format.Bytes(preview.CloudBytes)}",
@@ -417,23 +312,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            if (_editing is not null)
-            {
-                var selection = BuildSelection();
-                _host.Sync.Update(_editing.Id, pair =>
-                {
-                    pair.Selection = selection;
-                    pair.Conflicts = ConflictPolicy;
-                    pair.IntervalMinutes = IntervalMinutes;
-                    pair.OnLocalChange = OnLocalChange;
-                    pair.MaxDeletePercent = MaxDeletePercent;
-                });
-                Saved = true;
-            }
-            else
-            {
-                Result = await _host.Sync.AddAsync(BuildDraft());
-            }
+            Result = await _host.Sync.AddAsync(BuildDraft());
             CloseRequested?.Invoke(this, EventArgs.Empty);
         }
         catch (CdException e)
@@ -454,12 +333,4 @@ public sealed partial class AddSyncViewModel : ObservableObject
             IsBusy = false;
         }
     }
-
-    public static string ConflictTitle(ConflictPolicy policy) => policy switch
-    {
-        ConflictPolicy.KeepBoth => "Konflikte: beide umbenennen",
-        ConflictPolicy.CloudWins => "Konflikte: Cloud gewinnt",
-        ConflictPolicy.PcWins => "Konflikte: PC gewinnt",
-        _ => "Konflikte: neuere gewinnt",
-    };
 }

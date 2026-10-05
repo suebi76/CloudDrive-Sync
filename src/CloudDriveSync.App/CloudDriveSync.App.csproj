@@ -37,4 +37,10 @@
     <Resource Include="Assets\clouddrive-sync.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The licence texts travel with the program (page "Über"), so they open without internet. -->
+    <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

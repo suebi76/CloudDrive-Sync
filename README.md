@@ -1,10 +1,10 @@
-# CloudDrive-Sync
+﻿# CloudDrive-Sync
 
 Hält Ordner auf deinem Windows-PC mit **Nextcloud**, **IServ** und anderen **WebDAV**-Speichern aktuell – in beide
 Richtungen, mit einer Oberfläche im Stil von Windows 11.
 
-> **Status:** Vorabversion 0.1. Der Kern ist mit Unit- und Integrationstests abgesichert; die Oberfläche ist neu.
-> Probiere es zuerst mit einem kleinen Ordner aus.
+> **Status:** Vorabversion. Der Kern ist mit Unit- und Integrationstests abgesichert, darunter alle üblichen
+> Dateivorgänge gegen einen IServ-ähnlichen Testserver. Probiere es zuerst mit einem kleinen Ordner aus.
 
 ## Was es kann
 
@@ -63,4 +63,11 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests     # echtes rclone gegen
 
 ## Lizenz
 
-[MIT](LICENSE)
+© 2026 Steffen Schwabe · [Projekt auf GitHub](https://github.com/suebi76/CloudDrive-Sync)
+
+- **Quellcode:** [MIT-Lizenz](LICENSE). Du darfst ihn frei nutzen, verändern und weitergeben, solange der
+  Copyright-Hinweis und die Lizenz erhalten bleiben.
+- **Dokumentation und Grafiken** (Texte in diesem Repository außerhalb des Quellcodes, das Programmsymbol):
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de). Bei Weitergabe nennst du „Steffen Schwabe,
+  CloudDrive-Sync“ und verlinkst die Lizenz.
+- **Verwendete Bausteine** anderer Projekte und ihre Lizenzen: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

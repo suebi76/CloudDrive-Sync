@@ -1,4 +1,4 @@
-using CloudDriveSync.Core.Settings;
+﻿using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.App.ViewModels;
 
@@ -19,7 +19,8 @@ public interface IDialogs
 
     SyncPairSettings? AddSync(string? accountId);
 
-    bool EditSync(SyncPairSettings pair);
+    /// <summary>The settings of an existing synchronisation; true when they were saved.</summary>
+    bool SyncSettings(SyncPairSettings pair);
 
     DialogChoice Ask(string title, string text, string primary, string? secondary = null, string close = "Abbrechen", bool danger = false);
 }

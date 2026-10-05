@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using CloudDriveSync.App.ViewModels;
 using CloudDriveSync.Core;
 using CloudDriveSync.Core.Settings;
@@ -29,10 +29,10 @@ internal sealed class DialogService(CloudDriveSyncHost host, Func<Window?> owner
         return viewModel.Result;
     }
 
-    public bool EditSync(SyncPairSettings pair)
+    public bool SyncSettings(SyncPairSettings pair)
     {
-        var viewModel = new AddSyncViewModel(host, pair.AccountId, pair);
-        Show(new AddSyncWindow(viewModel));
+        var viewModel = new SyncSettingsViewModel(host, pair);
+        Show(new SyncSettingsWindow(viewModel));
         return viewModel.Saved;
     }
 

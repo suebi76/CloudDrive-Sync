@@ -21,6 +21,7 @@ public static class Glyphs
     public const string Folder = "\uE8B7";
     public const string Document = "\uE8A5";
     public const string Trash = "\uE74D";
+    public const string Info = "\uE946";
 
     public static string Of(WebDavKind kind) => kind switch
     {

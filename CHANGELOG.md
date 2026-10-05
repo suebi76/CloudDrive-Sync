@@ -3,6 +3,26 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.1] – 2026-10-05
+
+Test version on the way to 0.2.
+
+### Added
+
+- The settings of a synchronisation on one page - from the gear symbol on its card or "Einstellungen …" on the account
+  page: what is synchronised, how often, conflicts, deletion guard. The step-by-step assistant stays for new ones.
+- Account page: the synchronised folders of each account with their interval, changeable right there, and
+  "Weiteren Ordner synchronisieren …".
+- Short explanations of what each interval means (how fast news arrive, how much traffic it causes).
+- Page "Über", also from the menu of the notification-area symbol: version, © 2026 Steffen Schwabe, licence, project
+  on GitHub and the components used. The licence texts come with the program.
+
+### Changed
+
+- Licences: source code MIT, documentation and graphics CC BY 4.0; THIRD-PARTY-NOTICES.md lists the components used.
+- Screen readers reach the texts and buttons of all cards.
+- "Änderungen am PC sofort hochladen" now says "wenige Sekunden" - since 0.1.2 changes go up after about 5 seconds.
+
 ## [0.1.2] – 2026-10-05
 
 ### Fixed

@@ -44,7 +44,11 @@ public partial class App : Application
         _host = new CloudDriveSyncHost(paths);
         if (migrated > 0) Log.Info("App", $"Data of the test build \"CloudDrives 2\" taken over ({migrated} item(s)).");
         _main = new MainViewModel(_host, new DialogService(_host, () => _window is { IsVisible: true } ? _window : null), Dispatcher);
-        _tray = new TrayIcon(ShowMainWindow, () => _main.SyncAllCommand.Execute(null), paused => _main.PauseAll(paused), () => _ = ExitAsync());
+        _tray = new TrayIcon(ShowMainWindow, () => _main.SyncAllCommand.Execute(null), paused => _main.PauseAll(paused), () =>
+        {
+            ShowMainWindow();
+            _main.ShowAbout();
+        }, () => _ = ExitAsync());
         _main.Notice += (_, notice) => _tray.Notify(notice.Title, notice.Text, notice.Kind != SyncNoticeKind.Conflicts);
         _main.SummaryChanged += (_, _) =>
         {

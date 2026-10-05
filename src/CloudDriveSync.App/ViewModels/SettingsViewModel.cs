@@ -8,7 +8,11 @@ using CommunityToolkit.Mvvm.Input;
 namespace CloudDriveSync.App.ViewModels;
 
 /// <summary>A value with a text, for lists to choose from.</summary>
-public sealed record Choice<T>(T Value, string Title, string Description = "");
+public sealed record Choice<T>(T Value, string Title, string Description = "")
+{
+    /// <summary>Also the name screen readers announce for the entry.</summary>
+    public override string ToString() => Title;
+}
 
 /// <summary>The settings page.</summary>
 public sealed partial class SettingsViewModel : ObservableObject

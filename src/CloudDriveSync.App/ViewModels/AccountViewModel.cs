@@ -1,4 +1,5 @@
-﻿using CloudDriveSync.App.Infrastructure;
+﻿using System.Collections.ObjectModel;
+using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -6,7 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CloudDriveSync.App.ViewModels;
 
-/// <summary>One account as a card: who is signed in where, storage used, synchronisations.</summary>
+/// <summary>One account as a card: who is signed in where, storage used, and its synchronisations.</summary>
 public sealed partial class AccountViewModel : ObservableObject
 {
     private readonly MainViewModel _main;
@@ -16,7 +17,7 @@ public sealed partial class AccountViewModel : ObservableObject
     {
         _main = main;
         _account = account;
-        Update(account, 0);
+        Update(account, []);
     }
 
     public string Id => _account.Id;
@@ -25,20 +26,28 @@ public sealed partial class AccountViewModel : ObservableObject
     [ObservableProperty] public partial string Label { get; set; } = "";
     [ObservableProperty] public partial string Glyph { get; set; } = Glyphs.Cloud;
     [ObservableProperty] public partial string Details { get; set; } = "";
-    [ObservableProperty] public partial string SyncText { get; set; } = "";
     [ObservableProperty] public partial bool HasQuota { get; set; }
     [ObservableProperty] public partial double QuotaPercent { get; set; }
     [ObservableProperty] public partial string QuotaText { get; set; } = "";
-    [ObservableProperty] public partial int SyncCount { get; set; }
+    [ObservableProperty] public partial bool HasSyncs { get; set; }
+    [ObservableProperty] public partial string AddSyncText { get; set; } = "Ordner synchronisieren …";
 
-    public void Update(AccountSettings account, int syncCount)
+    /// <summary>The synchronisations of this account - the same ones the overview shows as cards.</summary>
+    public ObservableCollection<SyncPairViewModel> Syncs { get; } = [];
+
+    public void Update(AccountSettings account, IReadOnlyList<SyncPairViewModel> syncs)
     {
         _account = account;
         Label = account.Label;
         Glyph = Glyphs.Of(account.Kind);
         Details = $"{Glyphs.NameOf(account.Kind)} · {account.Identity?.Name ?? ""}";
-        SyncCount = syncCount;
-        SyncText = syncCount == 0 ? "Noch kein Ordner synchronisiert" : $"{Format.Count(syncCount, "Ordner", "Ordner")} synchronisiert";
+        if (!Syncs.SequenceEqual(syncs))
+        {
+            Syncs.Clear();
+            foreach (var sync in syncs) Syncs.Add(sync);
+        }
+        HasSyncs = Syncs.Count > 0;
+        AddSyncText = HasSyncs ? "Weiteren Ordner synchronisieren …" : "Ordner synchronisieren …";
     }
 
     public void ShowQuota(Quota quota)

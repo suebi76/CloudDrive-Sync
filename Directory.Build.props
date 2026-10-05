@@ -9,8 +9,8 @@
     <Product>CloudDrive-Sync</Product>
     <Company>Steffen Schwabe</Company>
     <Authors>Steffen Schwabe</Authors>
-    <Copyright>(c) 2026 Steffen Schwabe. MIT License.</Copyright>
-    <Version>0.1.2</Version>
+    <Copyright>© 2026 Steffen Schwabe</Copyright>
+    <Version>0.2.0-preview.1</Version>
     <NeutralLanguage>de</NeutralLanguage>
     <SatelliteResourceLanguages>de;en</SatelliteResourceLanguages>
 

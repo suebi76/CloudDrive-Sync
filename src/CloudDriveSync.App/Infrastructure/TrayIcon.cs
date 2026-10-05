@@ -26,7 +26,7 @@ internal sealed partial class TrayIcon : IDisposable
     private Window? _anchor;
     private bool _allPaused;
 
-    public TrayIcon(Action open, Action syncAll, Action<bool> pauseAll, Action exit)
+    public TrayIcon(Action open, Action syncAll, Action<bool> pauseAll, Action about, Action exit)
     {
         _pauseAll = pauseAll;
         _icon = new Forms.NotifyIcon { Icon = IconFor(Tone.Neutral), Text = "CloudDrive-Sync", Visible = true };
@@ -48,6 +48,7 @@ internal sealed partial class TrayIcon : IDisposable
         _menu.Items.Add(new Separator());
         _drivesItem = Item("CloudDrives (Laufwerke) öffnen", "\uEDA2", Companion.OpenDrivesProgram);
         _menu.Items.Add(_drivesItem);
+        _menu.Items.Add(Item("Über CloudDrive-Sync", "\uE946", about));
         _menu.Items.Add(new Separator());
         _menu.Items.Add(Item("Beenden", "\uE7E8", exit));
         _menu.Closed += (_, _) => _anchor?.Hide();

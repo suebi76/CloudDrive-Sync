@@ -1,0 +1,125 @@
+<Window x:Class="CloudDriveSync.App.Views.SyncSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:CloudDriveSync.App.ViewModels"
+        Title="Einstellungen der Synchronisation" Width="720" Height="800" MinWidth="580" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Icon="/Assets/clouddrive-sync.ico">
+
+    <Window.Resources>
+        <Style x:Key="TreeItem" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource DialogFooter}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Speichern" Style="{StaticResource AccentButtonStyle}" Command="{Binding SaveCommand}" IsDefault="True" MinWidth="120" />
+                <Button Content="Abbrechen" IsCancel="True" MinWidth="96" Margin="8,0,0,0" />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource InfoBarCritical}" Margin="28,0,28,12" Visibility="{Binding HasError, Converter={StaticResource Visible}}">
+            <TextBlock Text="{Binding Error}" TextWrapping="Wrap" />
+        </Border>
+
+        <StackPanel DockPanel.Dock="Top" Margin="28,22,28,6">
+            <TextBlock Text="Einstellungen der Synchronisation" Style="{StaticResource Caption}" />
+            <TextBlock Text="{Binding CloudText}" FontSize="20" FontWeight="SemiBold" Margin="0,2,0,0" TextWrapping="Wrap" />
+            <Button Content="{Binding LocalPath}" Style="{StaticResource LinkButton}" Command="{Binding OpenFolderCommand}" HorizontalAlignment="Left"
+                    ToolTip="Ordner im Explorer öffnen" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="28,12,28,16">
+
+                <!-- What is synchronised -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Was wird synchronisiert?" Style="{StaticResource Strong}" Margin="0,0,0,10" />
+                        <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll}" Margin="0,0,0,8" AutomationProperties.Name="Alles in diesem Ordner">
+                            <StackPanel>
+                                <TextBlock Text="Alles in diesem Ordner" />
+                                <TextBlock Style="{StaticResource Caption}" Text="Neue Ordner und Dateien kommen automatisch dazu." />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll, Converter={StaticResource Not}}" Margin="0,0,0,10" AutomationProperties.Name="Nur ausgewählte Ordner und Dateien">
+                            <StackPanel>
+                                <TextBlock Text="Nur ausgewählte Ordner und Dateien" />
+                                <TextBlock Style="{StaticResource Caption}" Text="Nur was du abhakst, kommt auf diesen PC. Alles andere bleibt nur in der Cloud." />
+                            </StackPanel>
+                        </RadioButton>
+                        <ProgressBar IsIndeterminate="True" Margin="0,0,0,8" Visibility="{Binding Selection.IsLoading, Converter={StaticResource Visible}}" />
+                        <TextBlock Text="{Binding SelectionError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Visibility="{Binding HasSelectionError, Converter={StaticResource Visible}}" />
+                        <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="4" Height="240"
+                                IsEnabled="{Binding SelectAll, Converter={StaticResource Not}}">
+                            <TreeView AutomationProperties.Name="Auswahl" ItemsSource="{Binding Selection.Roots}" BorderThickness="0" Background="Transparent"
+                                      ItemContainerStyle="{StaticResource TreeItem}">
+                                <TreeView.ItemTemplate>
+                                    <HierarchicalDataTemplate DataType="{x:Type vm:FolderNode}" ItemsSource="{Binding Children}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                                            <CheckBox IsChecked="{Binding IsChecked}" IsThreeState="False" AutomationProperties.Name="{Binding Name}" MinWidth="0" Padding="0" Margin="0,0,6,0"
+                                                      VerticalAlignment="Center" Visibility="{Binding IsPlaceholder, Converter={StaticResource Hidden}}" />
+                                            <TextBlock Style="{StaticResource Icon}" Text="{Binding Glyph}" FontSize="14" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                            <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding SizeText}" Style="{StaticResource Caption}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </HierarchicalDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+                        </Border>
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   Text="Änderst du die Auswahl, baut CloudDrive-Sync den Abgleich danach neu auf – ohne etwas zu löschen. Abgewählte Ordner bleiben am PC liegen, werden aber nicht mehr abgeglichen." />
+                    </StackPanel>
+                </Border>
+
+                <!-- How often -->
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Abgleich" Style="{StaticResource Strong}" Margin="0,0,0,10" />
+                        <DockPanel>
+                            <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding IntervalChoices}" DisplayMemberPath="Title" SelectedValuePath="Value"
+                                      SelectedValue="{Binding IntervalMinutes}" MinWidth="200" AutomationProperties.Name="Änderungen aus der Cloud holen" />
+                            <TextBlock Text="Änderungen aus der Cloud holen" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding IntervalHint}" Style="{StaticResource Secondary}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding IntervalExplanation}" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding OnLocalChange}" Margin="0,14,0,0" AutomationProperties.Name="Änderungen am PC sofort hochladen">
+                            <StackPanel>
+                                <TextBlock Text="Änderungen am PC sofort hochladen" />
+                                <TextBlock Style="{StaticResource Caption}" Text="Wenige Sekunden nach dem Speichern – sonst erst beim nächsten Abgleich." />
+                            </StackPanel>
+                        </CheckBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- Conflicts -->
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Wenn eine Datei auf beiden Seiten geändert wurde" Style="{StaticResource Strong}" Margin="0,0,0,10" />
+                        <ComboBox ItemsSource="{Binding ConflictChoices}" DisplayMemberPath="Title" SelectedValuePath="Value" SelectedValue="{Binding ConflictPolicy}"
+                                  AutomationProperties.Name="Konflikte" />
+                        <TextBlock Text="{Binding ConflictHint}" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <Border Style="{StaticResource InfoBar}" Margin="0,10,0,0" Visibility="{Binding CloudWithoutTimes, Converter={StaticResource Visible}}">
+                            <TextBlock TextWrapping="Wrap"
+                                       Text="Hinweis: Dieser Server speichert keine eigenen Änderungszeiten. Welche Fassung neuer ist, lässt sich dort nicht feststellen – bei „neuere Fassung“ behält CloudDrive-Sync dann beide." />
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Deletion guard -->
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Löschschutz" Style="{StaticResource Strong}" Margin="0,0,0,10" />
+                        <TextBlock Text="Anhalten und nachfragen, wenn …" Margin="0,0,0,6" />
+                        <ComboBox ItemsSource="{Binding DeleteChoices}" DisplayMemberPath="Title" SelectedValuePath="Value" SelectedValue="{Binding MaxDeletePercent}"
+                                  AutomationProperties.Name="Löschschutz" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Text="Schützt vor versehentlichem Löschen, z. B. wenn ein Ordner verschoben wurde oder ein Programm Dateien entfernt." />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

@@ -18,6 +18,7 @@ public enum Page
     Activity,
     Trash,
     Settings,
+    About,
 }
 
 public enum StartupState
@@ -64,6 +65,7 @@ public sealed partial class MainViewModel : ObservableObject
             new NavItem(Page.Activity, "Aktivität", Glyphs.History),
             new NavItem(Page.Trash, "Papierkorb", Glyphs.Trash),
             new NavItem(Page.Settings, "Einstellungen", Glyphs.Settings),
+            new NavItem(Page.About, "Über", Glyphs.Info),
         ];
         SelectedNav = Navigation[0];
         Settings = new SettingsViewModel(this);
@@ -75,6 +77,7 @@ public sealed partial class MainViewModel : ObservableObject
     public IDialogs Dialogs { get; }
     public SettingsViewModel Settings { get; }
     public TrashViewModel Trash { get; }
+    public AboutViewModel About { get; } = new();
     public IReadOnlyList<NavItem> Navigation { get; }
 
     public ObservableCollection<SyncPairViewModel> Pairs { get; } = [];
@@ -187,7 +190,7 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var account in settings.Accounts)
         {
             var existing = Accounts.FirstOrDefault(a => a.Id == account.Id) ?? new AccountViewModel(this, account);
-            existing.Update(account, settings.Syncs.Count(s => s.AccountId == account.Id));
+            existing.Update(account, pairs.Where(p => p.Settings.AccountId == account.Id).ToList());
             cards.Add(existing);
         }
         Replace(Accounts, cards);
@@ -348,9 +351,9 @@ public sealed partial class MainViewModel : ObservableObject
         SelectedNav = Navigation[0];
     }
 
-    public void EditSync(SyncPairViewModel pair)
+    public void OpenSyncSettings(SyncPairViewModel pair)
     {
-        if (Dialogs.EditSync(pair.Settings)) Reload();
+        if (Dialogs.SyncSettings(pair.Settings)) Reload();
     }
 
     /// <summary>Signs an account in again; its synchronisations continue at once.</summary>
@@ -390,6 +393,8 @@ public sealed partial class MainViewModel : ObservableObject
     public void ShowActivity() => SelectedNav = Navigation[2];
 
     public void ShowTrash() => SelectedNav = Navigation.First(n => n.Page == Page.Trash);
+
+    public void ShowAbout() => SelectedNav = Navigation.First(n => n.Page == Page.About);
 
     [RelayCommand]
     private void ShowAccounts() => SelectedNav = Navigation[1];

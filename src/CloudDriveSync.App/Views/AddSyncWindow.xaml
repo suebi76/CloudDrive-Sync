@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:CloudDriveSync.App.ViewModels"
-        Title="{Binding Heading}" Width="700" Height="720" MinWidth="580" MinHeight="580"
+        Title="Ordner synchronisieren" Width="700" Height="720" MinWidth="580" MinHeight="580"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Icon="/Assets/clouddrive-sync.ico">
 
     <Window.Resources>
@@ -74,9 +74,9 @@
                         <TextBlock Style="{StaticResource Caption}" Text="Nur was du abhakst, kommt auf diesen PC. Alles andere bleibt nur in der Cloud." />
                     </StackPanel>
                 </RadioButton>
-                <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" Margin="0,0,0,8" Visibility="{Binding SelectionLoading, Converter={StaticResource Visible}}" />
+                <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" Margin="0,0,0,8" Visibility="{Binding Selection.IsLoading, Converter={StaticResource Visible}}" />
                 <Border Style="{StaticResource Card}" Padding="6" IsEnabled="{Binding SelectAll, Converter={StaticResource Not}}">
-                    <TreeView x:Name="SelectionTree" AutomationProperties.Name="Auswahl" ItemsSource="{Binding SelectionRoots}" BorderThickness="0" Background="Transparent" ItemContainerStyle="{StaticResource TreeItem}">
+                    <TreeView x:Name="SelectionTree" AutomationProperties.Name="Auswahl" ItemsSource="{Binding Selection.Roots}" BorderThickness="0" Background="Transparent" ItemContainerStyle="{StaticResource TreeItem}">
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate DataType="{x:Type vm:FolderNode}" ItemsSource="{Binding Children}">
                                 <StackPanel Orientation="Horizontal" Margin="0,2">
@@ -162,10 +162,12 @@
                                   SelectedValue="{Binding IntervalMinutes}" MinWidth="200" />
                         <TextBlock Text="Änderungen aus der Cloud holen" VerticalAlignment="Center" />
                     </DockPanel>
+                    <TextBlock Text="{Binding IntervalHint}" Style="{StaticResource Secondary}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding IntervalExplanation}" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap" />
                     <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding OnLocalChange}" Margin="0,14,0,0" AutomationProperties.Name="Änderungen am PC sofort hochladen">
                         <StackPanel>
                             <TextBlock Text="Änderungen am PC sofort hochladen" />
-                            <TextBlock Style="{StaticResource Caption}" Text="Etwa 30 Sekunden nach dem Speichern – sonst erst beim nächsten Abgleich." />
+                            <TextBlock Style="{StaticResource Caption}" Text="Wenige Sekunden nach dem Speichern – sonst erst beim nächsten Abgleich." />
                         </StackPanel>
                     </CheckBox>
 
@@ -219,10 +221,8 @@
                             <CheckBox Content="Trotzdem starten" IsChecked="{Binding AcceptSpace}" Margin="0,8,0,0" />
                         </StackPanel>
                     </Border>
-                    <TextBlock Style="{StaticResource Secondary}" Margin="0,14,0,0" Visibility="{Binding IsEditing, Converter={StaticResource Hidden}}"
-                               Text="Beim ersten Abgleich führt CloudDrive-Sync beide Seiten zusammen – gelöscht wird dabei nichts. Danach gehen Änderungen, neue Dateien und Löschungen in beide Richtungen." />
-                    <TextBlock Style="{StaticResource Secondary}" Margin="0,14,0,0" Visibility="{Binding IsEditing, Converter={StaticResource Visible}}"
-                               Text="Hat sich die Auswahl geändert, baut CloudDrive-Sync den Abgleich danach neu auf – ohne etwas zu löschen. Abgewählte Ordner bleiben am PC liegen, werden aber nicht mehr abgeglichen." />
+                    <TextBlock Style="{StaticResource Secondary}" Margin="0,14,0,0"
+                               Text="Beim ersten Abgleich führt CloudDrive-Sync beide Seiten zusammen – gelöscht wird dabei nichts. Danach gehen Änderungen, neue Dateien und Löschungen in beide Richtungen. Alles lässt sich später unter „Einstellungen“ der Synchronisation ändern." />
                 </StackPanel>
             </ScrollViewer>
         </Grid>
