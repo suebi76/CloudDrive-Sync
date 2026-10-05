@@ -1,5 +1,4 @@
-﻿using System.Reflection;
-using CloudDriveSync.App.Infrastructure;
+﻿using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -26,6 +25,22 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial bool StartWithWindows { get; set; }
     [ObservableProperty] public partial bool Notifications { get; set; }
     [ObservableProperty] public partial int TrashDays { get; set; }
+    [ObservableProperty] public partial UpdateMode UpdateMode { get; set; }
+    [ObservableProperty] public partial bool TestVersions { get; set; }
+
+    public UpdatesViewModel Updates => _main.Updates;
+
+    public IReadOnlyList<Choice<UpdateMode>> UpdateChoices { get; } =
+    [
+        new(UpdateMode.Notify, "Hinweis zeigen, Installation mit einem Klick (empfohlen)",
+            "Übersicht und Infobereich zeigen, wenn es eine neue Version gibt; du installierst sie mit einem Klick."),
+        new(UpdateMode.Automatic, "Automatisch installieren",
+            "Neue Versionen werden im Hintergrund geladen und installiert, sobald nichts abgeglichen wird und das Fenster geschlossen ist."),
+        new(UpdateMode.Manual, "Nur wenn ich nachsehe",
+            "CloudDrive-Sync sucht nicht selbst. Über „Nach Updates suchen“ prüfst du es, wann du willst."),
+    ];
+
+    public string UpdateHint => UpdateChoices.FirstOrDefault(c => c.Value == UpdateMode)?.Description ?? "";
 
     public IReadOnlyList<Choice<int>> TrashChoices { get; } =
     [
@@ -35,15 +50,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Only the normal installation starts with Windows - not a copy with another data folder.</summary>
     public bool CanStartWithWindows => _main.Host.Paths.IsDefaultHome;
 
-    public string Version
-    {
-        get
-        {
-            var version = typeof(SettingsViewModel).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
-            var plus = version.IndexOf('+');
-            return plus > 0 ? version[..plus] : version;
-        }
-    }
+    public string Version => AppInfo.Version;
 
     public string EngineVersion => $"rclone {RcloneInstaller.Version}";
 
@@ -55,6 +62,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         StartWithWindows = preferences.StartWithWindows;
         Notifications = preferences.Notifications;
         TrashDays = preferences.TrashDays;
+        UpdateMode = preferences.Updates;
+        TestVersions = preferences.TestVersions;
         _loading = false;
     }
 
@@ -71,6 +80,21 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnNotificationsChanged(bool value)
     {
         if (!_loading) _main.Host.Settings.Update(s => s.Preferences.Notifications = value);
+    }
+
+    partial void OnUpdateModeChanged(UpdateMode value)
+    {
+        OnPropertyChanged(nameof(UpdateHint));
+        if (_loading) return;
+        _main.Host.Settings.Update(s => s.Preferences.Updates = value);
+        _main.Updates.SettingsChanged();
+    }
+
+    partial void OnTestVersionsChanged(bool value)
+    {
+        if (_loading) return;
+        _main.Host.Settings.Update(s => s.Preferences.TestVersions = value);
+        _main.Updates.SettingsChanged();
     }
 
     partial void OnTrashDaysChanged(int value)

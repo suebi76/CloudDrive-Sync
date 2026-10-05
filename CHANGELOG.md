@@ -3,6 +3,23 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.2] – 2026-10-05
+
+Test version on the way to 0.2.
+
+### Added
+
+- Setup program "CloudDrive-Sync-Setup.exe": installs for the signed-in user without administrator rights, with .NET
+  included, and adds entries to the start menu and the desktop. It is uninstalled in the Windows settings ("Apps");
+  settings, sign-ins and synchronised files stay.
+- Updates from the GitHub project (Einstellungen › Updates): a notice and installation with one click (default),
+  automatic installation at a quiet moment, or only when you look. "Testversionen erhalten" brings test versions.
+- The installed program records where it is (Windows "App Paths"), so CloudDrives finds it.
+
+### Fixed
+
+- THIRD-PARTY-NOTICES.md is now part of the repository (the allowlist of .gitignore had left it out).
+
 ## [0.2.0-preview.1] – 2026-10-05
 
 Test version on the way to 0.2.

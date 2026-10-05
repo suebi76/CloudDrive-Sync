@@ -70,6 +70,7 @@ public sealed partial class MainViewModel : ObservableObject
         SelectedNav = Navigation[0];
         Settings = new SettingsViewModel(this);
         Trash = new TrashViewModel(this);
+        Updates = new UpdatesViewModel(this, dispatcher);
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(30), DispatcherPriority.Background, (_, _) => Tick(), dispatcher);
     }
 
@@ -78,6 +79,7 @@ public sealed partial class MainViewModel : ObservableObject
     public SettingsViewModel Settings { get; }
     public TrashViewModel Trash { get; }
     public AboutViewModel About { get; } = new();
+    public UpdatesViewModel Updates { get; }
     public IReadOnlyList<NavItem> Navigation { get; }
 
     public ObservableCollection<SyncPairViewModel> Pairs { get; } = [];
@@ -146,6 +148,7 @@ public sealed partial class MainViewModel : ObservableObject
             Settings.ApplyAutostart();
             Startup = StartupState.Ready;
             _clock.Start();
+            Updates.Start();
             _ = RefreshQuotasAsync();
         }
         catch (Exception e)
@@ -317,6 +320,9 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>Runs something on the window's thread (for events from the background).</summary>
+    public void OnWindowThread(Action action) => _dispatcher.InvokeAsync(action);
 
     [RelayCommand]
     private void SyncAll() => Host.Sync.RunAll();

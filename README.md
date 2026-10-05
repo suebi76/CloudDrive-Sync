@@ -43,10 +43,28 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
 CloudDrive-Sync hält **lokale Ordner** aktuell. Beide Programme arbeiten unabhängig voneinander. Sind beide
 installiert, öffnet jedes das andere über sein Symbol im Infobereich.
 
+## Installation
+
+1. Lade **CloudDrive-Sync-Setup.exe** von der [Release-Seite](https://github.com/suebi76/CloudDrive-Sync/releases)
+   herunter.
+2. Starte die Datei mit einem Doppelklick. Administratorrechte sind nicht nötig: CloudDrive-Sync wird nur für dein
+   Windows-Konto installiert (nach `%LOCALAPPDATA%\CloudDriveSync`) und bekommt Einträge im Startmenü und auf dem
+   Desktop. .NET ist enthalten.
+3. Zeigt Windows „Der Computer wurde durch Windows geschützt“, klicke auf **Weitere Informationen** und dann auf
+   **Trotzdem ausführen**. Die Meldung kommt, weil das Installationsprogramm noch nicht digital signiert ist.
+
+**Updates:** Unter *Einstellungen › Updates* wählst du, wie neue Versionen ankommen – als Hinweis mit Installation per
+Klick (Standard), automatisch in einem ruhigen Moment oder nur, wenn du nachsiehst. Mit „Testversionen erhalten“
+bekommst du Vorabversionen zum Ausprobieren. Updates kommen nur aus diesem GitHub-Projekt; jedes Paket wird vor der
+Installation anhand seiner Prüfsumme kontrolliert. Installation und Updates erledigt
+[Velopack](https://velopack.io) (MIT-Lizenz), das Teil des Programms ist.
+
+**Deinstallieren:** *Windows-Einstellungen › Apps › Installierte Apps › CloudDrive-Sync*. Einstellungen und Anmeldungen
+(`%LOCALAPPDATA%\CloudDrive-Sync`) sowie deine synchronisierten Ordner bleiben erhalten.
+
 ## Voraussetzungen
 
-- Windows 10 oder 11
-- [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Windows 10 oder 11, 64 Bit
 - rclone 1.75.1 lädt CloudDrive-Sync beim ersten Start selbst herunter (Prüfsumme SHA256 fest hinterlegt).
 
 ## Entwickeln

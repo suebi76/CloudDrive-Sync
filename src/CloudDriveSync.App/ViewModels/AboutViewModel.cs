@@ -19,6 +19,7 @@ public sealed partial class AboutViewModel
         new("rclone", "Anmeldung und Übertragung", "© Nick Craig-Wood", "MIT-Lizenz", "https://rclone.org"),
         new(".NET mit WPF und Windows Forms", "Laufzeit und Oberfläche", "© .NET Foundation und Mitwirkende", "MIT-Lizenz", "https://dotnet.microsoft.com"),
         new("CommunityToolkit.Mvvm", "Aufbau der Oberfläche", "© .NET Foundation und Mitwirkende", "MIT-Lizenz", "https://github.com/CommunityToolkit/dotnet"),
+        new("Velopack", "Installation und Updates", "© Velopack Ltd.", "MIT-Lizenz", "https://velopack.io"),
     ];
 
     [RelayCommand]

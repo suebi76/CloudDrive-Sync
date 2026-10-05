@@ -384,6 +384,23 @@
                                 </Grid>
                             </Border>
 
+                            <!-- A new version -->
+                            <Border Style="{StaticResource InfoBar}" Margin="0,12,0,0" Visibility="{Binding Updates.ShowNotice, Converter={StaticResource Visible}}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource Icon}" Text="&#xE896;" VerticalAlignment="Top" Margin="0,2,12,0" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Updates.NoticeText}" TextWrapping="Wrap" />
+                                        <ProgressBar Value="{Binding Updates.Progress, Mode=OneWay}" Maximum="100" Margin="0,10,0,0"
+                                                     Visibility="{Binding Updates.IsDownloading, Converter={StaticResource Visible}}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                            <Button Content="{Binding Updates.InstallText}" Style="{StaticResource AccentButtonStyle}" Command="{Binding Updates.InstallCommand}"
+                                                    IsEnabled="{Binding Updates.IsBusy, Converter={StaticResource Not}}" />
+                                            <Button Content="Später" Command="{Binding Updates.DismissCommand}" Margin="8,0,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
                             <Border Style="{StaticResource Card}" Margin="0,12,0,0" Padding="24" Visibility="{Binding ShowWelcome, Converter={StaticResource Visible}}">
                                 <StackPanel>
                                     <TextBlock Text="In drei Schritten startklar" FontSize="16" FontWeight="SemiBold" />
@@ -502,7 +519,40 @@
                                 </Grid>
                             </Border>
 
-                            <TextBlock Text="Über CloudDrive-Sync" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="Updates" Style="{StaticResource SectionTitle}" />
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,4">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <Button Content="{Binding Updates.InstallText}" Style="{StaticResource AccentButtonStyle}" Command="{Binding Updates.InstallCommand}" Margin="0,0,8,0"
+                                                    Visibility="{Binding Updates.CanInstall, Converter={StaticResource Visible}}" IsEnabled="{Binding Updates.IsBusy, Converter={StaticResource Not}}" />
+                                            <Button Content="Nach Updates suchen" Command="{Binding Updates.CheckNowCommand}" IsEnabled="{Binding Updates.IsInstalled}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,16,0">
+                                            <TextBlock Text="CloudDrive-Sync aktuell halten" Style="{StaticResource Strong}" />
+                                            <TextBlock Text="{Binding Updates.StatusText}" Style="{StaticResource Secondary}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <ProgressBar Value="{Binding Updates.Progress, Mode=OneWay}" Maximum="100" Margin="0,10,0,0"
+                                                 Visibility="{Binding Updates.IsDownloading, Converter={StaticResource Visible}}" />
+                                    <TextBlock Text="Neue Versionen" Margin="0,16,0,6" />
+                                    <ComboBox ItemsSource="{Binding UpdateChoices}" DisplayMemberPath="Title" SelectedValuePath="Value" SelectedValue="{Binding UpdateMode}"
+                                              AutomationProperties.Name="Neue Versionen" IsEnabled="{Binding Updates.IsInstalled}" />
+                                    <TextBlock Text="{Binding UpdateHint}" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                    <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding TestVersions}" Margin="0,14,0,0" IsEnabled="{Binding Updates.IsInstalled}"
+                                              AutomationProperties.Name="Testversionen erhalten">
+                                        <StackPanel>
+                                            <TextBlock Text="Testversionen erhalten" />
+                                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap"
+                                                       Text="Vorabversionen zum Ausprobieren: Sie kommen vor allen anderen, können aber noch Fehler haben." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <TextBlock Style="{StaticResource Caption}" Margin="0,12,0,0" TextWrapping="Wrap"
+                                               Text="Updates kommen nur aus dem GitHub-Projekt von CloudDrive-Sync; jedes Paket wird vor der Installation anhand seiner Prüfsumme kontrolliert." />
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Programm und Daten" Style="{StaticResource SectionTitle}" />
                             <Border Style="{StaticResource Card}" Margin="0,0,0,4">
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource Strong}">

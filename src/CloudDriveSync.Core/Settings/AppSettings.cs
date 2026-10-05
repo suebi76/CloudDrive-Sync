@@ -101,4 +101,22 @@ public sealed class Preferences
     public bool Notifications { get; set; } = true;
     /// <summary>Days deleted or overwritten local files stay in the sync recycle bin.</summary>
     public int TrashDays { get; set; } = 30;
+    /// <summary>How new versions of CloudDrive-Sync arrive.</summary>
+    public UpdateMode Updates { get; set; } = UpdateMode.Notify;
+    /// <summary>Also test versions (pre-releases on GitHub) - for testers.</summary>
+    public bool TestVersions { get; set; }
+    /// <summary>The newest version the user was told about, so the notice comes once per version.</summary>
+    public string? AnnouncedUpdate { get; set; }
+}
+
+/// <summary>How new versions of CloudDrive-Sync arrive.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<UpdateMode>))]
+public enum UpdateMode
+{
+    /// <summary>A notice; installed with one click.</summary>
+    Notify,
+    /// <summary>Downloaded and installed on their own at a quiet moment.</summary>
+    Automatic,
+    /// <summary>Only when the user looks for them.</summary>
+    Manual,
 }

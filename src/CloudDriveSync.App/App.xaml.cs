@@ -40,6 +40,8 @@ public partial class App : Application
         }
         _instance.ShowRequested += (_, _) => Dispatcher.InvokeAsync(ShowMainWindow);
 
+        // The installed program records where it is, so CloudDrives finds it wherever it was installed.
+        if (Updater.IsInstalled && paths.IsDefaultHome) AppRegistration.Register();
         var migrated = TestBuildMigration.Run(paths);
         _host = new CloudDriveSyncHost(paths);
         if (migrated > 0) Log.Info("App", $"Data of the test build \"CloudDrives 2\" taken over ({migrated} item(s)).");
@@ -57,6 +59,10 @@ public partial class App : Application
         };
 
         _window = new MainWindow(_main);
+        _main.Updates.IsQuiet = () => _window is not { IsVisible: true } && !_main.Pairs.Any(p => p.IsBusy);
+        _main.Updates.Announced += (_, version) => _tray.Notify("Neue Version von CloudDrive-Sync",
+            $"Version {version} ist verfügbar. Installieren kannst du sie mit einem Klick in der Übersicht.", warning: false);
+        _main.Updates.RestartRequested += async (_, background) => await RestartForUpdateAsync(background);
         _window.HiddenToTray += (_, _) =>
         {
             if (_toldAboutBackground) return;
@@ -81,6 +87,32 @@ public partial class App : Application
     {
         if (_exiting) return;
         _exiting = true;
+        await StopAsync();
+        Shutdown();
+    }
+
+    /// <summary>Ends CloudDrive-Sync cleanly for an update; Velopack installs it and starts the program again.</summary>
+    private async Task RestartForUpdateAsync(bool background)
+    {
+        if (_exiting || _main is null) return;
+        _exiting = true;
+        Log.Info("App", "Ending for the update.");
+        await StopAsync();
+        try
+        {
+            _main.Updates.InstallAndRestart(background);
+        }
+        catch (Exception e)
+        {
+            // The update could not start: CloudDrive-Sync starts again as it was, so nothing stops synchronising.
+            Log.Error("App", $"The update could not be installed: {e}");
+            if (Environment.ProcessPath is { } exe) System.Diagnostics.Process.Start(exe, "--background");
+        }
+        Shutdown();
+    }
+
+    private async Task StopAsync()
+    {
         if (_window is not null)
         {
             _window.AllowClose = true;
@@ -89,7 +121,6 @@ public partial class App : Application
         _tray?.Dispose();
         if (_host is not null) await _host.DisposeAsync();
         _instance?.Dispose();
-        Shutdown();
     }
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)

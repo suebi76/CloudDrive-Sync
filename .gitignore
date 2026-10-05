@@ -14,9 +14,11 @@
 !/CHANGELOG.md
 !/CloudDriveSync.slnx
 !/Directory.Build.props
+!/dotnet-tools.json
 !/global.json
 !/LICENSE
 !/README.md
+!/THIRD-PARTY-NOTICES.md
 
 # Never, not even inside allowed folders.
 bin/

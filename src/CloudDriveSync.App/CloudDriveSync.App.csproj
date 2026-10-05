@@ -11,6 +11,8 @@
     <AssemblyTitle>CloudDrive-Sync</AssemblyTitle>
     <Product>CloudDrive-Sync</Product>
     <RootNamespace>CloudDriveSync.App</RootNamespace>
+    <!-- Program.Main lets Velopack (installation and updates) run before the window starts. -->
+    <StartupObject>CloudDriveSync.App.Program</StartupObject>
     <ApplicationIcon>Assets\clouddrive-sync.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -27,6 +29,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>
