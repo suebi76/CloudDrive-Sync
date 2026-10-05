@@ -38,6 +38,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\clouddrive-sync.ico" />
+    <Resource Include="Assets\clouddrive-sync.png" />
   </ItemGroup>
 
   <ItemGroup>

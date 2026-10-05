@@ -288,7 +288,7 @@
         <Grid Visibility="{Binding Startup, Converter={StaticResource HiddenIf}, ConverterParameter=Ready}">
             <Border Style="{StaticResource Card}" Width="480" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32">
                 <StackPanel>
-                    <Image Source="/Assets/clouddrive-sync.ico" Width="48" Height="48" HorizontalAlignment="Left" />
+                    <Image Source="/Assets/clouddrive-sync.png" Width="48" Height="48" HorizontalAlignment="Left" RenderOptions.BitmapScalingMode="HighQuality" />
                     <TextBlock Text="CloudDrive-Sync" FontSize="24" FontWeight="SemiBold" Margin="0,16,0,0" />
                     <StackPanel Margin="0,16,0,0" Visibility="{Binding Startup, Converter={StaticResource VisibleIf}, ConverterParameter=Starting}">
                         <TextBlock Text="{Binding StartupText}" Style="{StaticResource Secondary}" />
@@ -321,7 +321,7 @@
 
             <DockPanel Margin="12,16,12,16">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,0,0,24">
-                    <Image Source="/Assets/clouddrive-sync.ico" Width="24" Height="24" />
+                    <Image Source="/Assets/clouddrive-sync.png" Width="24" Height="24" RenderOptions.BitmapScalingMode="HighQuality" />
                     <TextBlock Text="CloudDrive-Sync" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
                 <Button DockPanel.Dock="Bottom" Style="{StaticResource AccentButtonStyle}" Command="{Binding AddSyncCommand}"
@@ -596,12 +596,10 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition />
                                     </Grid.ColumnDefinitions>
-                                    <Image Source="/Assets/clouddrive-sync.ico" Width="48" Height="48" VerticalAlignment="Top" />
+                                    <Image Source="/Assets/clouddrive-sync.png" Width="64" Height="64" VerticalAlignment="Top" RenderOptions.BitmapScalingMode="HighQuality" />
                                     <StackPanel Grid.Column="1" Margin="20,0,0,0">
                                         <TextBlock Text="CloudDrive-Sync" FontSize="20" FontWeight="SemiBold" />
                                         <TextBlock Text="{Binding VersionText}" Style="{StaticResource Secondary}" Margin="0,2,0,0" />
-                                        <TextBlock TextWrapping="Wrap" Margin="0,12,0,0"
-                                                   Text="Hält Ordner auf diesem PC mit Nextcloud, IServ und anderen WebDAV-Speichern aktuell – in beide Richtungen." />
                                         <TextBlock Text="{Binding Copyright}" Style="{StaticResource Strong}" Margin="0,16,0,0" />
                                         <TextBlock Style="{StaticResource Secondary}" TextWrapping="Wrap" Margin="0,2,0,0"
                                                    Text="Freie Software unter der MIT-Lizenz. Dokumentation und Grafiken stehen unter CC BY 4.0." />

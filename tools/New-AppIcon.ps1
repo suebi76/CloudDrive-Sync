@@ -1,12 +1,14 @@
-<#
+﻿<#
 .SYNOPSIS
-    Draws the CloudDrive-Sync icon (blue cloud with white sync arrows) and writes it as a multi-size .ico.
+    Draws the CloudDrive-Sync icon (blue cloud with white sync arrows) and writes it as a multi-size .ico, plus a
+    256 px PNG for the program's own pages (an .ico shows its smallest picture there, which looks blurred).
 .DESCRIPTION
     Same blue cloud as CloudDrives (the drives program), but with sync arrows instead of the drive, so both
     programs look related and are still easy to tell apart. Drawn at 256 px and scaled down for the small sizes.
 #>
 param(
-    [string]$OutFile = (Join-Path $PSScriptRoot '..\src\CloudDriveSync.App\Assets\clouddrive-sync.ico')
+    [string]$OutFile = (Join-Path $PSScriptRoot '..\src\CloudDriveSync.App\Assets\clouddrive-sync.ico'),
+    [string]$PngFile = (Join-Path $PSScriptRoot '..\src\CloudDriveSync.App\Assets\clouddrive-sync.png')
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -92,5 +94,7 @@ try {
     [System.IO.File]::WriteAllBytes((Resolve-Path (Split-Path $OutFile)).Path + '\' + (Split-Path $OutFile -Leaf), $file.ToArray())
     $writer.Dispose()
     "Written: $OutFile ($($sizes -join ', ') px)"
+    [System.IO.File]::WriteAllBytes((Resolve-Path (Split-Path $PngFile)).Path + '\' + (Split-Path $PngFile -Leaf), $frames[-1])
+    "Written: $PngFile (256 px)"
 }
 finally { $master.Dispose() }

@@ -3,6 +3,15 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0-preview.4] – 2026-10-05
+
+Test version on the way to 0.2.
+
+### Changed
+
+- Page "Über": without the descriptive sentence, with a sharp logo. The program's own pages show the logo from a
+  256 px picture (an .ico shows its smallest picture there).
+
 ## [0.2.0-preview.3] – 2026-10-05
 
 Test version on the way to 0.2 - the first one that arrives as an update.
