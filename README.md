@@ -3,7 +3,8 @@
 Hält Ordner auf deinem Windows-PC mit **Nextcloud**, **IServ** und anderen **WebDAV**-Speichern aktuell – in beide
 Richtungen, mit einer Oberfläche im Stil von Windows 11.
 
-> **Status:** Version 0.2. Der Kern ist mit Unit- und Integrationstests abgesichert, darunter alle üblichen
+> **Status:** Version 0.2; Version 0.3 mit „Dateien bei Bedarf“ gibt es als Testversion (*Einstellungen › Updates ›
+> Testversionen erhalten*). Der Kern ist mit Unit- und Integrationstests abgesichert, darunter alle üblichen
 > Dateivorgänge gegen einen IServ-ähnlichen Testserver. Probiere es zuerst mit einem kleinen Ordner aus.
 
 ## Was es kann
@@ -13,8 +14,17 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
 - **Ordner synchronisieren:** einen Cloud-Ordner, bei IServ auch alle Gruppen auf einmal, oder das ganze Konto – alles oder nur ausgewählte Ordner und Dateien –
   in einen frei wählbaren Ordner auf diesem PC. Nichts ist verboten: Bei ungewöhnlichen Speicherorten (Netzlaufwerk,
   USB-Stick, Ordner eines anderen Sync-Programms …) gibt es Hinweise, die Entscheidung triffst du.
+- **Dateien bei Bedarf (ab 0.3):** Alle Dateien erscheinen sofort im Explorer, belegen aber erst Platz, wenn du sie
+  öffnest – wie bei OneDrive.
+  - Symbole im Explorer zeigen, was nur online liegt. Im Kontextmenü stehen „Immer auf diesem Gerät beibehalten“ und
+    „Speicherplatz freigeben“, und jede Synchronisation hat einen Eintrag im Navigationsbereich.
+  - Auf Wunsch geben Dateien, die du länger nicht geöffnet hast, ihren Platz von selbst frei (Standard: nie).
+  - Bestehende Synchronisationen lassen sich umstellen, ohne dass etwas erneut heruntergeladen wird – und zurück.
+  - Das geht auf NTFS-Laufwerken dieses PCs; sonst bleibt „Alle Dateien auf diesem PC“.
 - **In beide Richtungen:** Änderungen am PC gehen kurz nach dem Speichern hoch, Änderungen in der Cloud kommen im
-  gewählten Abstand (Standard: alle 5 Minuten). Technisch arbeitet [rclone](https://rclone.org) `bisync`.
+  gewählten Abstand (Standard: alle 5 Minuten). Technisch arbeitet [rclone](https://rclone.org): bei „Alle Dateien auf
+  diesem PC“ mit `bisync`, bei „Dateien bei Bedarf“ mit einem eigenen Abgleich über die Cloud-Files-Schnittstelle von
+  Windows.
 - **Nachvollziehbar:** Unter „Aktivität“ steht zu jedem Abgleich, welche Dateien hoch- oder heruntergeladen und wo
   gelöscht wurden. „Abgleich überprüfen“ vergleicht auf Knopfdruck jede Datei am PC mit der in der Cloud.
 - **Nichts geht verloren:**
@@ -25,6 +35,9 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
   - Konflikte: Wurde eine Datei auf beiden Seiten geändert, bleiben beide Fassungen erhalten.
   - Papierkorb: Was der Abgleich am PC löscht oder ersetzt, landet im versteckten Ordner `.clouddrive-papierkorb`.
     Was du selbst am PC löschst, liegt im Papierkorb von Windows; Nextcloud hat zusätzlich einen eigenen Papierkorb.
+  - Dateien bei Bedarf: Freigegeben wird nur, was hochgeladen ist. Ändert sich eine Datei in der Cloud, während sie
+    geladen wird, kommt nie eine Mischung aus zwei Fassungen an. Ein Ordner, den der Server nicht lesen lässt, bleibt
+    außen vor, statt als gelöscht zu gelten.
 - **IServ-Besonderheit:** IServ speichert keine eigenen Änderungszeiten. CloudDrive-Sync merkt sich die Zeiten des
   Servers selbst und erkennt so auch Änderungen, die die Dateigröße nicht verändern.
 - **Im Hintergrund:** Symbol im Infobereich mit Statuspunkt, Windows-Benachrichtigungen bei Konflikten und
@@ -64,7 +77,8 @@ Installation anhand seiner Prüfsumme kontrolliert. Installation und Updates erl
 [Velopack](https://velopack.io) (MIT-Lizenz), das Teil des Programms ist.
 
 **Deinstallieren:** *Windows-Einstellungen › Apps › Installierte Apps › CloudDrive-Sync*. Einstellungen und Anmeldungen
-(`%LOCALAPPDATA%\CloudDrive-Sync`) sowie deine synchronisierten Ordner bleiben erhalten.
+(`%LOCALAPPDATA%\CloudDrive-Sync`) sowie deine synchronisierten Ordner bleiben erhalten. Bei „Dateien bei Bedarf“
+bleiben heruntergeladene Dateien als normale Dateien; was nur online lag, verschwindet vom PC und bleibt in der Cloud.
 
 ## Code signing policy
 
@@ -85,6 +99,7 @@ Every release is built on GitHub from the source code in this repository, and ev
 ## Voraussetzungen
 
 - Windows 10 oder 11, 64 Bit
+- „Dateien bei Bedarf“: Windows 10 Version 1809 oder neuer und ein NTFS-Laufwerk dieses PCs
 - rclone 1.75.1 lädt CloudDrive-Sync beim ersten Start selbst herunter (Prüfsumme SHA256 fest hinterlegt).
 
 ## Entwickeln
@@ -104,9 +119,10 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests     # echtes rclone gegen
 
 CloudDrive-Sync keeps folders on a Windows PC in step with Nextcloud, IServ and other WebDAV storage, in both
 directions, built on [rclone](https://rclone.org) bisync with its own safety net (sentinel files, a deletion guard,
-conflict copies, a recycle bin on the PC). Install it from the
-[releases](https://github.com/suebi76/CloudDrive-Sync/releases) (`CloudDrive-Sync-Setup.exe`, per user, no administrator
-rights). The user interface is German. Developer documentation in English:
+conflict copies, a recycle bin on the PC). From version 0.3 (now a test version) it offers files on demand like
+OneDrive: every file shows in Explorer at once and takes space only when opened, through Windows' Cloud Files API.
+Install it from the [releases](https://github.com/suebi76/CloudDrive-Sync/releases) (`CloudDrive-Sync-Setup.exe`, per
+user, no administrator rights). The user interface is German. Developer documentation in English:
 [architecture](docs/ARCHITECTURE.en.md), [developer handbook](docs/DEVELOPMENT.en.md),
 [contributing and code rules](CONTRIBUTING.en.md).
 

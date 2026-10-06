@@ -22,6 +22,11 @@ CloudDrive-Sync ist ein Open-Source-Programm, das vollständig **auf deinem Wind
   `%LOCALAPPDATA%\CloudDrive-Sync`, das Programm unter `%LOCALAPPDATA%\CloudDriveSync`. Protokolle enthalten keine
   Passwörter. Beim Deinstallieren bleiben Einstellungen und synchronisierte Ordner erhalten; den Datenordner kannst du
   danach von Hand löschen.
+- **Dateien bei Bedarf und Explorer:** Für „Dateien bei Bedarf“ meldet CloudDrive-Sync den Ordner bei Windows an, wie
+  es OneDrive tut; Windows hält dann Name und Pfad des Ordners fest und zeigt ihn im Explorer. Die Daten einer Datei
+  holt CloudDrive-Sync beim Öffnen über einen Zugang, der nur auf diesem PC erreichbar ist (127.0.0.1), direkt von
+  deinem Server. Für die übrigen Synchronisationen legt es Einträge im Navigationsbereich des Explorers an (in deinem
+  Benutzerprofil). Neue Verbindungen nach außen entstehen dadurch nicht.
 
 ## English
 
@@ -43,3 +48,8 @@ CloudDrive-Sync is open-source software that runs entirely **on your Windows PC*
 - **Local files:** settings, logs and the state of the synchronisations live in `%LOCALAPPDATA%\CloudDrive-Sync`, the
   program in `%LOCALAPPDATA%\CloudDriveSync`. Logs contain no passwords. Uninstalling keeps settings and synchronised
   folders; you can delete the data folder by hand afterwards.
+- **Files on demand and Explorer:** for files on demand, CloudDrive-Sync registers the folder with Windows, as OneDrive
+  does; Windows then keeps the folder's name and path and shows it in Explorer. When a file is opened, CloudDrive-Sync
+  fetches its data directly from your server through an access only this PC can reach (127.0.0.1). For the other
+  synchronisations it adds entries to Explorer's navigation pane (in your user profile). No new connections to the
+  outside come of it.
