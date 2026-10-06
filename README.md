@@ -114,9 +114,9 @@ rights). The user interface is German. Developer documentation in English:
 
 © 2026 Steffen Schwabe · [Projekt auf GitHub](https://github.com/suebi76/CloudDrive-Sync)
 
-- **Quellcode:** [MIT-Lizenz](LICENSE). Du darfst ihn frei nutzen, verändern und weitergeben, solange der
-  Copyright-Hinweis und die Lizenz erhalten bleiben.
-- **Dokumentation und Grafiken** (Texte in diesem Repository außerhalb des Quellcodes, das Programmsymbol):
+- **Programm** (Quellcode und Programmsymbol): [MIT-Lizenz](LICENSE). Du darfst es frei nutzen, verändern und
+  weitergeben, solange der Copyright-Hinweis und die Lizenz erhalten bleiben.
+- **Dokumentation** (die Texte in diesem Repository außerhalb des Programms):
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.de). Bei Weitergabe nennst du „Steffen Schwabe,
   CloudDrive-Sync“ und verlinkst die Lizenz.
 - **Verwendete Bausteine** anderer Projekte und ihre Lizenzen: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

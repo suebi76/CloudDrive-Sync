@@ -20,6 +20,7 @@ All notable changes to CloudDrive-Sync are documented here. The format follows
 
 ### Changed
 
+- The program icon is under the MIT License like the source code; only the documentation stays CC BY 4.0
 - Code reorganised for readers, without a change in behaviour: the worker that keeps one synchronisation in step has
   a file of its own (`SyncService.PairWorker.cs`), the run history is a class of its own (`RunHistory`), every page of
   the main window has a file of its own (`Views/Pages`), the unit tests have one file per topic, and every public type

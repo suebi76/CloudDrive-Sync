@@ -19,7 +19,7 @@
                         <TextBlock Text="{Binding VersionText}" Style="{StaticResource Secondary}" Margin="0,2,0,0" />
                         <TextBlock Text="{Binding Copyright}" Style="{StaticResource Strong}" Margin="0,16,0,0" />
                         <TextBlock Style="{StaticResource Secondary}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                   Text="Freie Software unter der MIT-Lizenz. Dokumentation und Grafiken stehen unter CC BY 4.0." />
+                                   Text="Freie Software unter der MIT-Lizenz. Die Dokumentation steht unter CC BY 4.0." />
                         <WrapPanel Margin="0,14,0,0">
                             <Button Command="{Binding OpenProjectCommand}" Margin="0,0,8,0" AutomationProperties.Name="Projekt auf GitHub">
                                 <StackPanel Orientation="Horizontal">
