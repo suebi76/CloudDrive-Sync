@@ -36,12 +36,16 @@ internal sealed class SyncWorld : IAsyncDisposable
     public string Local { get; }
     public WebDavKind Kind { get; }
     public WebDavServer Server { get; }
+
+    /// <summary>Between CloudDrive-Sync and the server when asked for (see <see cref="CreateAsync"/>).</summary>
+    public RefusingProxy? Proxy { get; private init; }
     public CloudDriveSyncHost Host { get; private set; }
     public SyncRunner Runner { get; private set; }
     public AccountSettings Account { get; private set; } = null!;
     public SyncPairSettings Pair { get; private set; } = null!;
 
-    public static async Task<SyncWorld> CreateAsync(WebDavKind kind = WebDavKind.IServ, bool readOnlyServer = false)
+    /// <param name="refusingProxy">CloudDrive-Sync talks to the server through a <see cref="RefusingProxy"/>.</param>
+    public static async Task<SyncWorld> CreateAsync(WebDavKind kind = WebDavKind.IServ, bool readOnlyServer = false, bool refusingProxy = false)
     {
         var root = Path.Combine(Path.GetTempPath(), "clouddrive-sync-it", $"{DateTime.Now:HHmmss}-{Guid.NewGuid():N}"[..13]);
         var cloudRoot = Path.Combine(root, "cloud");
@@ -60,7 +64,7 @@ internal sealed class SyncWorld : IAsyncDisposable
         var basePath = kind == WebDavKind.Nextcloud ? $"/remote.php/dav/files/{User}" : "";
         var server = await WebDavServer.StartAsync(await TestRclone.ExeAsync(), cloudRoot, User, Password, serverConfig, basePath, readOnlyServer);
         var host = new CloudDriveSyncHost(paths);
-        var world = new SyncWorld(root, cloudRoot, caseSensitive, local, kind, server, host);
+        var world = new SyncWorld(root, cloudRoot, caseSensitive, local, kind, server, host) { Proxy = refusingProxy ? new RefusingProxy(server.Url) : null };
         try
         {
             await host.Engine.StartAsync();
@@ -97,7 +101,7 @@ internal sealed class SyncWorld : IAsyncDisposable
 
     public WebDavCredential Credential(string? password = null) => new()
     {
-        Url = Server.Url,
+        Url = Proxy?.Url ?? Server.Url,
         Kind = Kind,
         User = User,
         Password = password ?? Password,
@@ -249,6 +253,7 @@ internal sealed class SyncWorld : IAsyncDisposable
                 }
             }
         }
+        if (Proxy is not null) await Proxy.DisposeAsync();
         await Server.DisposeAsync();
         Host.Secrets.Delete("config");
         // For looking into a failure: CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS=1 keeps every world in %TEMP%\clouddrive-sync-it.

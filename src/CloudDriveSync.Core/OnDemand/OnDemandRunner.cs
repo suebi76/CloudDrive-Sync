@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
+using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Errors;
@@ -31,6 +33,23 @@ internal sealed class OnDemandRunner
     /// <param name="mode">Resync: first run or rebuild - both sides are merged, nothing is deleted.</param>
     public async Task<SyncRunOutcome> RunAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash, CancellationToken cancellationToken)
     {
+        try
+        {
+            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, cancellationToken);
+            // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
+            live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4605" ? ProviderStatus.Idle
+                : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
+            return outcome;
+        }
+        catch (OperationCanceledException)
+        {
+            live.Report(ProviderStatus.Idle);
+            throw;
+        }
+    }
+
+    private async Task<SyncRunOutcome> RunCoreAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash, CancellationToken cancellationToken)
+    {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath)) return Failed("CD-4501", pair.LocalPath, SyncDecision.Folder, retryable: true);
         if (!File.Exists(Path.Combine(pair.LocalPath, SyncFilters.SentinelFile)))
@@ -38,6 +57,7 @@ internal sealed class OnDemandRunner
         try
         {
             live.EnsureConnected();
+            live.Report(ProviderStatus.Syncing);
             // Online-only files that went with a lost registration are never taken as deleted - not even when deletions
             // were confirmed before.
             if (live.MergeNeeded) mode = BisyncMode.Resync;
@@ -47,16 +67,20 @@ internal sealed class OnDemandRunner
             var filters = Path.Combine(folder, "filter.txt");
             await File.WriteAllTextAsync(filters, SyncFilters.Build(pair), cancellationToken);
 
+            var clock = Stopwatch.StartNew();
             var cloud = await Listings.ListCloudAsync(rc, pair, filters, account.Kind == WebDavKind.Nextcloud, cancellationToken);
+            var cloudTime = clock.Elapsed;
             if (pair.CloudCheckFile && !cloud.SentinelFound)
                 return Failed("CD-4503", "check file check failed: the protection file is missing in the cloud folder", SyncDecision.Folder, retryable: false);
             var known = live.Store.All();
             if (!pair.CloudCheckFile && cloud.Entries.Count == 0 && known.Count > 0)
                 return Failed("CD-4512", "cloud folder appears empty although the last run saw files in it", SyncDecision.Folder, retryable: false);
             foreach (var clash in cloud.CaseClashes) Log.Warn("OnDemand", $"'{pair.Id}': '{clash}' left out - another name in the cloud differs only in upper and lower case.");
+            clock.Restart();
             var local = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
+            var localTime = clock.Elapsed;
 
-            var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync));
+            var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync, cloud.Unreadable));
             foreach (var skipped in plan.Skipped) Log.Info("OnDemand", $"'{pair.Id}': {skipped}");
             if (mode == BisyncMode.Normal && plan.TooManyDeletions(pair.MaxDeletePercent, DeleteGuard.MinimumDeletions))
             {
@@ -64,12 +88,16 @@ internal sealed class OnDemandRunner
                 return Failed("CD-4502", $"too many deletes (>{pair.MaxDeletePercent}%, {plan.Deletions} of {plan.KnownFiles}) (CloudDrive-Sync, files on demand)",
                     SyncDecision.Deletions, retryable: false);
             }
-            Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s).");
+            Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); cloud listed in {cloudTime.TotalSeconds:0.0} s "
+                + $"({cloud.Entries.Count} entries in {cloud.Folders} folders{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")}), "
+                + $"PC in {localTime.TotalSeconds:0.0} s ({local.Count} entries).");
+            clock.Restart();
 
             var executor = new Executor(rc, _files, live.Store, pair, account, keepTrash, cloud.Entries.Keys, progress, cancellationToken);
             var result = await executor.RunAsync(plan);
             if (mode == BisyncMode.Resync && live.MergeNeeded) live.Merged();
             executor.ApplyPinStates(local);
+            executor.MarkFoldersInSync(result.Failed.Concat(result.Locked), cloud.Unreadable);
             var final = new JobProgress(result.Bytes, result.Bytes, result.Transfers, result.Transfers, 0, 0, 0, result.Failed.Count);
             var conflicts = SyncRunner.FindConflicts(pair.LocalPath);
             var localOnly = result.LocalOnlyAdded.Count > 0 ? result.LocalOnlyAdded : null;
@@ -77,7 +105,7 @@ internal sealed class OnDemandRunner
                 return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes);
             if (result.Failed.Count > 0)
                 return new SyncRunOutcome(false, "CD-4605", string.Join(", ", result.Failed.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes);
-            Log.Info("OnDemand", $"Run of '{pair.Id}' succeeded: {result.Transfers} transfers, {result.Deletes} deletions, {conflicts.Count} conflict copies.");
+            Log.Info("OnDemand", $"Run of '{pair.Id}' succeeded in {clock.Elapsed.TotalSeconds:0.0} s: {result.Transfers} transfers, {result.Deletes} deletions, {conflicts.Count} conflict copies.");
             return new SyncRunOutcome(true, null, null, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes);
         }
         catch (CdException e) when (e.Code != "CD-9000")

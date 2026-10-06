@@ -3,6 +3,23 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.2] – 2026-10-06
+
+Second test version on the way to 0.3, with what the first test showed.
+
+### Fixed
+
+- Folders with files on demand show their status in Explorer (cloud or tick), not only files: after every run
+  CloudDrive-Sync marks them in sync, and it tells Windows how the synchronisation is doing.
+- A cloud folder the server does not let be read - in Nextcloud for example a share to upload only ("403 Forbidden") -
+  no longer ends the whole run. It is left out with everything in it, nothing in it is deleted, and the log names it;
+  the rest is synchronised.
+
+### Changed
+
+- Reading the cloud folder is much faster with many folders: folder by folder, eight at once, without rclone's pause of
+  10 ms between two requests (measured: 526 folders in 1.2 s instead of 5.4 s). The log names the time of each listing.
+
 ## [0.3.0-preview.1] – 2026-10-06
 
 First test version on the way to 0.3: files on demand.

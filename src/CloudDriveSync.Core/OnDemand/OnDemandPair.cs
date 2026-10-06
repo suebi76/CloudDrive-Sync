@@ -104,6 +104,12 @@ internal sealed class OnDemandPair : IDisposable
         }
     }
 
+    /// <summary>What Explorer shows at the folder itself; nothing while it is not connected.</summary>
+    public void Report(ProviderStatus status)
+    {
+        lock (_gate) _connection?.Report(status);
+    }
+
     public void Disconnect()
     {
         lock (_gate)

@@ -13,13 +13,17 @@ namespace CloudDriveSync.Core.OnDemand;
 /// other programs save that way.</item>
 /// <item>A placeholder found at another place was renamed or moved on the PC: it is moved in the cloud, not uploaded
 /// again. A moved folder takes everything in it along.</item>
+/// <item>A folder the server did not let be read is left alone with everything in it: its content is unknown, so
+/// nothing there counts as deleted, and nothing is created or uploaded there.</item>
 /// </list>
 /// Paths on the PC are compared with those of the cloud without regard to upper and lower case, as Windows does.
 /// </summary>
 public static class Planner
 {
     /// <param name="Rebuild">First run or rebuild: the past only helps to recognise files, nothing is deleted.</param>
-    public sealed record Input(IReadOnlyList<SyncItem> Known, IReadOnlyDictionary<string, CloudEntry> Cloud, IReadOnlyList<LocalEntry> Local, bool Rebuild);
+    /// <param name="Unreadable">Cloud folders the server did not let be read in this run (see <see cref="Listings.CloudSide"/>).</param>
+    public sealed record Input(IReadOnlyList<SyncItem> Known, IReadOnlyDictionary<string, CloudEntry> Cloud, IReadOnlyList<LocalEntry> Local, bool Rebuild,
+        IReadOnlyCollection<string>? Unreadable = null);
 
     public static SyncPlan Plan(Input input)
     {
@@ -29,6 +33,9 @@ public static class Planner
         var knownByPath = input.Known.ToDictionary(i => i.Path, StringComparer.Ordinal);
         var cloud = new Dictionary<string, CloudEntry>(input.Cloud, StringComparer.Ordinal);
         var knownFiles = input.Rebuild ? 0 : input.Known.Count(i => !i.IsDirectory);
+        var unreadable = input.Unreadable ?? [];
+        bool LeftOut(string place) => unreadable.Any(folder => IsSameOrBelow(place, folder, StringComparison.OrdinalIgnoreCase));
+        foreach (var folder in unreadable) skipped.Add($"{folder}: the server does not let it be read; left alone in this run");
 
         // 1. Renamed or moved on the PC, outermost first: a moved folder takes the places of everything in it along.
         if (!input.Rebuild)
@@ -37,6 +44,7 @@ public static class Planner
             {
                 if (!knownById.TryGetValue(entry.ItemId!.Value, out var item)) continue;
                 if (string.Equals(item.Path, entry.Path, StringComparison.Ordinal) || item.IsDirectory != entry.IsDirectory) continue;
+                if (LeftOut(item.Path) || LeftOut(entry.Path)) continue;
                 // Gone in the cloud meanwhile, or its new place is taken there or by another known item: handled below
                 // as a new file on the PC, which keeps everything.
                 if (!cloud.ContainsKey(item.Path)) continue;
@@ -66,6 +74,7 @@ public static class Planner
         var localDeletions = 0;
         foreach (var place in places)
         {
+            if (LeftOut(place)) continue;
             knownByPath.TryGetValue(place, out var known);
             cloud.TryGetValue(place, out var inCloud);
             local.TryGetValue(place, out var onPc);
@@ -204,8 +213,8 @@ public static class Planner
         }
     }
 
-    private static bool IsSameOrBelow(string path, string folder) =>
-        string.Equals(path, folder, StringComparison.Ordinal) || path.StartsWith(folder + "/", StringComparison.Ordinal);
+    private static bool IsSameOrBelow(string path, string folder, StringComparison comparison = StringComparison.Ordinal) =>
+        string.Equals(path, folder, comparison) || path.StartsWith(folder + "/", comparison);
 
     private static int Depth(string path) => path.Count(c => c == '/');
 }

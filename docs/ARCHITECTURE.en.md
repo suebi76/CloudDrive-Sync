@@ -349,7 +349,7 @@ retries, decisions and history are the same. Only the run itself differs (`SyncS
 |---|---|
 | `OnDemandPair` | The live parts of a synchronisation: state (`ItemStore` in `sync\<id>\items.db`), registration with Windows, connection. It connects as soon as the program starts, so files open right after signing in. |
 | `OnDemandRunner` | One run: check folder and protection file, register and connect, read both sides, plan, deletion guard, carry out. The result is a `SyncRunOutcome` as with bisync. |
-| `Listings` | rclone reads both sides with the same filter file (`SyncFilters`) - selection, exclusions and files that stay on the PC apply as in classic mode. Plus, for every file on the PC, what Windows knows about its placeholder. Only metadata is read. |
+| `Listings` | rclone reads both sides with the same filter file (`SyncFilters`) - selection, exclusions and files that stay on the PC apply as in classic mode. Plus, for every file on the PC, what Windows knows about its placeholder. Only metadata is read. The cloud side is read folder by folder, eight at once (see below). |
 | `Planner` | A pure function of the remembered state, the cloud and the PC: the plan of all steps, before anything changes. |
 | `Executor` | Carries the plan out and records every finished step in the `ItemStore` at once. |
 | `CloudFetcher` | Delivers the data when a program opens a file. |
@@ -380,6 +380,22 @@ every writer out. Files whose data was on the PC and which the cloud deleted go 
 match, before the last piece size, time and - where available - checksum. Otherwise opening fails cleanly ("The cloud
 operation was unsuccessful") and a run follows at once. The data comes through `FileServer` (`rclone serve http` in the
 engine) in pieces of 1 MB; each resets Windows' 60-second clock.
+
+**The cloud listing** reads every folder on its own, eight at once. rclone's recursive listing ends at the first folder
+the server refuses (say "403 Forbidden" for a Nextcloud share to upload only) and does not name it. Here such a folder
+stays out of the run with everything in it: nothing there counts as deleted, nothing is created or uploaded there, and
+the log names it. Only a missing connection, sign-in or engine ends the run, as everywhere. rclone's WebDAV backend waits
+at least 10 ms between two requests - at most 100 folders a second, however fast the server. For listing, CloudDrive-Sync
+sets the pause to 1 ms (`pacer_min_sleep` in the remote string; not 0, because rclone doubles it after "too many
+requests"). Measured with 10,525 entries in 526 folders on the test server: 1.2 s instead of 5.4 s. Every run writes the
+times of both listings to the log.
+
+**Status in Explorer:** Windows takes the state "in sync" from folders (the root never has it at first), and Explorer
+shows no symbol for such folders ("sync pending"). After every run `Executor.MarkFoldersInSync` therefore marks all
+folders in sync - except the way to something left for the next run and the unreadable folders. The state of the whole
+synchronisation goes to Windows through `SyncRootConnection.Report` (idle, syncing, offline, error). It is checked with
+Explorer's own columns "Availability status" and "Status" through `Shell.Application` - where Explorer's commands
+"Always keep on this device" and "Free up space" can be carried out, too, without a screen.
 
 **Keeping and freeing:** only a file in sync is freed - a change not uploaded yet is never lost that way; the run after
 the upload frees the space. New placeholders in a pinned folder are pinned themselves and fetched at once, in new

@@ -13,9 +13,9 @@ namespace CloudDriveSync.Core.IntegrationTests;
 [SupportedOSPlatform("windows10.0.17763")]
 public class OnDemandTests
 {
-    private static async Task<SyncWorld> WorldAsync(Action<SyncWorld>? cloud = null, Action<SyncWorld>? pc = null)
+    private static async Task<SyncWorld> WorldAsync(Action<SyncWorld>? cloud = null, Action<SyncWorld>? pc = null, bool refusingProxy = false)
     {
-        var world = await SyncWorld.CreateAsync();
+        var world = await SyncWorld.CreateAsync(refusingProxy: refusingProxy);
         cloud?.Invoke(world);
         pc?.Invoke(world);
         await world.AddAccountAsync();
@@ -239,6 +239,46 @@ public class OnDemandTests
             await Task.Delay(100);
         }
         return condition();
+    }
+
+    /// <summary>Explorer shows no status for a folder that is not in sync.</summary>
+    private static void AssertFoldersInSync(SyncWorld world)
+    {
+        foreach (var folder in world.PcFolders()) Assert.True(Placeholders.Read(world.Pc(folder))!.InSync, $"not in sync: {folder}");
+    }
+
+    [Fact]
+    public async Task Folders_are_in_sync_after_a_run_so_Explorer_shows_their_status()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("A/B/c.txt", "c"); w.WriteCloud("A/d.txt", "d"); w.WriteCloud("E/f.txt", "f"); });
+        AssertFoldersInSync(world);
+        world.WritePc("A/B/neu.txt", "neu");
+        File.Move(world.Pc("A/d.txt"), world.Pc("A/e.txt"));
+        File.Delete(world.Pc("E/f.txt"));
+        world.WriteCloud("A/B/aus der Cloud.txt", "neu");
+        world.WriteCloud("G/h.txt", "h");
+        await RunAsync(world);
+        AssertInStep(world);
+        AssertFoldersInSync(world);
+    }
+
+    [Fact]
+    public async Task A_folder_the_server_does_not_let_be_read_is_left_alone_and_the_rest_goes_on()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("Ablage/a.txt", "a"); w.WriteCloud("Offen/b.txt", "b"); }, refusingProxy: true);
+        world.WriteCloud("Offen/neu.txt", "neu");
+        world.WritePc("Ablage/vom PC.txt", "vom PC");
+        // Like a share to upload only in Nextcloud: the server refuses to list the folder.
+        world.Proxy!.RefuseListing($"{SyncWorld.CloudFolder}/Ablage");
+        var outcome = await RunAsync(world);
+        world.Proxy.RefuseListing(null);
+        Assert.Equal(0, outcome.Deletes);
+        Assert.True(File.Exists(world.Pc("Ablage/a.txt")));
+        Assert.False(File.Exists(world.Cloud("Ablage/vom PC.txt")));
+        Assert.Equal("neu", Fetch(world, "Offen/neu.txt"));
+        // Readable again: everything comes in step.
+        await RunAsync(world);
+        AssertInStep(world);
     }
 
     [Fact]

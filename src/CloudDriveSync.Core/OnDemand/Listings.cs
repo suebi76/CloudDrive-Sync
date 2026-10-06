@@ -1,8 +1,11 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
 using CloudDriveSync.Core.CloudFiles;
+using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
+using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
 
@@ -44,38 +47,108 @@ internal static class Listings
     /// <summary>The cloud side.</summary>
     /// <param name="SentinelFound">The protection file lies in the cloud folder (it is not one of the entries).</param>
     /// <param name="CaseClashes">Names that differ only in upper and lower case: Windows cannot hold both, so both stay out.</param>
-    public sealed record CloudSide(IReadOnlyDictionary<string, CloudEntry> Entries, bool SentinelFound, IReadOnlyList<string> CaseClashes);
+    /// <param name="Unreadable">
+    /// Folders the server did not let CloudDrive-Sync read (e.g. a share to upload only). What is in them is unknown, so
+    /// the run leaves them alone.
+    /// </param>
+    /// <param name="Folders">How many folders were read.</param>
+    public sealed record CloudSide(IReadOnlyDictionary<string, CloudEntry> Entries, bool SentinelFound, IReadOnlyList<string> CaseClashes,
+        IReadOnlyList<string> Unreadable, int Folders);
 
+    /// <summary>Folders read at once - rclone's own default for walking a tree; more hardly helps and burdens the server.</summary>
+    private const int ParallelFolders = 8;
+
+    /// <summary>
+    /// The cloud side, folder by folder, several at once. rclone's recursive listing ends at the first folder the server
+    /// refuses, without naming it; here such a folder stays out, and the rest is listed.
+    /// </summary>
     public static async Task<CloudSide> ListCloudAsync(RcClient rc, SyncPairSettings pair, string filtersFile, bool withHashes, CancellationToken cancellationToken)
     {
-        var options = new JsonObject { ["recurse"] = true, ["noMimeType"] = true };
+        var fs = WithoutPause(BisyncCommand.CloudPath(pair));
+        var options = new JsonObject { ["recurse"] = false, ["noMimeType"] = true };
         if (withHashes) options["showHash"] = true;
-        var entries = new Dictionary<string, CloudEntry>(StringComparer.Ordinal);
+        var listed = new ConcurrentDictionary<string, CloudEntry>(StringComparer.Ordinal);
+        var unreadable = new ConcurrentBag<string>();
         var sentinel = false;
-        foreach (var entry in await ListAsync(rc, BisyncCommand.CloudPath(pair), filtersFile, options, cancellationToken))
+        var folders = 0;
+        using var gate = new SemaphoreSlim(ParallelFolders);
+
+        async Task ListFolderAsync(string folder)
         {
-            if (entry.Path == SyncFilters.SentinelFile)
+            List<CloudEntry> entries;
+            await gate.WaitAsync(cancellationToken);
+            try
             {
-                sentinel = true;
-                continue;
+                entries = await ListAsync(rc, fs, folder, filtersFile, options, cancellationToken);
+                Interlocked.Increment(ref folders);
             }
-            entries[entry.Path] = entry;
+            catch (CdException e) when (folder.Length > 0 && !EndsTheRun(e))
+            {
+                unreadable.Add(folder);
+                Log.Warn("OnDemand", $"'{pair.Id}': folder '{folder}' could not be read ({e.Code}: {Shorten(e.Detail ?? e.Message)}); it is left out of this run.");
+                return;
+            }
+            finally
+            {
+                gate.Release();
+            }
+            var below = new List<Task>();
+            foreach (var entry in entries)
+            {
+                if (entry.Path == SyncFilters.SentinelFile)
+                {
+                    sentinel = true;
+                    continue;
+                }
+                listed[entry.Path] = entry;
+                if (entry.IsDirectory) below.Add(ListFolderAsync(entry.Path));
+            }
+            await Task.WhenAll(below);
         }
+
+        await ListFolderAsync("");
+        var all = new Dictionary<string, CloudEntry>(listed, StringComparer.Ordinal);
         // Two names that differ only in upper and lower case cannot both live in one Windows folder. Neither of them is
         // taken, so one is never taken for the other (and its content never carried over to it).
-        var clashes = entries.Keys.GroupBy(p => p, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).SelectMany(g => g).ToList();
+        var clashes = all.Keys.GroupBy(p => p, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).SelectMany(g => g).ToList();
         foreach (var clash in clashes)
         {
-            entries.Remove(clash);
-            foreach (var below in entries.Keys.Where(p => p.StartsWith(clash + "/", StringComparison.Ordinal)).ToList()) entries.Remove(below);
+            all.Remove(clash);
+            foreach (var below in all.Keys.Where(p => p.StartsWith(clash + "/", StringComparison.Ordinal)).ToList()) all.Remove(below);
         }
-        return new CloudSide(entries, sentinel, clashes);
+        return new CloudSide(all, sentinel, clashes, unreadable.Order(StringComparer.Ordinal).ToList(), folders);
+    }
+
+    /// <summary>
+    /// rclone's WebDAV backend waits at least 10 ms between two requests (pacer_min_sleep): at most 100 folders a second,
+    /// however fast the server. The listing limits itself to a few requests at once, so the pause shrinks to 1 ms - not to
+    /// nothing, because rclone doubles it after an answer like "too many requests".
+    /// </summary>
+    private static string WithoutPause(string fs)
+    {
+        var colon = fs.IndexOf(':', StringComparison.Ordinal);
+        return colon < 0 ? fs : $"{fs[..colon]},pacer_min_sleep=1ms{fs[colon..]}";
+    }
+
+    /// <summary>No connection, no sign-in, no engine: the whole run ends and is tried again, as everywhere else.</summary>
+    private static bool EndsTheRun(CdException e) => e.Code is "CD-5001" or "CD-5003" or "CD-3012" or "CD-3006";
+
+    /// <summary>Servers answer a refused folder with a whole web page; the log needs its first line and the status at its end.</summary>
+    private static string Shorten(string text)
+    {
+        var lines = text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0) return "";
+        var first = lines[0].Length > 120 ? lines[0][..120] + "…" : lines[0];
+        if (lines.Length == 1) return first;
+        var last = lines[^1];
+        var status = last.LastIndexOf(": ", StringComparison.Ordinal) is var at and >= 0 ? last[(at + 2)..] : last;
+        return $"{first} … {(status.Length > 60 ? status[..60] : status)}";
     }
 
     /// <summary>The PC side, with what Windows knows about each placeholder.</summary>
     public static async Task<IReadOnlyList<LocalEntry>> ListLocalAsync(RcClient rc, string localRoot, string filtersFile, CancellationToken cancellationToken)
     {
-        var listed = await ListAsync(rc, localRoot, filtersFile, new JsonObject { ["recurse"] = true, ["noMimeType"] = true }, cancellationToken);
+        var listed = await ListAsync(rc, localRoot, "", filtersFile, new JsonObject { ["recurse"] = true, ["noMimeType"] = true }, cancellationToken);
         return await Task.Run(() =>
         {
             var entries = new List<LocalEntry>(listed.Count);
@@ -100,13 +173,14 @@ internal static class Listings
         }, cancellationToken);
     }
 
-    private static async Task<List<CloudEntry>> ListAsync(RcClient rc, string fs, string filtersFile, JsonObject options, CancellationToken cancellationToken)
+    /// <param name="remote">The folder to list, relative to <paramref name="fs"/>; the entries' paths are relative to <paramref name="fs"/>, too.</param>
+    private static async Task<List<CloudEntry>> ListAsync(RcClient rc, string fs, string remote, string filtersFile, JsonObject options, CancellationToken cancellationToken)
     {
         var result = await rc.CallAsync("operations/list", new JsonObject
         {
             ["fs"] = fs,
-            ["remote"] = "",
-            ["opt"] = options,
+            ["remote"] = remote,
+            ["opt"] = options.DeepClone(),
             ["_filter"] = new JsonObject { ["FilterFrom"] = new JsonArray(filtersFile) },
         }, TimeSpan.FromMinutes(10), cancellationToken);
         var entries = new List<CloudEntry>();

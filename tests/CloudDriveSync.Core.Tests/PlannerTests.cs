@@ -210,4 +210,38 @@ public class PlannerTests
         Assert.Equal(deleted, plan.CloudDeletions);
         Assert.Equal(tooMany, plan.TooManyDeletions(maxPercent, Sync.DeleteGuard.MinimumDeletions));
     }
+
+    // --- A folder the server does not let be read (e.g. a share to upload only).
+    private static SyncPlan PlanWithUnreadable(SyncItem[] known, CloudEntry[] cloud, LocalEntry[] local, params string[] unreadable) =>
+        Planner.Plan(new Planner.Input(known, cloud.ToDictionary(c => c.Path, StringComparer.Ordinal), local, Rebuild: false, unreadable));
+
+    [Fact]
+    public void A_folder_that_cannot_be_read_is_left_alone_with_everything_in_it()
+    {
+        // Its files are missing from the listing: neither deleted on the PC nor taken as new there.
+        var plan = PlanWithUnreadable(
+            [Known(1, "Ablage", dir: true), Known(2, "Ablage/a.txt"), Known(3, "b.txt")],
+            [Cloud("Ablage", dir: true), Cloud("b.txt")],
+            [Placeholder(1, "Ablage", dir: true), Placeholder(2, "Ablage/a.txt"), Normal("Ablage/neu.txt"), Placeholder(3, "b.txt")],
+            "Ablage");
+        Assert.Empty(plan.Actions);
+        Assert.Equal(0, plan.LocalDeletions);
+        Assert.Contains(plan.Skipped, s => s.StartsWith("Ablage:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_folder_that_cannot_be_read_is_not_created_on_the_PC() =>
+        Assert.Empty(PlanWithUnreadable([], [Cloud("Ablage", dir: true), Cloud("Ablage/a.txt")], [], "Ablage").Actions);
+
+    [Fact]
+    public void A_file_moved_into_a_folder_that_cannot_be_read_is_neither_moved_nor_deleted_in_the_cloud()
+    {
+        var plan = PlanWithUnreadable(
+            [Known(1, "Ablage", dir: true), Known(2, "b.txt")],
+            [Cloud("Ablage", dir: true), Cloud("b.txt")],
+            [Placeholder(1, "Ablage", dir: true), Placeholder(2, "Ablage/b.txt")],
+            "Ablage");
+        Assert.Empty(plan.Actions);
+        Assert.Equal(0, plan.CloudDeletions);
+    }
 }

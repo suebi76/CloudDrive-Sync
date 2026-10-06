@@ -409,6 +409,42 @@ internal sealed partial class Executor
         }
     }
 
+    /// <summary>
+    /// Windows takes a folder out of sync whenever something in it is created, renamed or deleted - also by this run - and
+    /// Explorer then shows no status for it. After a run every folder is in sync again, except those on the way to
+    /// something left for the next run and the folders the server did not let be read (with everything in them).
+    /// </summary>
+    public void MarkFoldersInSync(IEnumerable<string> unfinished, IReadOnlyCollection<string> unreadable)
+    {
+        var waiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in unfinished.Concat(unreadable))
+        {
+            waiting.Add("");
+            for (var folder = Parent(path); folder.Length > 0; folder = Parent(folder)) waiting.Add(folder);
+        }
+        var leftAlone = new HashSet<string>(unreadable, StringComparer.OrdinalIgnoreCase);
+        var folders = new Stack<string>();
+        folders.Push(_pair.LocalPath);
+        while (folders.Count > 0)
+        {
+            _cancel.ThrowIfCancellationRequested();
+            var folder = folders.Pop();
+            try
+            {
+                var relative = folder.Length == _pair.LocalPath.Length ? "" : NameEncoding.ToStandardPath(Path.GetRelativePath(_pair.LocalPath, folder));
+                if (leftAlone.Contains(relative)) continue;
+                foreach (var below in Directory.EnumerateDirectories(folder))
+                    if (relative.Length > 0 || !Path.GetFileName(below).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase)) folders.Push(below);
+                if (!waiting.Contains(relative) && Placeholders.Read(folder) is { InSync: false }) Placeholders.MarkFolderInSync(folder);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Only the status in Explorer is missing until the next run.
+                Log.Debug("OnDemand", $"'{_pair.Id}': folder not marked in sync: {e.Message}");
+            }
+        }
+    }
+
     private PinState? RootPinState()
     {
         try

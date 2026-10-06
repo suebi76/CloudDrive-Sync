@@ -80,6 +80,20 @@ internal static unsafe partial class Placeholders
         }
     }
 
+    /// <summary>
+    /// Marks a folder in sync. Windows takes that from a folder whenever something in it is created, renamed or deleted -
+    /// also by CloudDrive-Sync itself - and Explorer shows no status for such a folder. False for a folder that is no
+    /// placeholder.
+    /// </summary>
+    public static bool MarkFolderInSync(string path)
+    {
+        using var handle = Open(path, WriteDac | FileReadAttributes);
+        var result = PInvoke.CfSetInSyncState(H(handle), CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC, CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE, null);
+        if (result.Value == unchecked((int)0x80070178)) return false;
+        Check(result, "CfSetInSyncState", path);
+        return true;
+    }
+
     /// <summary>Creates placeholders in a folder; per item null when it was created, otherwise why not.</summary>
     public static IReadOnlyList<string?> Create(string folder, IReadOnlyList<NewPlaceholder> items)
     {

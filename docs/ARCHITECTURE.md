@@ -352,7 +352,7 @@ Ordnerwächter, Wiederholungen, Entscheidungen und Verlauf sind gleich. Nur der 
 |---|---|
 | `OnDemandPair` | Die lebenden Teile einer Synchronisation: Zustand (`ItemStore` in `sync\<id>\items.db`), Anmeldung bei Windows, Verbindung. Verbunden wird schon beim Programmstart, damit Dateien gleich nach der Anmeldung öffnen. |
 | `OnDemandRunner` | Ein Lauf: Ordner und Wächterdatei prüfen, anmelden und verbinden, beide Seiten lesen, planen, Löschschutz, ausführen. Das Ergebnis ist ein `SyncRunOutcome` wie bei bisync. |
-| `Listings` | Beide Seiten liest rclone mit derselben Filterdatei (`SyncFilters`) – Auswahl, Ausschlüsse und „nur am PC“-Dateien gelten wie im klassischen Modus. Dazu für jede Datei am PC, was Windows über den Platzhalter weiß. Gelesen werden nur Metadaten. |
+| `Listings` | Beide Seiten liest rclone mit derselben Filterdatei (`SyncFilters`) – Auswahl, Ausschlüsse und „nur am PC“-Dateien gelten wie im klassischen Modus. Dazu für jede Datei am PC, was Windows über den Platzhalter weiß. Gelesen werden nur Metadaten. Die Cloud-Seite wird Ordner für Ordner gelesen, acht gleichzeitig (siehe unten). |
 | `Planner` | Eine reine Funktion aus gespeichertem Stand, Cloud und PC: der Plan aller Schritte, bevor sich etwas ändert. |
 | `Executor` | Führt den Plan aus und hält jeden fertigen Schritt sofort im `ItemStore` fest. |
 | `CloudFetcher` | Liefert die Daten, wenn ein Programm eine Datei öffnet. |
@@ -386,6 +386,23 @@ PC lagen und die die Cloud gelöscht hat, kommen als normale Dateien in den Papi
 Server stimmen, vor dem letzten Stück Größe, Zeit und – wo vorhanden – Prüfsumme. Sonst scheitert das Öffnen sauber
 („Der Cloudvorgang war nicht erfolgreich“), und ein Lauf folgt sofort. Die Daten kommen über `FileServer` (`rclone serve
 http` in der Engine) in Stücken von 1 MB, jedes setzt Windows' 60-Sekunden-Uhr zurück.
+
+**Die Cloud-Liste** liest jeden Ordner einzeln, acht gleichzeitig. rclones rekursives Auflisten bricht beim ersten
+Ordner ab, den der Server verweigert (etwa „403 Forbidden“ bei einer Nextcloud-Freigabe zum reinen Hochladen), und nennt
+ihn nicht. Hier bleibt so ein Ordner mit allem darin für diesen Lauf außen vor: Nichts darin gilt als gelöscht, nichts
+wird dort angelegt oder hochgeladen, und das Protokoll nennt ihn. Nur fehlende Verbindung, Anmeldung oder Engine beenden
+den Lauf wie überall. rclones WebDAV-Zugang wartet zwischen zwei Anfragen mindestens 10 ms – höchstens 100 Ordner pro
+Sekunde, egal wie schnell der Server ist. Für das Auflisten setzt CloudDrive-Sync die Pause auf 1 ms (`pacer_min_sleep`
+im Remote-String; nicht 0, weil rclone sie nach „zu vielen Anfragen“ verdoppelt). Gemessen mit 10 525 Einträgen in 526
+Ordnern am Testserver: 1,2 s statt 5,4 s. Jeder Lauf schreibt die Zeiten beider Listen ins Protokoll.
+
+**Status im Explorer:** Windows nimmt Ordnern den Zustand „abgeglichen“ (der Hauptordner hat ihn von Anfang an nicht),
+und Explorer zeigt für solche Ordner kein Symbol („Synchronisierung ausstehend“). Nach jedem Lauf markiert
+`Executor.MarkFoldersInSync` deshalb alle Ordner als abgeglichen – außer dem Weg zu etwas, das auf den nächsten Lauf
+wartet, und den unlesbaren Ordnern. Den Zustand der ganzen Synchronisation meldet `SyncRootConnection.Report` an Windows
+(bereit, synchronisiert, offline, Fehler). Geprüft wird das mit Explorers eigenen Spalten „Verfügbarkeitsstatus“ und
+„Status“ über `Shell.Application` – und Explorers Befehle „Immer auf diesem Gerät beibehalten“ und „Speicherplatz
+freigeben“ lassen sich dort ebenso auslösen, ohne Bildschirm.
 
 **Anheften und Freigeben:** Freigegeben wird nur eine Datei, die abgeglichen ist – eine Änderung, die noch nicht
 hochgeladen ist, geht so nie verloren; der Lauf nach dem Hochladen gibt den Platz frei. Neue Platzhalter in einem

@@ -28,6 +28,15 @@ public interface IFileFetcher
 /// an online-only file by accident (CF_CONNECT_FLAG_BLOCK_SELF_IMPLICIT_HYDRATION): only <see cref="Placeholders.Hydrate"/>
 /// fetches data on purpose.
 /// </summary>
+/// <summary>What Explorer shows at a synchronised folder itself (see <see cref="SyncRootConnection.Report"/>).</summary>
+public enum ProviderStatus
+{
+    Idle,
+    Syncing,
+    Offline,
+    Error,
+}
+
 [SupportedOSPlatform("windows10.0.17763")]
 public sealed unsafe class SyncRootConnection : IDisposable
 {
@@ -58,6 +67,7 @@ public sealed unsafe class SyncRootConnection : IDisposable
                 Placeholders.Check(PInvoke.CfConnectSyncRoot(new PCWSTR(pointer), Callbacks, (void*)GCHandle.ToIntPtr(connection._self), flags, &key), "CfConnectSyncRoot", connection.Path);
             connection._key = key;
             connection._connected = true;
+            connection.Report(ProviderStatus.Idle);
             return connection;
         }
         catch
@@ -65,6 +75,24 @@ public sealed unsafe class SyncRootConnection : IDisposable
             connection._self.Free();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Tells Windows how the synchronisation is doing. Explorer shows it at the folder itself - in the folder above it and
+    /// in the navigation pane; without it the folder stays "sync pending" without a status icon.
+    /// </summary>
+    public void Report(ProviderStatus status)
+    {
+        if (!_connected) return;
+        var value = status switch
+        {
+            ProviderStatus.Syncing => CF_SYNC_PROVIDER_STATUS.CF_PROVIDER_STATUS_SYNC_INCREMENTAL,
+            ProviderStatus.Offline => CF_SYNC_PROVIDER_STATUS.CF_PROVIDER_STATUS_CONNECTIVITY_LOST,
+            ProviderStatus.Error => CF_SYNC_PROVIDER_STATUS.CF_PROVIDER_STATUS_ERROR,
+            _ => CF_SYNC_PROVIDER_STATUS.CF_PROVIDER_STATUS_IDLE,
+        };
+        var result = PInvoke.CfUpdateSyncProviderStatus(_key, value);
+        if (result.Failed) Log.Debug("CloudFiles", $"Status of {Path} not reported: 0x{result.Value:X8}");
     }
 
     public void Dispose()
