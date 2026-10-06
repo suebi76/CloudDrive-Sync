@@ -57,6 +57,27 @@ public static class SyncRoots
         return key?.GetValue("NamespaceCLSID") as string;
     }
 
+    /// <summary>The folders of all of this user's sync roots, of any program (Windows keeps them under "UserSyncRoots").</summary>
+    public static IReadOnlyList<string> RegisteredFolders()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(ManagerKey);
+        var sid = UserSid;
+        var folders = new List<string>();
+        foreach (var id in key?.GetSubKeyNames() ?? [])
+        {
+            try
+            {
+                using var roots = key!.OpenSubKey($@"{id}\UserSyncRoots");
+                if (roots?.GetValue(sid) is string folder && folder.Length > 0) folders.Add(folder);
+            }
+            catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException)
+            {
+                // Some programs protect their registration; Windows itself still refuses a folder nested in theirs.
+            }
+        }
+        return folders;
+    }
+
     /// <summary>The registrations of this user under a provider (see <see cref="AppPaths.SyncRootProvider"/>).</summary>
     public static IReadOnlyList<string> RegisteredIds(string provider)
     {

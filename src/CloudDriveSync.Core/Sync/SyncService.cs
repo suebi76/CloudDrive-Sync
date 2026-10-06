@@ -64,6 +64,16 @@ public sealed partial class SyncService : IAsyncDisposable
             _started = true;
             foreach (var pair in _settings.Current.Syncs) WorkerFor(pair.Id).Start();
         }
+        // Explorer's entries for classic synchronisations: brought up to date, left-overs removed.
+        foreach (var pair in Pairs) UpdateExplorerEntry(pair.Id);
+        try
+        {
+            foreach (var stale in ExplorerEntries.PairIds(_paths).Where(id => FindPair(id) is null)) ExplorerEntries.Remove(_paths, stale);
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            Log.Warn("Sync", $"Explorer entries not checked: {e.Message}");
+        }
         // Files on demand: connected at once, so online-only files open before the first run.
         if (OnDemandSupported)
             foreach (var pair in Pairs.Where(p => p.Mode == SyncMode.OnDemand)) ConnectEarly(pair.Id);
@@ -135,6 +145,7 @@ public sealed partial class SyncService : IAsyncDisposable
                 throw;
             }
         }
+        UpdateExplorerEntry(pair.Id);
         Log.Info("Sync", $"Synchronisation '{pair.Id}' added ({pair.Mode}): {BisyncCommand.CloudPath(pair)} <-> {local}.");
         lock (_gate)
         {
@@ -155,6 +166,7 @@ public sealed partial class SyncService : IAsyncDisposable
         var pair = FindPair(id);
         if (pair is null) return;
         if (pair.Mode == SyncMode.OnDemand && OnDemandSupported) EndOnDemand(id);
+        RemoveExplorerEntry(id);
         TryDelete(Path.Combine(pair.LocalPath, SyncFilters.SentinelFile));
         try
         {
@@ -195,18 +207,27 @@ public sealed partial class SyncService : IAsyncDisposable
     /// <summary>Changes settings of a synchronisation. A changed selection needs a rebuild (bisync's rule), which follows.</summary>
     public void Update(string id, Action<SyncPairSettings> change)
     {
-        string? before = null, after = null;
+        string? before = null, after = null, nameBefore = null, nameAfter = null;
+        var onDemand = false;
         _settings.Update(s =>
         {
             var pair = s.Syncs.FirstOrDefault(p => p.Id == id);
             if (pair is null) return;
             before = SyncFilters.Build(pair.Selection, pair.CloudCheckFile);
+            nameBefore = pair.ExplorerName;
             change(pair);
             after = SyncFilters.Build(pair.Selection, pair.CloudCheckFile);
+            nameAfter = pair.ExplorerName;
+            onDemand = pair.Mode == SyncMode.OnDemand;
         });
         var worker = Worker(id);
         worker?.SettingsChanged();
         if (before != after) worker?.Request(BisyncMode.Resync, answersDecision: true);
+        if (nameBefore != nameAfter)
+        {
+            if (!onDemand) UpdateExplorerEntry(id);
+            else if (OnDemandSupported) RenameInExplorer(id);
+        }
     }
 
     public void RunNow(string id) => Worker(id)?.Request(BisyncMode.Normal);
@@ -235,11 +256,13 @@ public sealed partial class SyncService : IAsyncDisposable
     public async Task<VerifyResult> VerifyAsync(string id, bool compareContent, Action<JobProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var pair = FindPair(id) ?? throw new CdException("CD-9000", $"unknown synchronisation '{id}'");
-        // rclone would read every file and so fetch every online-only one.
-        if (pair.Mode == SyncMode.OnDemand) throw new CdException("CD-9000", "checking a synchronisation with files on demand is not available yet");
         if (!Directory.Exists(pair.LocalPath)) throw new CdException("CD-4501", pair.LocalPath);
+        var account = _accounts.Find(pair.AccountId) ?? throw new CdException("CD-9000", $"unknown account '{pair.AccountId}'");
         var rc = await _engine.EnsureRunningAsync(cancellationToken);
-        Task<VerifyResult> Check() => SyncVerifier.VerifyAsync(rc, _paths, pair, compareContent, progress, cancellationToken);
+        // With files on demand rclone must never read an online-only file - it would fetch it.
+        Task<VerifyResult> Check() => pair.Mode == SyncMode.OnDemand && OnDemandSupported
+            ? OnDemandVerifier.VerifyAsync(rc, _paths, pair, account, compareContent, progress, cancellationToken)
+            : SyncVerifier.VerifyAsync(rc, _paths, pair, compareContent, progress, cancellationToken);
         return Worker(id) is { } worker ? await worker.ExclusiveAsync(Check, cancellationToken) : await Check();
     }
 
@@ -387,6 +410,37 @@ public sealed partial class SyncService : IAsyncDisposable
                 return;
             }
             if (string.Equals(current, topmost, StringComparison.OrdinalIgnoreCase)) return;
+        }
+    }
+
+    /// <summary>
+    /// A classic synchronisation gets its entry in Explorer's navigation pane (or an updated one); one with files on demand
+    /// has the entry Windows makes for it instead.
+    /// </summary>
+    private void UpdateExplorerEntry(string id)
+    {
+        if (FindPair(id) is not { } pair) return;
+        try
+        {
+            if (pair.Mode == SyncMode.OnDemand) ExplorerEntries.Remove(_paths, id);
+            else ExplorerEntries.Add(_paths, id, ExplorerNameOf(pair, _accounts.Find(pair.AccountId)), pair.LocalPath, $"{Environment.ProcessPath},0");
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            // Only the entry in Explorer is missing; the synchronisation works.
+            Log.Warn("Sync", $"Explorer entry of '{id}' not updated: {e.Message}");
+        }
+    }
+
+    private void RemoveExplorerEntry(string id)
+    {
+        try
+        {
+            ExplorerEntries.Remove(_paths, id);
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            Log.Warn("Sync", $"Explorer entry of '{id}' not removed: {e.Message}");
         }
     }
 

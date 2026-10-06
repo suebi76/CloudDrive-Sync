@@ -6,6 +6,7 @@ using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
+using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.OnDemand;
 
@@ -132,13 +133,23 @@ internal sealed class OnDemandPair : IDisposable
         Log.Info("OnDemand", $"'{Id}': registration with Windows ended.");
     }
 
+    /// <summary>
+    /// Gives the folder's entry in Explorer the name from the settings - Windows takes a registration with the same ID as
+    /// an update. A folder not registered gets the name with its registration.
+    /// </summary>
+    public void Rename()
+    {
+        var pair = _pair() ?? throw new CdException("CD-9000", $"unknown synchronisation '{Id}'");
+        lock (_gate)
+        {
+            if (SyncRoots.IsRegistered(SyncRootId)) SyncRoots.Register(Spec(pair));
+        }
+        Log.Info("OnDemand", $"'{Id}': name in Explorer changed.");
+    }
+
     private SyncRootSpec Spec(SyncPairSettings pair)
     {
-        var account = _account();
-        var name = !string.IsNullOrWhiteSpace(pair.ExplorerName) ? pair.ExplorerName
-            : account is null ? "CloudDrive-Sync"
-            : pair.RemotePath.Trim('/').Length == 0 ? account.Label
-            : $"{account.Label} – {CloudFolderNames.ShowPath(account.Kind, pair.RemotePath)}";
+        var name = SyncService.ExplorerNameOf(pair, _account());
         var version = typeof(OnDemandPair).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0";
         return new SyncRootSpec(SyncRootId, pair.LocalPath, name, $"{Environment.ProcessPath},0", version, Id);
     }

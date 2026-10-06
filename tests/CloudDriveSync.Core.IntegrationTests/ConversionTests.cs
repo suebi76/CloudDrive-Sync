@@ -84,6 +84,24 @@ public class ConversionTests
         world.AssertInStep();
     }
 
+    [Fact]
+    public async Task A_classic_synchronisation_has_an_entry_in_Explorer_until_Windows_makes_its_own()
+    {
+        await using var world = await ClassicWorldAsync();
+        var paths = world.Host.Paths;
+        Assert.Contains(world.Pair.Id, ExplorerEntries.PairIds(paths));
+        using (var bag = Microsoft.Win32.Registry.CurrentUser.OpenSubKey($@"Software\Classes\CLSID\{ExplorerEntries.ClsidFor(paths, world.Pair.Id):B}\Instance\InitPropertyBag"))
+            Assert.Equal(world.Local, bag?.GetValue("TargetFolderPath", null, Microsoft.Win32.RegistryValueOptions.DoNotExpandEnvironmentNames));
+
+        await world.Host.Sync.ConvertToOnDemandAsync(world.Pair.Id);
+        Assert.DoesNotContain(world.Pair.Id, ExplorerEntries.PairIds(paths));
+        await world.Host.Sync.ConvertToClassicAsync(world.Pair.Id);
+        Assert.Contains(world.Pair.Id, ExplorerEntries.PairIds(paths));
+
+        await world.Host.Sync.RemoveAsync(world.Pair.Id);
+        Assert.DoesNotContain(world.Pair.Id, ExplorerEntries.PairIds(paths));
+    }
+
     // --- Which files count as the same when switching (OnDemandRunner.InStep).
     private static readonly DateTime Noted = new(2026, 10, 7, 9, 0, 0, DateTimeKind.Utc);
 

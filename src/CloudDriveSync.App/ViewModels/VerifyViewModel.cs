@@ -27,12 +27,14 @@ public sealed partial class VerifyViewModel : ObservableObject
 {
     private readonly CloudDriveSyncHost _host;
     private readonly string _id;
+    private readonly bool _onDemand;
     private CancellationTokenSource? _cancel;
 
     public VerifyViewModel(CloudDriveSyncHost host, SyncPairSettings pair, string title)
     {
         _host = host;
         _id = pair.Id;
+        _onDemand = pair.Mode == SyncMode.OnDemand;
         Title = title;
     }
 
@@ -40,6 +42,11 @@ public sealed partial class VerifyViewModel : ObservableObject
     public ObservableCollection<DifferenceGroup> Groups { get; } = [];
 
     [ObservableProperty] public partial bool CompareContent { get; set; }
+
+    /// <summary>With files on demand only the files on this PC are compared by content - nothing is fetched for it.</summary>
+    public string ContentHint => _onDemand
+        ? "Vergleicht die Dateien, die auf diesem PC liegen, mit der Cloud und lädt dafür deren Cloud-Fassung einmal herunter. Dateien, die nur online liegen, werden nach Name und Größe verglichen."
+        : "Lädt alle Dateien einmal herunter – bei großen Ordnern dauert das länger.";
     [ObservableProperty] public partial bool IsRunning { get; set; }
     [ObservableProperty] public partial string ProgressText { get; set; } = "";
     [ObservableProperty] public partial bool HasResult { get; set; }

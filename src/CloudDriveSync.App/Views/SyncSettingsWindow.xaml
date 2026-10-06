@@ -48,6 +48,12 @@
                                    Visibility="{Binding IsSwitching, Converter={StaticResource Visible}}" />
                         <TextBlock Text="{Binding SwitchProblem, StringFormat='„Dateien bei Bedarf“ geht in diesem Ordner nicht: {0}'}" Style="{StaticResource Caption}"
                                    TextWrapping="Wrap" Margin="0,6,0,0" Visibility="{Binding HasSwitchProblem, Converter={StaticResource Visible}}" />
+                        <StackPanel Margin="0,16,0,0">
+                            <TextBlock Text="Name im Explorer" />
+                            <TextBox Text="{Binding ExplorerName, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" AutomationProperties.Name="Name im Explorer" />
+                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Text="So heißt der Ordner im Navigationsbereich des Explorers. Leer lassen für den Standardnamen." />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -55,7 +61,7 @@
                 <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                     <StackPanel>
                         <TextBlock Text="Was wird synchronisiert?" Style="{StaticResource Strong}" Margin="0,0,0,10" />
-                        <StackPanel IsEnabled="{Binding CanChangeSelection}">
+                        <StackPanel>
                             <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll}" Margin="0,0,0,8" AutomationProperties.Name="Alles in diesem Ordner">
                                 <StackPanel>
                                     <TextBlock Text="Alles in diesem Ordner" />

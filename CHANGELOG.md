@@ -3,6 +3,31 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.4] – 2026-10-07
+
+Fourth test version on the way to 0.3.
+
+### Added
+
+- Switching an existing synchronisation, in its settings under "So kommen die Dateien auf diesen PC":
+  - to files on demand without any transfer: after a last normal run the files on the PC become files on demand where
+    they lie. Only files neither side changed since then count as the same; any other file is kept in both versions.
+    Should the switch break off, everything stays as it was.
+  - back to "Alle Dateien auf diesem PC": changes go up first, then every file comes onto the PC - when the drive has
+    room for it - and the first classic run merges both sides.
+- Classic synchronisations get an entry in Explorer's navigation pane, too. The name of the entry can be chosen in the
+  settings of a synchronisation (default "<Konto> – <Ordner>").
+- After a crash, CloudDrive-Sync starts again by itself, in the background.
+
+### Changed
+
+- With files on demand, what is synchronised can be changed again: from a folder no longer selected, files that were
+  only online leave the PC (they stay in the cloud), fetched files stay as normal files.
+- "Abgleich überprüfen" works with files on demand, too, and fetches nothing for it: files only online are compared by
+  name and size.
+- Files on demand are no longer offered for a folder with a folder of another cloud program inside it (for example the
+  user folder with OneDrive in it).
+
 ## [0.3.0-preview.3] – 2026-10-07
 
 Third test version on the way to 0.3.

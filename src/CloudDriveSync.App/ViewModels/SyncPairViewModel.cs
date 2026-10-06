@@ -272,9 +272,6 @@ public sealed partial class SyncPairViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => _main.OpenSyncSettings(this);
 
-    /// <summary>Checking would read every file - with files on demand it would fetch them all. Follows in a later test version.</summary>
-    public bool CanVerify => _pair.Mode == SyncMode.Classic;
-
     [RelayCommand]
     private void Verify() => _main.Dialogs.Verify(_pair, Title);
 

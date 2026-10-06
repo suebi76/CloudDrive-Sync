@@ -419,6 +419,44 @@ from the PC, everything stays in the cloud. When uninstalling, the Velopack hook
 (`SyncRoots.UnregisterAll`, 12 000 entries in less than 4 s); should CloudDrive-Sync come back, the rule "registration
 lost" applies.
 
+**Switching** (`SyncService.Conversion.cs`, in the window "Einstellungen der Synchronisation"):
+- **Classic → files on demand:**
+  - First a normal bisync run; should it fail, everything stays as it was (`CD-4607`).
+  - Then `PcListingTimes.ReadRecord` reads bisync's listings of both sides. `OnDemandRunner.InStep` takes only files
+    that still have, on the PC *and* in the cloud, the size and time bisync noted (to the second).
+  - Only these count as the same without a checksum in the first run (`Planner.Input.InStep`) and become placeholders
+    without any transfer; any other file on both sides is kept in both versions.
+  - Should the switch break off, `BackToClassic` unregisters the folder again - all files were on the PC and stay as
+    normal files - and bisync goes on as before.
+  - When it succeeds, bisync's working files go (`bisync\`, `last-good\`, `local-files.txt`, `server-times.json`).
+- **Files on demand → classic:**
+  - A run uploads changes on the PC first.
+  - Then the drive needs room for all online files, with a reserve (1 GB or a twentieth; otherwise `CD-4606`). All are
+    fetched, the folder is unregistered (the files stay), and `ResyncPending` in `state.json` makes the first classic
+    run merge - also after a restart.
+
+**Changing the selection:** an item neither listing contains any more is forgotten (`Forget`). When its placeholder
+still lies on the PC, it was deselected: data on the PC → normal file (`CfRevertPlaceholder`), online only → gone from
+the PC (it stays in the cloud), and an empty folder goes, too. Selected again, the rebuild merges.
+
+**"Abgleich überprüfen"** (`OnDemandVerifier`) fetches nothing: it compares online files by name and size from the
+listings; for files on the PC, rclone's `operations/check` gets exactly these as `FilesFrom` and so touches no online
+file. A change not uploaded yet counts as a difference.
+
+**In Explorer:**
+- The name in the navigation pane is chosen in the settings; default "&lt;account&gt; – &lt;folder&gt;"
+  (`SyncService.ExplorerNameOf`). With files on demand, Windows takes a registration with the same ID as an update,
+  also while the folder is connected (`OnDemandPair.Rename`).
+- Classic synchronisations get an entry of the same kind (`ExplorerEntries`, per user in HKCU). The CLSID follows from
+  the synchronisation and the data folder, a marker value tells the entries of CloudDrive-Sync from all others, and
+  only those are ever removed. They are refreshed at the start, left-overs removed, and all of them go when
+  uninstalling.
+- `OnDemandProblem` also rules out folders that have a sync root *inside* them (`SyncRoots.RegisteredFolders`, from
+  every registration's `UserSyncRoots`; Windows nests no sync roots).
+
+**Restart after a crash:** the installed version registers with `RegisterApplicationRestart("--background")` - online
+files open only while CloudDrive-Sync runs. Not after a restart of Windows: the start entry does that.
+
 ## Error codes
 
 Every error has a code `CD-xxxx` with title and fix in German and English (`ErrorCatalog`). The numbers follow the same
@@ -430,6 +468,7 @@ ranges as in CloudDrives:
 | `CD-2xxx` | Settings, configuration, keys |
 | `CD-3xxx` | Sign-in and servers |
 | `CD-45xx` | Synchronisation (folder, deletion guard, rebuild, files in use …) |
+| `CD-46xx` | Files on demand (folder, registration with Windows, fetching, switching) |
 | `CD-5xxx` | Connection and engine |
 | `CD-9000` | Unexpected error |
 

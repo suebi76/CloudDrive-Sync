@@ -33,6 +33,8 @@ public sealed partial class SyncService
 
             progress?.Report("Stellt auf „Dateien bei Bedarf“ um …");
             SetMode(id, SyncMode.OnDemand);
+            // Windows makes its own entry in Explorer for the registered folder.
+            RemoveExplorerEntry(id);
             SyncRunOutcome outcome;
             try
             {
@@ -95,6 +97,7 @@ public sealed partial class SyncService
             EndOnDemand(id);
             DeleteOnDemandState(id);
             SetMode(id, SyncMode.Classic);
+            UpdateExplorerEntry(id);
             Log.Info("Sync", $"'{id}' switched to all files on this PC: {missing.Count} file(s) fetched.");
             // The first classic run merges both sides; nothing is deleted.
             RebuildNext(id);
@@ -128,6 +131,7 @@ public sealed partial class SyncService
         EndOnDemand(id);
         DeleteOnDemandState(id);
         SetMode(id, SyncMode.Classic);
+        UpdateExplorerEntry(id);
         Log.Warn("Sync", $"Switching '{id}' to files on demand broke off; it stays a classic synchronisation.");
     }
 

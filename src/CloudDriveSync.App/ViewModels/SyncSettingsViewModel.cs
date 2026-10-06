@@ -32,7 +32,14 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         ConflictPolicy = pair.Conflicts;
         MaxDeletePercent = pair.MaxDeletePercent;
         SwitchProblem = pair.Mode == SyncMode.Classic && SyncService.OnDemandSupported ? SyncService.OnDemandProblem(pair.LocalPath) ?? "" : "";
+        _defaultExplorerName = SyncService.DefaultExplorerName(pair, account);
+        ExplorerName = SyncService.ExplorerNameOf(pair, account);
     }
+
+    private readonly string _defaultExplorerName;
+
+    /// <summary>The folder's name in Explorer's navigation pane; empty or the default keeps the default.</summary>
+    [ObservableProperty] public partial string ExplorerName { get; set; } = "";
 
     /// <summary>Asks before switching (title, text, button); the window shows the question over itself.</summary>
     public Func<string, string, string, bool>? Confirm { get; set; }
@@ -83,7 +90,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
             _pair = _host.Sync.FindPair(_pair.Id) ?? _pair;
             // The overview shows the new mode.
             Saved = true;
-            foreach (var name in new[] { nameof(IsOnDemand), nameof(ModeTitle), nameof(ModeText), nameof(SwitchText), nameof(CanChangeSelection), nameof(SelectionHint) })
+            foreach (var name in new[] { nameof(IsOnDemand), nameof(ModeTitle), nameof(ModeText), nameof(SwitchText), nameof(SelectionHint) })
                 OnPropertyChanged(name);
         }
         catch (CdException e)
@@ -100,15 +107,9 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
 
     public SelectionTree Selection { get; }
 
-    /// <summary>
-    /// With files on demand a changed selection would leave files behind that no longer open; changing it follows in a
-    /// later test version.
-    /// </summary>
-    public bool CanChangeSelection => _pair.Mode == SyncMode.Classic;
-
-    public string SelectionHint => CanChangeSelection
-        ? "Änderst du die Auswahl, baut CloudDrive-Sync den Abgleich danach neu auf – ohne etwas zu löschen. Abgewählte Ordner bleiben am PC liegen, werden aber nicht mehr abgeglichen."
-        : "Bei „Dateien bei Bedarf“ lässt sich die Auswahl in dieser Testversion noch nicht ändern.";
+    public string SelectionHint => IsOnDemand
+        ? "Änderst du die Auswahl, baut CloudDrive-Sync den Abgleich danach neu auf – ohne in der Cloud etwas zu löschen. Aus abgewählten Ordnern verschwindet vom PC, was nur online lag; heruntergeladene Dateien bleiben als normale Dateien liegen."
+        : "Änderst du die Auswahl, baut CloudDrive-Sync den Abgleich danach neu auf – ohne etwas zu löschen. Abgewählte Ordner bleiben am PC liegen, werden aber nicht mehr abgeglichen.";
     public string CloudText { get; }
     public string LocalPath => _pair.LocalPath;
     public bool CloudWithoutTimes { get; }
@@ -165,7 +166,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         if (IsSwitching) return;
         Error = "";
         var includes = SelectAll ? [] : Selection.Collect();
-        if (CanChangeSelection && !SelectAll && includes.Count == 0)
+        if (!SelectAll && includes.Count == 0)
         {
             Error = "Bitte setze bei mindestens einem Ordner oder einer Datei einen Haken – oder wähle „Alles in diesem Ordner“.";
             return;
@@ -178,9 +179,11 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         };
         try
         {
+            var explorerName = ExplorerName.Trim();
             _host.Sync.Update(_pair.Id, pair =>
             {
-                if (CanChangeSelection) pair.Selection = selection;
+                pair.Selection = selection;
+                pair.ExplorerName = explorerName.Length == 0 || explorerName == _defaultExplorerName ? null : explorerName;
                 pair.Conflicts = ConflictPolicy;
                 pair.IntervalMinutes = IntervalMinutes;
                 pair.OnLocalChange = OnLocalChange;

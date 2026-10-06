@@ -253,6 +253,8 @@ internal sealed class SyncWorld : IAsyncDisposable
                 }
             }
         }
+        // Entries in Explorer's navigation pane of this world's classic synchronisations (only this data folder's).
+        ExplorerEntries.RemoveAll(Host.Paths);
         if (Proxy is not null) await Proxy.DisposeAsync();
         await Server.DisposeAsync();
         Host.Secrets.Delete("config");

@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
@@ -17,6 +18,16 @@ public sealed partial class SyncService
 
     /// <summary>The clock for freeing space after some days; tests move it forward.</summary>
     internal TimeProvider Time { get; set; } = TimeProvider.System;
+
+    /// <summary>The name of a synchronisation's entry in Explorer: the one chosen, or <see cref="DefaultExplorerName"/>.</summary>
+    public static string ExplorerNameOf(SyncPairSettings pair, AccountSettings? account) =>
+        !string.IsNullOrWhiteSpace(pair.ExplorerName) ? pair.ExplorerName.Trim() : DefaultExplorerName(pair, account);
+
+    /// <summary>"&lt;account&gt; – &lt;folder&gt;", or the account alone when the whole storage is synchronised.</summary>
+    public static string DefaultExplorerName(SyncPairSettings pair, AccountSettings? account) =>
+        account is null ? "CloudDrive-Sync"
+            : pair.RemotePath.Trim('/').Length == 0 ? account.Label
+            : $"{account.Label} – {CloudFolderNames.ShowPath(account.Kind, pair.RemotePath)}";
 
     /// <summary>Files on demand need the Cloud Files API of Windows 10 1809 or later.</summary>
     [SupportedOSPlatformGuard("windows10.0.17763")]
@@ -54,6 +65,9 @@ public sealed partial class SyncService
                 return "Der Ordner liegt in einem Ordner, den schon ein anderes Cloud-Programm (z. B. OneDrive) oder eine andere Synchronisation nutzt.";
             break;
         }
+        // Windows nests no sync roots: one below the folder rules it out, too.
+        if (SyncRoots.RegisteredFolders().Any(folder => Path.TrimEndingDirectorySeparator(folder).StartsWith(full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+            return "Im Ordner liegt schon ein Ordner, den ein anderes Cloud-Programm (z. B. OneDrive) oder eine andere Synchronisation nutzt.";
         return null;
     }
 
@@ -100,6 +114,20 @@ public sealed partial class SyncService
 
     [SupportedOSPlatform("windows10.0.17763")]
     private void ConnectNew(string id) => LiveFor(id).EnsureConnected();
+
+    [SupportedOSPlatform("windows10.0.17763")]
+    private void RenameInExplorer(string id)
+    {
+        try
+        {
+            LiveFor(id).Rename();
+        }
+        catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            // The entry keeps its old name; nothing else depends on it.
+            Log.Warn("OnDemand", $"Name in Explorer of '{id}' not changed: {e.Message}");
+        }
+    }
 
     /// <summary>
     /// Ends a synchronisation with files on demand: the registration with Windows goes, Windows keeps the files whose

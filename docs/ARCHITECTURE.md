@@ -428,6 +428,45 @@ verschwinden vom PC, in der Cloud bleibt alles. Beim Deinstallieren meldet der V
 (`SyncRoots.UnregisterAll`, 12 000 Einträge in unter 4 s); kommt CloudDrive-Sync wieder, greift die Regel „Anmeldung
 verloren“.
 
+**Umstellen** (`SyncService.Conversion.cs`, im Fenster „Einstellungen der Synchronisation“):
+- **Klassisch → bei Bedarf:**
+  - Zuerst ein normaler bisync-Lauf; scheitert er, bleibt alles, wie es war (`CD-4607`).
+  - Danach liest `PcListingTimes.ReadRecord` bisyncs Listen beider Seiten. `OnDemandRunner.InStep` nimmt nur Dateien,
+    die auf dem PC *und* in der Cloud noch Größe und Zeit haben, die bisync notiert hat (auf die Sekunde).
+  - Nur diese gelten im ersten Lauf ohne Prüfsumme als gleich (`Planner.Input.InStep`) und werden ohne Übertragung zu
+    Platzhaltern; jede andere Datei auf beiden Seiten bleibt in beiden Fassungen.
+  - Bricht das Umstellen ab, meldet `BackToClassic` den Ordner wieder ab – alle Dateien lagen auf dem PC und bleiben
+    normale Dateien – und bisync macht weiter wie vorher.
+  - Gelingt es, gehen bisyncs Arbeitsdateien (`bisync\`, `last-good\`, `local-files.txt`, `server-times.json`).
+- **Bei Bedarf → klassisch:**
+  - Ein Lauf lädt zuerst Änderungen am PC hoch.
+  - Dann muss Platz für alle Online-Dateien sein, mit Reserve (1 GB oder ein Zwanzigstel; sonst `CD-4606`). Alle werden
+    geladen, der Ordner abgemeldet (die Dateien bleiben), und `ResyncPending` in `state.json` sorgt dafür, dass der
+    erste klassische Lauf zusammenführt – auch nach einem Neustart.
+
+**Auswahl ändern:** Ein Eintrag, den keine der beiden Listen mehr enthält, wird vergessen (`Forget`). Liegt sein
+Platzhalter noch am PC, wurde er abgewählt: Daten auf dem PC → normale Datei (`CfRevertPlaceholder`), nur online →
+weg vom PC (bleibt in der Cloud), ein leerer Ordner geht ebenfalls. Wird er wieder gewählt, führt der Neuaufbau
+zusammen.
+
+**„Abgleich überprüfen“** (`OnDemandVerifier`) lädt nichts: Online-Dateien vergleicht es nach Name und Größe aus den
+Listen; für Dateien auf dem PC bekommt rclones `operations/check` genau diese als `FilesFrom` und berührt so keine
+Online-Datei. Eine Änderung, die noch nicht hochgeladen ist, zählt als Unterschied.
+
+**Im Explorer:**
+- Den Namen im Navigationsbereich wählt man in den Einstellungen; Standard „&lt;Konto&gt; – &lt;Ordner&gt;“
+  (`SyncService.ExplorerNameOf`). Bei „bei Bedarf“ nimmt Windows eine erneute Anmeldung mit derselben ID als
+  Aktualisierung, auch während der Ordner verbunden ist (`OnDemandPair.Rename`).
+- Klassische Synchronisationen bekommen einen gleichartigen Eintrag (`ExplorerEntries`, per Benutzer in HKCU). Die
+  CLSID folgt aus Synchronisation und Datenordner, ein Markierungswert grenzt die Einträge von CloudDrive-Sync von allen
+  anderen ab, und nur diese werden je entfernt. Beim Start werden sie aufgefrischt und übrig gebliebene entfernt, beim
+  Deinstallieren alle.
+- `OnDemandProblem` sperrt auch Ordner, *in* denen schon eine Sync-Root liegt (`SyncRoots.RegisteredFolders`, aus
+  `UserSyncRoots` jeder Anmeldung; Windows verschachtelt keine Sync-Roots).
+
+**Neustart nach Absturz:** Die installierte Fassung meldet sich mit `RegisterApplicationRestart("--background")` an –
+Online-Dateien öffnen nur, solange CloudDrive-Sync läuft. Nicht nach einem Windows-Neustart: Das erledigt der Autostart.
+
 ## Fehlercodes
 
 Jeder Fehler hat einen Code `CD-xxxx` mit Titel und Lösung auf Deutsch und Englisch (`ErrorCatalog`). Die Nummern
@@ -439,6 +478,7 @@ folgen derselben Einteilung wie in CloudDrives:
 | `CD-2xxx` | Einstellungen, Konfiguration, Schlüssel |
 | `CD-3xxx` | Anmeldung und Server |
 | `CD-45xx` | Synchronisation (Ordner, Löschschutz, Neuaufbau, geöffnete Dateien …) |
+| `CD-46xx` | Dateien bei Bedarf (Ordner, Anmeldung bei Windows, Laden, Umstellen) |
 | `CD-5xxx` | Verbindung und Engine |
 | `CD-9000` | Unerwarteter Fehler |
 

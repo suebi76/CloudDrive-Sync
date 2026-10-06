@@ -40,8 +40,13 @@ public partial class App : Application
         }
         _instance.ShowRequested += (_, _) => Dispatcher.InvokeAsync(ShowMainWindow);
 
-        // The installed program records where it is, so CloudDrives finds it wherever it was installed.
-        if (Updater.IsInstalled && paths.IsDefaultHome) AppRegistration.Register();
+        // The installed program records where it is, so CloudDrives finds it wherever it was installed - and comes back
+        // by itself after a crash.
+        if (Updater.IsInstalled && paths.IsDefaultHome)
+        {
+            AppRegistration.Register();
+            CrashRestart.Register();
+        }
         var migrated = TestBuildMigration.Run(paths);
         _host = new CloudDriveSyncHost(paths);
         if (migrated > 0) Log.Info("App", $"Data of the test build \"CloudDrives 2\" taken over ({migrated} item(s)).");

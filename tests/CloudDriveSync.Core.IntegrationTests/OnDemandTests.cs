@@ -389,6 +389,69 @@ public class OnDemandTests
     }
 
     [Fact]
+    public async Task Files_on_demand_are_not_offered_inside_or_above_a_registered_folder()
+    {
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("a.txt", "a"));
+        Assert.NotNull(SyncService.OnDemandProblem(world.Pc("Unterordner")));
+        Assert.NotNull(SyncService.OnDemandProblem(Path.GetDirectoryName(world.Local)!));
+        Assert.Null(SyncService.OnDemandProblem(Path.Combine(world.Root, "anderswo")));
+    }
+
+    [Fact]
+    public async Task The_name_in_Explorer_can_be_changed_while_the_folder_is_connected()
+    {
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("a.txt", "a"));
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair.Id);
+        world.Host.Sync.Update(world.Pair.Id, p => p.ExplorerName = "Unterricht 7b");
+        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey($@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\{id}");
+        Assert.NotNull(key);
+        Assert.Contains("Unterricht 7b", key.GetValueNames().Select(name => key.GetValue(name)?.ToString() ?? ""));
+        // Files keep opening.
+        Assert.Equal("a", Fetch(world, "a.txt"));
+    }
+
+    [Fact]
+    public async Task Checking_compares_without_fetching_anything()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("nur online.txt", "online"); w.WriteCloud("geholt.txt", "geholt"); w.WriteCloud("Ordner/c.txt", "c"); });
+        Fetch(world, "geholt.txt");
+        var inStep = await world.Host.Sync.VerifyAsync(world.Pair.Id, compareContent: true);
+        Assert.True(inStep.InStep, string.Join(", ", inStep.Different.Concat(inStep.OnlyInCloud).Concat(inStep.OnlyOnPc).Concat(inStep.Unreadable)));
+        Assert.Equal(3, inStep.Matching);
+
+        world.WriteCloud("Ordner/c.txt", "in der Cloud geändert");
+        world.WriteCloud("neu in der Cloud.txt", "neu");
+        world.WritePc("geholt.txt", "am PC geändert");
+        var differences = await world.Host.Sync.VerifyAsync(world.Pair.Id, compareContent: true);
+        Assert.Equal(["neu in der Cloud.txt"], differences.OnlyInCloud);
+        Assert.Equal(["geholt.txt", "Ordner/c.txt"], differences.Different);
+        Assert.Empty(differences.OnlyOnPc);
+        // Nothing was fetched for it.
+        Assert.Equal(0, Placeholders.Read(world.Pc("nur online.txt"))!.OnDiskSize);
+        Assert.Equal(0, Placeholders.Read(world.Pc("Ordner/c.txt"))!.OnDiskSize);
+    }
+
+    [Fact]
+    public async Task A_folder_no_longer_selected_keeps_its_fetched_files_and_loses_its_online_only_ones()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("Mathe/a.txt", "geholt"); w.WriteCloud("Mathe/b.txt", "nur online"); w.WriteCloud("Deutsch/c.txt", "c"); });
+        Fetch(world, "Mathe/a.txt");
+        world.Host.Sync.Update(world.Pair.Id, p => p.Selection = new SyncSelection { Mode = SelectionMode.Selected, Include = ["Deutsch/"] });
+        var deselected = await RunAsync(world, BisyncMode.Resync);
+        Assert.Equal(0, deselected.Deletes);
+        Assert.Equal("geholt", world.ReadPc("Mathe/a.txt"));
+        Assert.Null(Placeholders.Read(world.Pc("Mathe/a.txt")));
+        Assert.False(File.Exists(world.Pc("Mathe/b.txt")));
+        Assert.Equal("nur online", world.ReadCloud("Mathe/b.txt"));
+        Assert.NotNull(Placeholders.Read(world.Pc("Deutsch/c.txt")));
+        // Selected again: everything is there, the file kept on the PC is taken as it is.
+        world.Host.Sync.Update(world.Pair.Id, p => p.Selection = new SyncSelection { Mode = SelectionMode.All });
+        await RunAsync(world, BisyncMode.Resync);
+        AssertInStep(world);
+        Assert.DoesNotContain(world.PcFiles(), f => f.Contains("Konflikt", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Ending_the_synchronisation_keeps_fetched_files_and_removes_online_only_ones()
     {
         await using var world = await WorldAsync(cloud: w => { w.WriteCloud("geholt.txt", "da"); w.WriteCloud("online.txt", "x"); });

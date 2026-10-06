@@ -84,7 +84,8 @@ internal sealed partial class Executor
         foreach (var remove in actions.OfType<RemoveLocal>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path))) await StepAsync(remove.Path, () => RemoveLocalAsync(remove));
         foreach (var remove in actions.OfType<RemoveCloud>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path))) await StepAsync(remove.Path, () => RemoveCloudAsync(remove));
         foreach (var drop in actions.OfType<DropPlaceholder>().OrderByDescending(a => Depth(a.Path))) await StepAsync(drop.Path, () => DropAsync(drop));
-        foreach (var forget in actions.OfType<Forget>()) _store.Remove(forget.Item.Id);
+        foreach (var forget in actions.OfType<Forget>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Item.Path)))
+            await StepAsync(forget.Item.Path, () => ForgetAsync(forget));
         // Files that were on the PC before their new version arrived come again - after everything else.
         foreach (var path in _toFetch) await StepAsync(path, () => FetchAsync(path));
         return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed);
@@ -277,6 +278,30 @@ internal sealed partial class Executor
         _store.Update(refresh.Item with { CloudSize = cloud.Size, CloudTicks = cloud.Ticks, CloudHash = cloud.Hash, LocalSize = cloud.Size, LocalTicks = TimeOf(cloud.Ticks).Ticks });
         _changes.Add(new FileChange(ChangeKind.Downloaded, refresh.Path));
         if (wasOnDisk) _toFetch.Add(refresh.Path);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// An item gone from both listings. Its placeholder may still lie on the PC, outside the listing: the selection
+    /// changed. Then it is no longer part of the synchronisation - a file whose data is on the PC stays as a normal file
+    /// (like a folder that is no longer selected in classic synchronisations), an online-only one goes (its data stays in
+    /// the cloud), and a folder goes when nothing stayed in it.
+    /// </summary>
+    private Task ForgetAsync(Forget forget)
+    {
+        var full = LocalFull(forget.Item.Path);
+        if (!forget.Item.IsDirectory && File.Exists(full) && Placeholders.Read(full) is { } file)
+        {
+            if (file.IsFullyOnDisk || !file.InSync) Placeholders.Revert(full);
+            else File.Delete(full);
+            Log.Info("OnDemand", $"'{_pair.Id}': '{forget.Item.Path}' is no longer synchronised; {(file.IsFullyOnDisk || !file.InSync ? "it stays on the PC" : "it stays in the cloud")}.");
+        }
+        else if (forget.Item.IsDirectory && Directory.Exists(full) && Placeholders.Read(full) is not null)
+        {
+            if (Directory.EnumerateFileSystemEntries(full).Any()) Placeholders.Revert(full);
+            else Directory.Delete(full);
+        }
+        _store.Remove(forget.Item.Id);
         return Task.CompletedTask;
     }
 

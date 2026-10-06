@@ -56,6 +56,8 @@ internal static class AppRegistration
             // On a thread of its own: the registration is a Windows Runtime call, the uninstall step runs on the UI thread.
             var ending = Task.Run(() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763) ? Core.CloudFiles.SyncRoots.UnregisterAll(paths) : []);
             if (ending.Wait(TimeSpan.FromSeconds(25))) Core.Diagnostics.Log.Info("App", $"Uninstalling: {ending.Result.Count} folder(s) with files on demand unregistered.");
+            // The entries of classic synchronisations in Explorer's navigation pane go, too.
+            Core.Diagnostics.Log.Info("App", $"Uninstalling: {Core.CloudFiles.ExplorerEntries.RemoveAll(paths)} Explorer entry(s) removed.");
         }
         catch (Exception e) when (e is AggregateException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {

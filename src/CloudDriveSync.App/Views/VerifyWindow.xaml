@@ -28,7 +28,7 @@
                           AutomationProperties.Name="Auch die Inhalte vergleichen">
                     <StackPanel>
                         <TextBlock Text="Auch die Inhalte vergleichen" />
-                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Lädt alle Dateien einmal herunter – bei großen Ordnern dauert das länger." />
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="{Binding ContentHint}" />
                     </StackPanel>
                 </CheckBox>
                 <Button Content="Jetzt prüfen" Style="{StaticResource AccentButtonStyle}" Command="{Binding CheckCommand}" IsEnabled="{Binding CanCheck}"
