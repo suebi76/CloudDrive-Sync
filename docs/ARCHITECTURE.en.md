@@ -154,6 +154,7 @@ Its state lives in `sync\<id>\`:
 | `state.json` | What survives a restart: first sync done, last run, open error, open decision. |
 | `runs.jsonl` | The latest runs with the files they changed (`RunHistory`, for "Aktivität"). |
 | `last-run.txt` | bisync's redacted report of the last run, for troubleshooting. |
+| `items.db` | Files on demand only: every file and folder with the version of both sides after the last run (`ItemStore`, SQLite). Instead of `bisync\`, `last-good\`, `local-files.txt` and `server-times.json`. |
 
 ### Who starts a run, and when
 
@@ -338,6 +339,62 @@ Rules for the core that follow from this:
 - **A pinned folder** passes its state on to everything in it (`CfSetPinState` with `RECURSE`), and the core fetches it.
 - **Placeholders are named like rclone names files:** `NameEncoding` translates names the way rclone's local backend
   writes them on Windows ("Was?.docx" becomes "Was？.docx"). So a folder bisync filled matches after switching over.
+
+### How the core works
+
+A synchronisation with `Mode = OnDemand` goes through the same `PairWorker` as a classic one - interval, folder watcher,
+retries, decisions and history are the same. Only the run itself differs (`SyncService.OnDemand.cs`):
+
+| Building block | Task |
+|---|---|
+| `OnDemandPair` | The live parts of a synchronisation: state (`ItemStore` in `sync\<id>\items.db`), registration with Windows, connection. It connects as soon as the program starts, so files open right after signing in. |
+| `OnDemandRunner` | One run: check folder and protection file, register and connect, read both sides, plan, deletion guard, carry out. The result is a `SyncRunOutcome` as with bisync. |
+| `Listings` | rclone reads both sides with the same filter file (`SyncFilters`) - selection, exclusions and files that stay on the PC apply as in classic mode. Plus, for every file on the PC, what Windows knows about its placeholder. Only metadata is read. |
+| `Planner` | A pure function of the remembered state, the cloud and the PC: the plan of all steps, before anything changes. |
+| `Executor` | Carries the plan out and records every finished step in the `ItemStore` at once. |
+| `CloudFetcher` | Delivers the data when a program opens a file. |
+| `PinWatcher` | Carries out "Always keep on this device" and "Free up space". Explorer only sets the pin state of the chosen entry; the watcher fetches or frees and passes a folder's state on to everything in it. |
+
+**The planner's rules** (a three-way comparison - a side counts as changed when it differs from the common state):
+
+- When both sides changed, both versions are kept - by the synchronisation's conflict rule, with the same names as with
+  bisync (`Name.Konflikt-PC1.ext`, `Name.Konflikt-Cloud1.ext`). On servers without times of their own, "the newer one
+  wins" becomes "keep both". When the server has a checksum and the content is the same, no copy is made.
+- A change beats a deletion: changed in the cloud and deleted on the PC (or the other way round) brings the file back.
+- The first run and a rebuild delete nothing; files of the same size count as the same (as with bisync on servers without
+  checksums), otherwise both stay.
+- A normal file in the place of a placeholder is a change (that is how Office saves). A placeholder in a new place was
+  renamed or moved - it is moved in the cloud, not uploaded again; a folder takes its content along. While a file's
+  placeholder lies anywhere on the PC, the file never counts as "deleted on the PC".
+- Deletions are counted in files; more than the deletion limit stops the run (`CD-4502`), as before.
+
+**The executor** works in this order: moves, new folders, adoptions, uploads, conflicts, new placeholders, refreshed
+placeholders, deletions (files before their folders, which go only when empty). Before every change it looks again: it
+uploads and deletes in the cloud only while the cloud still has the known version, and deletes on the PC only an
+unchanged file. Whatever changed meanwhile is left for the next run. For uploads it sets `IgnoreTimes`, because on
+servers without times of their own rclone would skip a change of the same size. `Placeholders.FinishUpload` marks a file
+in sync only while it is still exactly the uploaded version - checking, converting and marking happen while a lock keeps
+every writer out. Files whose data was on the PC and which the cloud deleted go into the recycle bin as normal files.
+
+**The CloudFetcher** delivers only the version a placeholder stands for: before the first byte the server's size must
+match, before the last piece size, time and - where available - checksum. Otherwise opening fails cleanly ("The cloud
+operation was unsuccessful") and a run follows at once. The data comes through `FileServer` (`rclone serve http` in the
+engine) in pieces of 1 MB; each resets Windows' 60-second clock.
+
+**Keeping and freeing:** only a file in sync is freed - a change not uploaded yet is never lost that way; the run after
+the upload frees the space. New placeholders in a pinned folder are pinned themselves and fetched at once, in new
+subfolders, too. What the watcher misses (say, because CloudDrive-Sync was not running) every run catches up with
+(`Executor.ApplyPinStates`): a file without a state of its own takes that of the nearest folder above it that has one.
+
+**Registration lost:** when the folder is no longer registered with Windows after the first run, Windows has removed the
+online-only placeholders from the PC. A normal run would take them as "deleted on the PC". `OnDemandPair` registers the
+folder again and records that in the state (`items.db`, so it survives a crash); the next run then merges both sides
+like a rebuild and deletes nothing - even when "apply deletions" was chosen before.
+
+**Removing** unregisters the folder with Windows: fetched files stay as normal files, online-only placeholders vanish
+from the PC, everything stays in the cloud. When uninstalling, the Velopack hook unregisters all of the program's folders
+(`SyncRoots.UnregisterAll`, 12 000 entries in less than 4 s); should CloudDrive-Sync come back, the rule "registration
+lost" applies.
 
 ## Error codes
 

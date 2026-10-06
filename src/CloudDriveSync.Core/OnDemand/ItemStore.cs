@@ -70,6 +70,19 @@ public sealed class ItemStore : IDisposable
         lock (_lock) return Query("SELECT * FROM items ORDER BY path", null);
     }
 
+    public bool IsEmpty
+    {
+        get
+        {
+            lock (_lock)
+            {
+                using var command = NewCommand();
+                command.CommandText = "SELECT EXISTS (SELECT 1 FROM items)";
+                return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0;
+            }
+        }
+    }
+
     public SyncItem? Find(long id)
     {
         lock (_lock) return Query("SELECT * FROM items WHERE id = $id", c => c.Parameters.AddWithValue("$id", id)).FirstOrDefault();
@@ -107,6 +120,37 @@ public sealed class ItemStore : IDisposable
             Bind(command, item);
             command.Parameters.AddWithValue("$id", item.Id);
             if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException($"item {item.Id} is not in the store");
+        }
+    }
+
+    /// <summary>Adds the item, or updates the one at its path (keeping that one's ID); returns the ID.</summary>
+    public long Upsert(SyncItem item)
+    {
+        lock (_lock)
+        {
+            if (FindByPath(item.Path) is { } existing)
+            {
+                Update(item with { Id = existing.Id });
+                return existing.Id;
+            }
+            return Add(item);
+        }
+    }
+
+    /// <summary>Gives an item - for a folder: with everything below it - a new place (renamed or moved).</summary>
+    public void Move(string from, string to)
+    {
+        lock (_lock)
+        {
+            using var command = NewCommand();
+            // Exactly the path, or the path followed by "/": "Alt" must not catch "Alter".
+            command.CommandText = """
+                UPDATE items SET path = $to || substr(path, length($from) + 1)
+                WHERE path = $from OR substr(path, 1, length($from) + 1) = $from || '/'
+                """;
+            command.Parameters.AddWithValue("$from", from);
+            command.Parameters.AddWithValue("$to", to);
+            command.ExecuteNonQuery();
         }
     }
 

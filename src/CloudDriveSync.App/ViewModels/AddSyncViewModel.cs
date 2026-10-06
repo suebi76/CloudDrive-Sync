@@ -23,7 +23,8 @@ public enum AddSyncStep
 
 /// <summary>
 /// Setting up a synchronisation step by step: cloud folder, what of it (everything or chosen folders and files),
-/// where on this PC, how (conflicts, interval, deletion guard) - and a summary with the expected size. An existing
+/// where on this PC and whether as files on demand (preselected where the folder allows it) or all files, how
+/// (conflicts, interval, deletion guard) - and a summary with the expected size. An existing
 /// synchronisation is changed on one page instead (<see cref="SyncSettingsViewModel"/>).
 /// </summary>
 public sealed partial class AddSyncViewModel : ObservableObject
@@ -31,6 +32,9 @@ public sealed partial class AddSyncViewModel : ObservableObject
     private readonly CloudDriveSyncHost _host;
     private bool _localTyped;
     private bool _settingLocal;
+    // The user chose "all files" on purpose: a folder that allows files on demand does not switch it back.
+    private bool _classicChosen;
+    private bool _settingMode;
 
     public AddSyncViewModel(CloudDriveSyncHost host, string? accountId)
     {
@@ -67,6 +71,8 @@ public sealed partial class AddSyncViewModel : ObservableObject
     [ObservableProperty] public partial string PreviewText { get; set; } = "";
     [ObservableProperty] public partial bool NotEnoughSpace { get; set; }
     [ObservableProperty] public partial bool AcceptSpace { get; set; }
+    [ObservableProperty] public partial bool OnDemand { get; set; } = true;
+    [ObservableProperty] public partial string OnDemandProblem { get; set; } = "";
 
     public SyncPairSettings? Result { get; private set; }
 
@@ -93,6 +99,8 @@ public sealed partial class AddSyncViewModel : ObservableObject
     public bool HasWarnings => Warnings.Count > 0;
     public bool HasError => Error.Length > 0;
     public bool HasLocalError => LocalError.Length > 0;
+    public bool CanUseOnDemand => OnDemandProblem.Length == 0;
+    public bool HasOnDemandProblem => OnDemandProblem.Length > 0;
     public bool CloudWithoutTimes => Account is { Kind: not WebDavKind.Nextcloud };
 
     public string ChosenFolderText => ChosenFolder is null || Account is null ? "" : $"{Account.Label} › {CloudFolderNames.ShowPath(Account.Kind, ChosenFolder.Path)}";
@@ -100,6 +108,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
     public string SummarySelection => SelectAll ? "Alles in diesem Ordner" : Format.Count(Selection.Collect().Count, "ausgewähltes Element", "ausgewählte Elemente");
 
     public string SummaryOptions =>
+        (OnDemand ? "Dateien bei Bedarf · " : "Alle Dateien auf diesem PC · ") +
         $"{SyncChoices.ConflictTitle(ConflictPolicy)} · {SyncChoices.IntervalTitle(IntervalMinutes)}" +
         (OnLocalChange ? " · Änderungen am PC sofort" : "") +
         (MaxDeletePercent >= 100 ? " · ohne Löschschutz" : $" · Löschschutz ab {MaxDeletePercent} %");
@@ -116,6 +125,21 @@ public sealed partial class AddSyncViewModel : ObservableObject
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
 
     partial void OnLocalErrorChanged(string value) => OnPropertyChanged(nameof(HasLocalError));
+
+    partial void OnOnDemandChanged(bool value)
+    {
+        if (!_settingMode) _classicChosen = !value;
+    }
+
+    partial void OnOnDemandProblemChanged(string value)
+    {
+        OnPropertyChanged(nameof(CanUseOnDemand));
+        OnPropertyChanged(nameof(HasOnDemandProblem));
+        _settingMode = true;
+        // Where files on demand are not possible, all files it is; where they are, they are preselected again.
+        OnDemand = value.Length == 0 && !_classicChosen;
+        _settingMode = false;
+    }
 
     partial void OnIntervalMinutesChanged(int value) => OnPropertyChanged(nameof(IntervalHint));
 
@@ -180,6 +204,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
             Mode = SelectAll ? SelectionMode.All : SelectionMode.Selected,
             Include = SelectAll ? [] : Selection.Collect(),
         },
+        Mode = OnDemand && CanUseOnDemand ? SyncMode.OnDemand : SyncMode.Classic,
         Conflicts = ConflictPolicy,
         IntervalMinutes = IntervalMinutes,
         OnLocalChange = OnLocalChange,
@@ -210,6 +235,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
         {
             foreach (var warning in _host.Sync.CheckFolder(LocalPath.Trim(), null)) Warnings.Add(warning);
             LocalError = "";
+            OnDemandProblem = SyncService.OnDemandProblem(LocalPath.Trim()) ?? "";
             return true;
         }
         catch (CdException)
@@ -297,6 +323,13 @@ public sealed partial class AddSyncViewModel : ObservableObject
         try
         {
             var preview = await _host.Sync.PreviewAsync(BuildDraft());
+            if (OnDemand)
+            {
+                PreviewText = $"In der Cloud: {Format.Count(preview.CloudFiles, "Datei", "Dateien")} · {Format.Bytes(preview.CloudBytes)}" + Environment.NewLine +
+                    "Auf diesem PC: braucht kaum Platz – geladen wird erst, was du öffnest oder immer behalten willst." +
+                    (preview.LocalFiles > 0 ? Environment.NewLine + $"Schon am PC: {Format.Count(preview.LocalFiles, "Datei", "Dateien")} – wird zusammengeführt, nichts wird gelöscht" : "");
+                return;
+            }
             var lines = new List<string>
             {
                 $"In der Cloud: {Format.Count(preview.CloudFiles, "Datei", "Dateien")} · {Format.Bytes(preview.CloudBytes)}",

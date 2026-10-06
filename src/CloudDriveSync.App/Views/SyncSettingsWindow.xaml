@@ -37,40 +37,41 @@
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Text="Was wird synchronisiert?" Style="{StaticResource Strong}" Margin="0,0,0,10" />
-                        <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll}" Margin="0,0,0,8" AutomationProperties.Name="Alles in diesem Ordner">
-                            <StackPanel>
-                                <TextBlock Text="Alles in diesem Ordner" />
-                                <TextBlock Style="{StaticResource Caption}" Text="Neue Ordner und Dateien kommen automatisch dazu." />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll, Converter={StaticResource Not}}" Margin="0,0,0,10" AutomationProperties.Name="Nur ausgewählte Ordner und Dateien">
-                            <StackPanel>
-                                <TextBlock Text="Nur ausgewählte Ordner und Dateien" />
-                                <TextBlock Style="{StaticResource Caption}" Text="Nur was du abhakst, kommt auf diesen PC. Alles andere bleibt nur in der Cloud." />
-                            </StackPanel>
-                        </RadioButton>
-                        <ProgressBar IsIndeterminate="True" Margin="0,0,0,8" Visibility="{Binding Selection.IsLoading, Converter={StaticResource Visible}}" />
-                        <TextBlock Text="{Binding SelectionError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                   Visibility="{Binding HasSelectionError, Converter={StaticResource Visible}}" />
-                        <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="4" Height="240"
-                                IsEnabled="{Binding SelectAll, Converter={StaticResource Not}}">
-                            <TreeView AutomationProperties.Name="Auswahl" ItemsSource="{Binding Selection.Roots}" BorderThickness="0" Background="Transparent"
-                                      ItemContainerStyle="{StaticResource TreeItem}">
-                                <TreeView.ItemTemplate>
-                                    <HierarchicalDataTemplate DataType="{x:Type vm:FolderNode}" ItemsSource="{Binding Children}">
-                                        <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <CheckBox IsChecked="{Binding IsChecked}" IsThreeState="False" AutomationProperties.Name="{Binding Name}" MinWidth="0" Padding="0" Margin="0,0,6,0"
-                                                      VerticalAlignment="Center" Visibility="{Binding IsPlaceholder, Converter={StaticResource Hidden}}" />
-                                            <TextBlock Style="{StaticResource Icon}" Text="{Binding Glyph}" FontSize="14" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-                                            <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding SizeText}" Style="{StaticResource Caption}" Margin="10,0,0,0" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                    </HierarchicalDataTemplate>
-                                </TreeView.ItemTemplate>
-                            </TreeView>
-                        </Border>
-                        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                   Text="Änderst du die Auswahl, baut CloudDrive-Sync den Abgleich danach neu auf – ohne etwas zu löschen. Abgewählte Ordner bleiben am PC liegen, werden aber nicht mehr abgeglichen." />
+                        <StackPanel IsEnabled="{Binding CanChangeSelection}">
+                            <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll}" Margin="0,0,0,8" AutomationProperties.Name="Alles in diesem Ordner">
+                                <StackPanel>
+                                    <TextBlock Text="Alles in diesem Ordner" />
+                                    <TextBlock Style="{StaticResource Caption}" Text="Neue Ordner und Dateien kommen automatisch dazu." />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton GroupName="Selection" IsChecked="{Binding SelectAll, Converter={StaticResource Not}}" Margin="0,0,0,10" AutomationProperties.Name="Nur ausgewählte Ordner und Dateien">
+                                <StackPanel>
+                                    <TextBlock Text="Nur ausgewählte Ordner und Dateien" />
+                                    <TextBlock Style="{StaticResource Caption}" Text="Nur was du abhakst, kommt auf diesen PC. Alles andere bleibt nur in der Cloud." />
+                                </StackPanel>
+                            </RadioButton>
+                            <ProgressBar IsIndeterminate="True" Margin="0,0,0,8" Visibility="{Binding Selection.IsLoading, Converter={StaticResource Visible}}" />
+                            <TextBlock Text="{Binding SelectionError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Visibility="{Binding HasSelectionError, Converter={StaticResource Visible}}" />
+                            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="4" Height="240"
+                                    IsEnabled="{Binding SelectAll, Converter={StaticResource Not}}">
+                                <TreeView AutomationProperties.Name="Auswahl" ItemsSource="{Binding Selection.Roots}" BorderThickness="0" Background="Transparent"
+                                          ItemContainerStyle="{StaticResource TreeItem}">
+                                    <TreeView.ItemTemplate>
+                                        <HierarchicalDataTemplate DataType="{x:Type vm:FolderNode}" ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                <CheckBox IsChecked="{Binding IsChecked}" IsThreeState="False" AutomationProperties.Name="{Binding Name}" MinWidth="0" Padding="0" Margin="0,0,6,0"
+                                                          VerticalAlignment="Center" Visibility="{Binding IsPlaceholder, Converter={StaticResource Hidden}}" />
+                                                <TextBlock Style="{StaticResource Icon}" Text="{Binding Glyph}" FontSize="14" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding SizeText}" Style="{StaticResource Caption}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+                                    </TreeView.ItemTemplate>
+                                </TreeView>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding SelectionHint}" />
                     </StackPanel>
                 </Border>
 

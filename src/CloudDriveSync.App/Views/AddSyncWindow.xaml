@@ -107,6 +107,23 @@
                     </DockPanel>
                     <TextBlock Text="{Binding LocalError}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" Margin="0,6,0,0"
                                Visibility="{Binding HasLocalError, Converter={StaticResource Visible}}" />
+                    <TextBlock Text="Wie sollen die Dateien auf diesen PC?" Style="{StaticResource Strong}" Margin="0,18,0,10" />
+                    <RadioButton GroupName="Mode" Margin="0,0,0,8" IsChecked="{Binding OnDemand}" IsEnabled="{Binding CanUseOnDemand}" AutomationProperties.Name="Dateien bei Bedarf">
+                        <StackPanel>
+                            <TextBlock Text="Dateien bei Bedarf (empfohlen)" />
+                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap"
+                                       Text="Alle Dateien erscheinen sofort im Explorer, belegen aber erst Platz, wenn du sie öffnest. Was offline da sein soll, legst du im Explorer mit „Immer auf diesem Gerät behalten“ fest." />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="Mode" Margin="0,0,0,8" IsChecked="{Binding OnDemand, Converter={StaticResource Not}}" AutomationProperties.Name="Alle Dateien auf diesem PC">
+                        <StackPanel>
+                            <TextBlock Text="Alle Dateien auf diesem PC" />
+                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Jede Datei wird heruntergeladen und ist immer offline da. Braucht so viel Platz wie der Cloud-Ordner." />
+                        </StackPanel>
+                    </RadioButton>
+                    <Border Style="{StaticResource InfoBar}" Margin="0,4,0,0" Visibility="{Binding HasOnDemandProblem, Converter={StaticResource Visible}}">
+                        <TextBlock TextWrapping="Wrap" Text="{Binding OnDemandProblem, StringFormat='„Dateien bei Bedarf“ geht in diesem Ordner nicht: {0}'}" />
+                    </Border>
                     <ItemsControl ItemsSource="{Binding Warnings}" Margin="0,14,0,0">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>

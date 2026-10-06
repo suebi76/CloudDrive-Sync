@@ -270,7 +270,9 @@ public sealed partial class SyncService
             try
             {
                 var keepTrash = _service._settings.Current.Preferences.TrashDays > 0;
-                outcome = await _service._runner.RunAsync(pair, account, mode, "newer", progress => Publish(State with { Progress = progress }), _stop.Token, keepTrash);
+                outcome = pair.Mode == SyncMode.OnDemand
+                    ? await _service.RunOnDemandAsync(pair, account, mode, progress => Publish(State with { Progress = progress }), keepTrash, _stop.Token)
+                    : await _service._runner.RunAsync(pair, account, mode, "newer", progress => Publish(State with { Progress = progress }), _stop.Token, keepTrash);
             }
             catch (OperationCanceledException)
             {

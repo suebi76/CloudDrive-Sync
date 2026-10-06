@@ -153,6 +153,15 @@ internal static unsafe partial class Placeholders
                 null, null), "CfUpdatePlaceholder", path);
     }
 
+    /// <summary>Gives a placeholder another identity, nothing else (its data and state stay).</summary>
+    public static void SetIdentity(string path, ReadOnlySpan<byte> identity)
+    {
+        using var handle = Open(path, WriteDac | FileReadAttributes);
+        fixed (byte* pointer = identity)
+            Check(PInvoke.CfUpdatePlaceholder(H(handle), null, pointer, (uint)identity.Length, null, 0, CF_UPDATE_FLAGS.CF_UPDATE_FLAG_NONE, null, null),
+                "CfUpdatePlaceholder(identity)", path);
+    }
+
     /// <summary>Makes a placeholder a normal file again; its data must be on the PC (otherwise Windows fetches it first).</summary>
     public static void Revert(string path)
     {
@@ -194,7 +203,8 @@ internal static unsafe partial class Placeholders
     /// <summary>
     /// Marks a placeholder as in sync - only when it is still exactly the version that was uploaded. While it checks,
     /// it holds the file so that no program can write to it in between. False (nothing changed) when the file changed
-    /// since, or a program has it open for writing right now: then the next run uploads it again.
+    /// since, or a program has it open for writing right now: then the next run uploads it again. A version with
+    /// USN -1 is compared by size and write time only (all that is remembered between runs).
     /// </summary>
     public static bool MarkInSyncIfUnchanged(string path, FileVersion uploaded)
     {
@@ -211,10 +221,45 @@ internal static unsafe partial class Placeholders
         }
         using (handle)
         {
-            if (VersionOf(handle, path) != uploaded) return false;
+            var now = VersionOf(handle, path);
+            if (uploaded.Usn >= 0 ? now != uploaded : now.Size != uploaded.Size || now.LastWriteTicks != uploaded.LastWriteTicks) return false;
             // The USN check of CfSetInSyncState itself does not compare with the file's journal USN (seen in the tests),
             // so the version is compared above, under the protection of this handle.
             Check(PInvoke.CfSetInSyncState(H(handle), CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC, CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE, null), "CfSetInSyncState", path);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// After an upload: makes the file a placeholder of its item (a normal file is converted, a placeholder gets the
+    /// item's identity) and marks it in sync when it is still the uploaded version. All of it happens while the file is
+    /// held so that nothing can write to it - converting changes the file's USN itself, so the version is compared
+    /// before and the in-sync mark set after, under the same protection. False when it could not be marked (changed
+    /// since the upload, or open for writing in another program): the next run takes care of it.
+    /// </summary>
+    public static bool FinishUpload(string path, ReadOnlySpan<byte> identity, bool convert, bool setIdentity, FileVersion uploaded)
+    {
+        var guard = CreateFile(@"\\?\" + Path.GetFullPath(path), FileReadData | WriteDac | FileReadAttributes, ShareRead, 0, OpenExisting, BackupSemantics, 0);
+        if (guard.IsInvalid)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            guard.Dispose();
+            if (error != SharingViolation) throw new CloudFileException($"open {path}: {Marshal.GetPInvokeErrorMessage(error)}", Marshal.GetHRForLastWin32Error());
+            // Open for writing elsewhere: it becomes a placeholder now, in sync only after its next upload.
+            if (convert) Convert(path, identity, markInSync: false);
+            else if (setIdentity) SetIdentity(path, identity);
+            return false;
+        }
+        using (guard)
+        {
+            var unchanged = VersionOf(guard, path) == uploaded;
+            if (convert) Convert(path, identity, markInSync: false);
+            else if (setIdentity) SetIdentity(path, identity);
+            if (!unchanged) return false;
+            // A handle opened before the conversion still sees a normal file: the mark goes through a new one, while the
+            // guard keeps every writer out.
+            using var marker = Open(path, WriteDac | FileReadAttributes);
+            Check(PInvoke.CfSetInSyncState(H(marker), CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC, CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE, null), "CfSetInSyncState", path);
             return true;
         }
     }

@@ -3,6 +3,37 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.1] – 2026-10-06
+
+First test version on the way to 0.3: files on demand.
+
+### Added
+
+- Files on demand ("Dateien bei Bedarf") for new synchronisations: all files of the cloud folder appear in Explorer at
+  once, but take space on the PC only when they are opened. The assistant asks how the files should come to the PC,
+  with files on demand preselected. Where Windows does not allow it - no NTFS, a network or removable drive, the root of
+  a drive, a folder inside OneDrive, Dropbox or Nextcloud - it says why, and "Alle Dateien auf diesem PC" (the classic
+  way) stays.
+- In Explorer, from Windows itself: a cloud for files only online, a tick for files on the PC, an entry in the
+  navigation pane for each synchronisation (e.g. "IServ – Eigene Dateien"), and in the context menu "Immer auf diesem
+  Gerät behalten" and "Speicherplatz freigeben". Keeping a folder also fetches files that come into it later; freeing
+  space never throws away a change that is not uploaded yet.
+- Opening a file that is only online fetches it. Should it change in the cloud meanwhile, opening fails cleanly and the
+  next run brings the new version - never a mix of both.
+- Renaming and moving on the PC become a move on the server: nothing is uploaded again, and shares and versions in
+  Nextcloud stay.
+- The safety net of classic synchronisations applies, too: the deletion guard, the recycle bin on the PC, conflict
+  copies, the protection files, and files the server does not take stay on the PC. Should Windows lose the
+  registration of the folder, the next run merges both sides and deletes nothing.
+- Uninstalling unregisters the folders with files on demand: fetched files stay as normal files, files that were only
+  online leave the PC and stay in the cloud.
+
+### Not yet in this test version
+
+- Existing synchronisations stay classic; switching them to files on demand (and back) follows.
+- With files on demand, what is synchronised cannot be changed afterwards yet, and "Abgleich überprüfen" is not offered.
+- Freeing space automatically after some days, the space used on the card, the name in Explorer in the settings.
+
 ## [0.2.0] – 2026-10-06
 
 The first regular version after 0.1.2. It brings together the test versions 0.2.0-preview.1 to preview.7 and what

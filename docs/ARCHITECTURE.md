@@ -153,6 +153,7 @@ Ihr Zustand liegt in `sync\<id>\`:
 | `state.json` | Was einen Neustart überdauert: erster Abgleich erledigt, letzter Lauf, offener Fehler, offene Entscheidung. |
 | `runs.jsonl` | Die letzten Läufe mit den Dateien, die sie geändert haben (`RunHistory`, für „Aktivität“). |
 | `last-run.txt` | Der geschwärzte Bericht von bisync zum letzten Lauf, zur Fehlersuche. |
+| `items.db` | Nur bei „Dateien bei Bedarf“: jede Datei und jeder Ordner mit der Fassung beider Seiten nach dem letzten Lauf (`ItemStore`, SQLite). Statt `bisync\`, `last-good\`, `local-files.txt` und `server-times.json`. |
 
 ### Wer wann einen Lauf auslöst
 
@@ -340,6 +341,67 @@ Daraus folgen Regeln für den Kern:
   es.
 - **Platzhalter heißen wie bei rclone:** `NameEncoding` übersetzt Namen so, wie rclones lokales Backend sie unter Windows
   schreibt („Was?.docx“ wird „Was？.docx“). So passt ein Ordner, den bisync gefüllt hat, nach dem Umstellen.
+
+### So arbeitet der Kern
+
+Eine Synchronisation mit `Mode = OnDemand` läuft durch denselben `PairWorker` wie eine klassische – Intervall,
+Ordnerwächter, Wiederholungen, Entscheidungen und Verlauf sind gleich. Nur der Lauf selbst ist ein anderer
+(`SyncService.OnDemand.cs`):
+
+| Baustein | Aufgabe |
+|---|---|
+| `OnDemandPair` | Die lebenden Teile einer Synchronisation: Zustand (`ItemStore` in `sync\<id>\items.db`), Anmeldung bei Windows, Verbindung. Verbunden wird schon beim Programmstart, damit Dateien gleich nach der Anmeldung öffnen. |
+| `OnDemandRunner` | Ein Lauf: Ordner und Wächterdatei prüfen, anmelden und verbinden, beide Seiten lesen, planen, Löschschutz, ausführen. Das Ergebnis ist ein `SyncRunOutcome` wie bei bisync. |
+| `Listings` | Beide Seiten liest rclone mit derselben Filterdatei (`SyncFilters`) – Auswahl, Ausschlüsse und „nur am PC“-Dateien gelten wie im klassischen Modus. Dazu für jede Datei am PC, was Windows über den Platzhalter weiß. Gelesen werden nur Metadaten. |
+| `Planner` | Eine reine Funktion aus gespeichertem Stand, Cloud und PC: der Plan aller Schritte, bevor sich etwas ändert. |
+| `Executor` | Führt den Plan aus und hält jeden fertigen Schritt sofort im `ItemStore` fest. |
+| `CloudFetcher` | Liefert die Daten, wenn ein Programm eine Datei öffnet. |
+| `PinWatcher` | Setzt „Immer auf diesem Gerät behalten“ und „Speicherplatz freigeben“ um. Explorer setzt nur den Anheftstatus des gewählten Eintrags; der Wächter lädt bzw. gibt frei und reicht den Status eines Ordners an dessen ganzen Inhalt weiter. |
+
+**Die Regeln des Planers** (ein Vergleich in drei Richtungen – eine Seite gilt als geändert, wenn sie vom gemeinsamen
+Stand abweicht):
+
+- Haben sich beide Seiten geändert, bleiben beide Fassungen erhalten – nach der Konfliktregel der Synchronisation, mit
+  denselben Namen wie bei bisync (`Name.Konflikt-PC1.ext`, `Name.Konflikt-Cloud1.ext`). Bei Servern ohne eigene Zeiten
+  wird aus „die neuere gewinnt“ „beide behalten“. Hat der Server eine Prüfsumme und ist der Inhalt gleich, entsteht keine
+  Kopie.
+- Eine Änderung schlägt eine Löschung: In der Cloud geändert und am PC gelöscht (oder umgekehrt) bringt die Datei zurück.
+- Beim ersten Lauf und beim Neuaufbau wird nichts gelöscht; gleich große Dateien gelten als gleich (wie bei bisync auf
+  Servern ohne Prüfsumme), sonst bleiben beide.
+- Eine normale Datei am Platz eines Platzhalters ist eine Änderung (so speichert Office). Ein Platzhalter an einem neuen
+  Platz wurde umbenannt oder verschoben – er wird in der Cloud verschoben, nicht neu hochgeladen; ein Ordner nimmt seinen
+  Inhalt mit. Liegt der Platzhalter einer Datei noch irgendwo am PC, gilt sie nie als „am PC gelöscht“.
+- Gelöschte Dateien werden in Dateien gezählt; mehr als die Löschgrenze hält den Lauf an (`CD-4502`), wie bisher.
+
+**Der Executor** arbeitet in dieser Reihenfolge: Verschieben, neue Ordner, Übernehmen, Hochladen, Konflikte, neue
+Platzhalter, aktualisierte Platzhalter, Löschen (Dateien vor ihren Ordnern, die nur leer gehen). Vor jeder Änderung
+schaut er noch einmal hin: Hochgeladen und in der Cloud gelöscht wird nur, solange die Cloud noch die bekannte Fassung
+hat; am PC gelöscht wird nur eine unveränderte Datei. Was sich inzwischen geändert hat, bleibt dem nächsten Lauf. Beim
+Hochladen setzt er `IgnoreTimes`, weil rclone auf Servern ohne eigene Zeiten sonst eine gleich große Änderung
+überspränge. „Abgeglichen“ setzt `Placeholders.FinishUpload` nur, wenn die Datei noch genau die hochgeladene Fassung ist –
+Prüfen, Umwandeln und Markieren geschehen, während eine Sperre jedes Schreiben verhindert. Dateien, deren Daten auf dem
+PC lagen und die die Cloud gelöscht hat, kommen als normale Dateien in den Papierkorb.
+
+**Der CloudFetcher** liefert nur die Fassung, für die ein Platzhalter steht: Vor dem ersten Byte muss die Größe beim
+Server stimmen, vor dem letzten Stück Größe, Zeit und – wo vorhanden – Prüfsumme. Sonst scheitert das Öffnen sauber
+(„Der Cloudvorgang war nicht erfolgreich“), und ein Lauf folgt sofort. Die Daten kommen über `FileServer` (`rclone serve
+http` in der Engine) in Stücken von 1 MB, jedes setzt Windows' 60-Sekunden-Uhr zurück.
+
+**Anheften und Freigeben:** Freigegeben wird nur eine Datei, die abgeglichen ist – eine Änderung, die noch nicht
+hochgeladen ist, geht so nie verloren; der Lauf nach dem Hochladen gibt den Platz frei. Neue Platzhalter in einem
+angehefteten Ordner werden selbst angeheftet und gleich geladen, auch in neuen Unterordnern. Was der Wächter verpasst
+(etwa weil CloudDrive-Sync nicht lief), holt jeder Lauf nach (`Executor.ApplyPinStates`): Eine Datei ohne eigenen Status
+übernimmt den des nächsten Ordners darüber, der einen hat.
+
+**Anmeldung verloren:** Ist der Ordner nach dem ersten Lauf nicht mehr bei Windows angemeldet, hat Windows die reinen
+Online-Platzhalter vom PC entfernt. Ein normaler Lauf hielte sie für „am PC gelöscht“. `OnDemandPair` meldet den Ordner
+neu an und hält das im Zustand fest (`items.db`, übersteht also einen Absturz); der nächste Lauf führt dann beide Seiten
+zusammen wie ein Neuaufbau und löscht nichts – auch dann nicht, wenn vorher „Löschungen übernehmen“ gewählt war.
+
+**Entfernen** meldet den Ordner bei Windows ab: Geladene Dateien bleiben als normale Dateien, reine Online-Platzhalter
+verschwinden vom PC, in der Cloud bleibt alles. Beim Deinstallieren meldet der Velopack-Hook alle Ordner des Programms ab
+(`SyncRoots.UnregisterAll`, 12 000 Einträge in unter 4 s); kommt CloudDrive-Sync wieder, greift die Regel „Anmeldung
+verloren“.
 
 ## Fehlercodes
 

@@ -72,6 +72,33 @@ public sealed class FileServer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Size, modification time (UTC ticks) and - where the server has one - checksum ("sha1:…") of a file in the cloud;
+    /// null when it is not there.
+    /// </summary>
+    public async Task<(long Size, long Ticks, string? Hash)?> StatAsync(string remote, string path, bool withHash, CancellationToken cancellationToken)
+    {
+        var rc = await _engine.EnsureRunningAsync(cancellationToken);
+        var options = new JsonObject { ["noMimeType"] = true };
+        if (withHash) options["showHash"] = true;
+        var result = await rc.CallAsync("operations/stat", new JsonObject { ["fs"] = remote, ["remote"] = path, ["opt"] = options },
+            TimeSpan.FromSeconds(30), cancellationToken);
+        if (result["item"] is not JsonObject item) return null;
+        var size = item["Size"] is JsonValue s && s.TryGetValue<long>(out var bytes) ? bytes : 0;
+        var ticks = DateTimeOffset.TryParse(item["ModTime"]?.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var modified) ? modified.UtcTicks : 0;
+        return (size, ticks, HashOf(item));
+    }
+
+    /// <summary>The strongest checksum rclone reported for an entry ("sha1:…" before "md5:…"), or null.</summary>
+    internal static string? HashOf(JsonObject item)
+    {
+        if (item["Hashes"] is not JsonObject hashes) return null;
+        foreach (var type in new[] { "sha1", "md5" })
+            if (hashes[type]?.GetValue<string>() is { Length: > 0 } value) return $"{type}:{value}";
+        return null;
+    }
+
     private async Task<Server> ServerForAsync(string remote, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);

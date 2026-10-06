@@ -66,6 +66,23 @@ public static class SyncRoots
     }
 
     /// <summary>
+    /// Before CloudDrive-Sync is uninstalled: ends this user's registrations of the installed program (never those of the
+    /// tests), so Explorer keeps no entries of a program that is gone. What happens to the files is described at
+    /// <see cref="Unregister"/>; should CloudDrive-Sync come back, the first run of each synchronisation merges both sides
+    /// and deletes nothing. Returns the ended IDs.
+    /// </summary>
+    public static IReadOnlyList<string> UnregisterAll(AppPaths paths)
+    {
+        var ended = new List<string>();
+        foreach (var id in RegisteredIds(paths.SyncRootProvider))
+        {
+            Unregister(id);
+            ended.Add(id);
+        }
+        return ended;
+    }
+
+    /// <summary>
     /// Removes what tests left behind: registrations of other homes ("CloudDriveSyncTest-…") of this user. The
     /// installation's own registrations ("CloudDriveSync!…") are never touched. Returns the removed IDs.
     /// </summary>

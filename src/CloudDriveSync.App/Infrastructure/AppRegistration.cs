@@ -40,4 +40,27 @@ internal static class AppRegistration
             // Uninstalling goes on; a leftover entry only points to a program that is gone.
         }
     }
+
+    /// <summary>
+    /// Before uninstalling: ends the registrations of synchronisations with files on demand. Windows keeps the fetched
+    /// files as normal files and removes the online-only ones from the PC; their data stays in the cloud. Velopack allows
+    /// 30 seconds - ending 12 000 entries took less than 4.
+    /// </summary>
+    public static void EndFilesOnDemand()
+    {
+        try
+        {
+            var paths = Core.AppPaths.FromEnvironment();
+            // The log stays with the settings; it tells later what happened here.
+            if (Directory.Exists(paths.LogDir)) Core.Diagnostics.Log.Initialize(paths.LogDir);
+            // On a thread of its own: the registration is a Windows Runtime call, the uninstall step runs on the UI thread.
+            var ending = Task.Run(() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763) ? Core.CloudFiles.SyncRoots.UnregisterAll(paths) : []);
+            if (ending.Wait(TimeSpan.FromSeconds(25))) Core.Diagnostics.Log.Info("App", $"Uninstalling: {ending.Result.Count} folder(s) with files on demand unregistered.");
+        }
+        catch (Exception e) when (e is AggregateException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // Uninstalling goes on; a leftover entry only points to a program that is gone.
+            Core.Diagnostics.Log.Warn("App", $"Uninstalling: folders with files on demand not unregistered: {(e as AggregateException)?.InnerException?.Message ?? e.Message}");
+        }
+    }
 }

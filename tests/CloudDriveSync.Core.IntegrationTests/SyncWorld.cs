@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using CloudDriveSync.Core.Accounts;
+using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
 
@@ -117,10 +118,12 @@ internal sealed class SyncWorld : IAsyncDisposable
     }
 
     /// <summary>Ends CloudDrive-Sync and starts it again on the same data (like a restart of the PC).</summary>
-    public async Task RestartAsync()
+    /// <param name="whileStopped">What the user does while CloudDrive-Sync is not running.</param>
+    public async Task RestartAsync(Action? whileStopped = null)
     {
         var paths = Host.Paths;
         await Host.DisposeAsync();
+        whileStopped?.Invoke();
         Host = new CloudDriveSyncHost(paths);
         Runner = new SyncRunner(Host.Paths, Host.Engine);
         await Host.Engine.StartAsync();
@@ -131,6 +134,7 @@ internal sealed class SyncWorld : IAsyncDisposable
     {
         using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         var pair = Host.Sync.FindPair(Pair.Id) ?? Pair;
+        if (pair.Mode == SyncMode.OnDemand) return await Host.Sync.RunOnDemandAsync(pair, Account, mode, _ => { }, keepTrash, limit.Token);
         return await Runner.RunAsync(pair, Account, mode, "newer", null, limit.Token, keepTrash);
     }
 
@@ -225,6 +229,26 @@ internal sealed class SyncWorld : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await Host.DisposeAsync();
+        // Folders registered with Windows for files on demand go first (only this world's provider, never the real one).
+        // Windows may need a moment after the connection ended.
+        if (SyncService.OnDemandSupported)
+        {
+            foreach (var id in SyncRoots.RegisteredIds(Host.Paths.SyncRootProvider))
+            {
+                for (var attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        SyncRoots.Unregister(id);
+                        break;
+                    }
+                    catch (Exception) when (attempt < 5)
+                    {
+                        await Task.Delay(500);
+                    }
+                }
+            }
+        }
         await Server.DisposeAsync();
         Host.Secrets.Delete("config");
         // For looking into a failure: CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS=1 keeps every world in %TEMP%\clouddrive-sync-it.

@@ -33,6 +33,16 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
     }
 
     public SelectionTree Selection { get; }
+
+    /// <summary>
+    /// With files on demand a changed selection would leave files behind that no longer open; changing it follows in a
+    /// later test version.
+    /// </summary>
+    public bool CanChangeSelection => _pair.Mode == SyncMode.Classic;
+
+    public string SelectionHint => CanChangeSelection
+        ? "Änderst du die Auswahl, baut CloudDrive-Sync den Abgleich danach neu auf – ohne etwas zu löschen. Abgewählte Ordner bleiben am PC liegen, werden aber nicht mehr abgeglichen."
+        : "Bei „Dateien bei Bedarf“ lässt sich die Auswahl in dieser Testversion noch nicht ändern.";
     public string CloudText { get; }
     public string LocalPath => _pair.LocalPath;
     public bool CloudWithoutTimes { get; }
@@ -88,7 +98,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
     {
         Error = "";
         var includes = SelectAll ? [] : Selection.Collect();
-        if (!SelectAll && includes.Count == 0)
+        if (CanChangeSelection && !SelectAll && includes.Count == 0)
         {
             Error = "Bitte setze bei mindestens einem Ordner oder einer Datei einen Haken – oder wähle „Alles in diesem Ordner“.";
             return;
@@ -103,7 +113,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         {
             _host.Sync.Update(_pair.Id, pair =>
             {
-                pair.Selection = selection;
+                if (CanChangeSelection) pair.Selection = selection;
                 pair.Conflicts = ConflictPolicy;
                 pair.IntervalMinutes = IntervalMinutes;
                 pair.OnLocalChange = OnLocalChange;

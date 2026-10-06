@@ -1,8 +1,11 @@
+using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
 using CloudDriveSync.Core.Accounts;
+using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Errors;
+using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Sync;
@@ -11,7 +14,9 @@ namespace CloudDriveSync.Core.Sync;
 /// The synchronisations: adding and removing them, and keeping each one in step - on an interval, shortly after
 /// local changes, on request - with at most two runs at the same time. A synchronisation that needs a decision
 /// (too many deletions, rebuild, sign-in, missing folder) waits for the user and does nothing on its own.
-/// Each synchronisation has a <see cref="PairWorker"/> (SyncService.PairWorker.cs) that runs it.
+/// Each synchronisation has a <see cref="PairWorker"/> (SyncService.PairWorker.cs) that runs it - classic ones with
+/// rclone's bisync (<see cref="SyncRunner"/>), those with files on demand with CloudDrive-Sync's own core
+/// (<see cref="OnDemandRunner"/>, SyncService.OnDemand.cs).
 /// </summary>
 public sealed partial class SyncService : IAsyncDisposable
 {
@@ -21,6 +26,7 @@ public sealed partial class SyncService : IAsyncDisposable
     private readonly AccountService _accounts;
     private readonly RcloneEngine _engine;
     private readonly SyncRunner _runner;
+    private readonly FileServer _files;
     private readonly SemaphoreSlim _slots = new(MaxParallelRuns, MaxParallelRuns);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<string, PairWorker> _workers = new(StringComparer.OrdinalIgnoreCase);
@@ -34,6 +40,7 @@ public sealed partial class SyncService : IAsyncDisposable
         _accounts = accounts;
         _engine = engine;
         _runner = new SyncRunner(paths, engine);
+        _files = new FileServer(engine);
     }
 
     /// <summary>Raised on any thread whenever the state of a synchronisation changes.</summary>
@@ -57,6 +64,9 @@ public sealed partial class SyncService : IAsyncDisposable
             _started = true;
             foreach (var pair in _settings.Current.Syncs) WorkerFor(pair.Id).Start();
         }
+        // Files on demand: connected at once, so online-only files open before the first run.
+        if (OnDemandSupported)
+            foreach (var pair in Pairs.Where(p => p.Mode == SyncMode.OnDemand)) ConnectEarly(pair.Id);
     }
 
     public IReadOnlyList<FolderWarning> CheckFolder(string localPath, string? exceptPairId = null) =>
@@ -73,6 +83,7 @@ public sealed partial class SyncService : IAsyncDisposable
     {
         var account = _accounts.Find(draft.AccountId) ?? throw new CdException("CD-9000", $"unknown account '{draft.AccountId}'");
         var local = Path.TrimEndingDirectorySeparator(Path.GetFullPath(draft.LocalPath));
+        if (draft.Mode == SyncMode.OnDemand && OnDemandProblem(local) is { } problem) throw new CdException("CD-4601", problem);
         var remotePath = draft.RemotePath.Trim('/');
         var createdFrom = FirstMissingFolder(local);
         var sentinel = Path.Combine(local, SyncFilters.SentinelFile);
@@ -98,6 +109,8 @@ public sealed partial class SyncService : IAsyncDisposable
             AccountId = account.Id,
             RemotePath = remotePath,
             LocalPath = local,
+            Mode = draft.Mode,
+            ExplorerName = draft.ExplorerName,
             Selection = draft.Selection,
             Conflicts = draft.Conflicts,
             IntervalMinutes = Math.Clamp(draft.IntervalMinutes, 1, 1440),
@@ -109,7 +122,20 @@ public sealed partial class SyncService : IAsyncDisposable
         var folder = _paths.SyncPairDir(pair.Id);
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         _settings.Update(s => s.Syncs.Add(pair));
-        Log.Info("Sync", $"Synchronisation '{pair.Id}' added: {BisyncCommand.CloudPath(pair)} <-> {local}.");
+        if (pair.Mode == SyncMode.OnDemand && OnDemandSupported)
+        {
+            try
+            {
+                ConnectNew(pair.Id);
+            }
+            catch (CdException)
+            {
+                // Windows did not take the folder: the synchronisation does not come about.
+                await RemoveAsync(pair.Id, cancellationToken);
+                throw;
+            }
+        }
+        Log.Info("Sync", $"Synchronisation '{pair.Id}' added ({pair.Mode}): {BisyncCommand.CloudPath(pair)} <-> {local}.");
         lock (_gate)
         {
             if (_started) WorkerFor(pair.Id).Start();
@@ -128,6 +154,7 @@ public sealed partial class SyncService : IAsyncDisposable
         if (worker is not null) await worker.StopAsync();
         var pair = FindPair(id);
         if (pair is null) return;
+        if (pair.Mode == SyncMode.OnDemand && OnDemandSupported) EndOnDemand(id);
         TryDelete(Path.Combine(pair.LocalPath, SyncFilters.SentinelFile));
         try
         {
@@ -208,6 +235,8 @@ public sealed partial class SyncService : IAsyncDisposable
     public async Task<VerifyResult> VerifyAsync(string id, bool compareContent, Action<JobProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var pair = FindPair(id) ?? throw new CdException("CD-9000", $"unknown synchronisation '{id}'");
+        // rclone would read every file and so fetch every online-only one.
+        if (pair.Mode == SyncMode.OnDemand) throw new CdException("CD-9000", "checking a synchronisation with files on demand is not available yet");
         if (!Directory.Exists(pair.LocalPath)) throw new CdException("CD-4501", pair.LocalPath);
         var rc = await _engine.EnsureRunningAsync(cancellationToken);
         Task<VerifyResult> Check() => SyncVerifier.VerifyAsync(rc, _paths, pair, compareContent, progress, cancellationToken);
@@ -385,6 +414,8 @@ public sealed partial class SyncService : IAsyncDisposable
         List<PairWorker> workers;
         lock (_gate) workers = _workers.Values.ToList();
         foreach (var worker in workers) await worker.StopAsync();
+        if (OnDemandSupported) DisconnectAll();
+        _files.Dispose();
         _shutdown.Dispose();
         _slots.Dispose();
     }

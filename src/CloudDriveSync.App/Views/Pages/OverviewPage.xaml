@@ -111,7 +111,7 @@
                                     <MenuItem Header="Jetzt synchronisieren" Command="{Binding SyncNowCommand}" />
                                     <MenuItem Header="{Binding PauseText}" Command="{Binding TogglePauseCommand}" />
                                     <MenuItem Header="Einstellungen …" Command="{Binding OpenSettingsCommand}" />
-                                    <MenuItem Header="Abgleich überprüfen …" Command="{Binding VerifyCommand}" />
+                                    <MenuItem Header="Abgleich überprüfen …" Command="{Binding VerifyCommand}" Visibility="{Binding CanVerify, Converter={StaticResource Visible}}" />
                                     <MenuItem Header="Neu aufbauen …" Command="{Binding RebuildCommand}" />
                                     <MenuItem Header="Papierkorb anzeigen" Command="{Binding ShowTrashCommand}" />
                                     <Separator />
