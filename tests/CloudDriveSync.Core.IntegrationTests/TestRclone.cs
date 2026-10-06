@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using CloudDriveSync.Core.Engine;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]

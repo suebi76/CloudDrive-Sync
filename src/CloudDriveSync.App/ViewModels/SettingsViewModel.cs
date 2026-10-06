@@ -1,4 +1,4 @@
-﻿using CloudDriveSync.App.Infrastructure;
+using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;

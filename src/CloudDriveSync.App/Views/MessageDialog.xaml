@@ -1,4 +1,4 @@
-﻿<Window x:Class="CloudDriveSync.App.Views.MessageDialog"
+<Window x:Class="CloudDriveSync.App.Views.MessageDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CloudDrive-Sync" Width="500" SizeToContent="Height" ResizeMode="NoResize"

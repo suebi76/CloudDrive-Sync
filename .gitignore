@@ -1,4 +1,4 @@
-﻿# CloudDrive-Sync uses an ALLOWLIST like CloudDrives 1: everything is ignored unless it is listed here.
+# CloudDrive-Sync uses an ALLOWLIST like CloudDrives 1: everything is ignored unless it is listed here.
 # Runtime data (settings, encrypted rclone configuration, logs, sync state) lives in %LOCALAPPDATA%\CloudDrive-Sync and
 # build output in %USERPROFILE%\.clouddrive-sync-build - never in this folder.
 
@@ -13,6 +13,8 @@
 !/.gitignore
 !/CHANGELOG.md
 !/CloudDriveSync.slnx
+!/CONTRIBUTING.md
+!/CONTRIBUTING.en.md
 !/Directory.Build.props
 !/dotnet-tools.json
 !/global.json

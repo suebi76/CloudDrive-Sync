@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Errors;
 using CommunityToolkit.Mvvm.ComponentModel;

@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Settings;
 

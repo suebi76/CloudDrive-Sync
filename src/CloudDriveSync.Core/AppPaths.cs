@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace CloudDriveSync.Core;
@@ -36,7 +36,6 @@ public sealed class AppPaths
     public string CacheDir => Path.Combine(Home, "cache");
     public string DepsDir => Path.Combine(Home, "deps");
     public string SyncDir => Path.Combine(Home, "sync");
-    public string BackupDir => Path.Combine(Home, "backup");
 
     public string SyncPairDir(string pairId) => Path.Combine(SyncDir, pairId);
 
@@ -56,7 +55,7 @@ public sealed class AppPaths
 
     public void EnsureCreated()
     {
-        foreach (var dir in new[] { Home, LogDir, CacheDir, DepsDir, SyncDir, BackupDir })
+        foreach (var dir in new[] { Home, LogDir, CacheDir, DepsDir, SyncDir })
             Directory.CreateDirectory(dir);
     }
 }

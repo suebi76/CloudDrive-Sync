@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Threading;
 using CloudDriveSync.App.Infrastructure;
@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CloudDriveSync.App.ViewModels;
 
+/// <summary>The pages of the main window (Views\Pages).</summary>
 public enum Page
 {
     Overview,
@@ -21,6 +22,7 @@ public enum Page
     About,
 }
 
+/// <summary>Whether CloudDrive-Sync is still starting, ready, or could not start (the window then says why).</summary>
 public enum StartupState
 {
     Starting,

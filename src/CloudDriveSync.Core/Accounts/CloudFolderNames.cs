@@ -1,4 +1,4 @@
-﻿using CloudDriveSync.Core.Settings;
+using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Accounts;
 

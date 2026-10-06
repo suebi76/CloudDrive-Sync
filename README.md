@@ -1,4 +1,4 @@
-﻿# CloudDrive-Sync
+# CloudDrive-Sync
 
 Hält Ordner auf deinem Windows-PC mit **Nextcloud**, **IServ** und anderen **WebDAV**-Speichern aktuell – in beide
 Richtungen, mit einer Oberfläche im Stil von Windows 11.
@@ -77,9 +77,20 @@ dotnet test tests/CloudDriveSync.Core.Tests                # Unit-Tests
 dotnet test tests/CloudDriveSync.Core.IntegrationTests     # echtes rclone gegen einen lokalen WebDAV-Server
 ```
 
-- Daten: `%LOCALAPPDATA%\CloudDrive-Sync` – ein anderer Ordner über `CLOUDDRIVE_SYNC_HOME` (Tests, portable Kopie).
-- Build-Ausgabe: `%USERPROFILE%\.clouddrive-sync-build` (außerhalb des Quellordners).
-- Oberfläche prüfen ohne Bildschirmfotos: `CLOUDDRIVE_SYNC_SNAPSHOTS=<Ordner>` speichert Bilder der eigenen Fenster.
+- **Aufbau** – Bausteine, Ablauf einer Synchronisation, Schutzmechanismen, Eigenheiten von rclone und den Servern:
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Entwickler-Handbuch** – einrichten, bauen, testen, veröffentlichen: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- **Regeln für Beiträge und Code:** [CONTRIBUTING.md](CONTRIBUTING.md)
+
+## English summary
+
+CloudDrive-Sync keeps folders on a Windows PC in step with Nextcloud, IServ and other WebDAV storage, in both
+directions, built on [rclone](https://rclone.org) bisync with its own safety net (sentinel files, a deletion guard,
+conflict copies, a recycle bin on the PC). Install it from the
+[releases](https://github.com/suebi76/CloudDrive-Sync/releases) (`CloudDrive-Sync-Setup.exe`, per user, no administrator
+rights). The user interface is German. Developer documentation in English:
+[architecture](docs/ARCHITECTURE.en.md), [developer handbook](docs/DEVELOPMENT.en.md),
+[contributing and code rules](CONTRIBUTING.en.md).
 
 ## Lizenz
 

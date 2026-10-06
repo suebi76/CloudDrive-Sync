@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CloudDriveSync.App.ViewModels;
 
+/// <summary>The steps of the window "Ordner synchronisieren" (first setup of a synchronisation).</summary>
 public enum AddSyncStep
 {
     Folder,

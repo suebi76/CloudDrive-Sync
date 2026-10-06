@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using CloudDriveSync.Core;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;

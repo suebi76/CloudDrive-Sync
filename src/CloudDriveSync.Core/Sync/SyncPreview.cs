@@ -10,6 +10,10 @@ public sealed record SyncPreviewResult(long CloudFiles, long CloudBytes, long Lo
     public bool EnoughSpace => FreeBytes >= (long)(Math.Max(0, CloudBytes - LocalBytes) * 1.1);
 }
 
+/// <summary>
+/// Looks ahead at the first synchronisation of a new folder pair: how much lies in the chosen part of the cloud and in
+/// the local folder, and whether the drive has room for what comes from the cloud.
+/// </summary>
 public static class SyncPreview
 {
     public static async Task<SyncPreviewResult> CalculateAsync(AccountService accounts, SyncPairSettings draft, CancellationToken cancellationToken = default)

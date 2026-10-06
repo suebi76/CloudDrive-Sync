@@ -1,9 +1,10 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Sync;
 
+/// <summary>What a synchronisation is doing right now, as its card shows it.</summary>
 public enum SyncStatus
 {
     /// <summary>In step; waits for the next change or interval.</summary>

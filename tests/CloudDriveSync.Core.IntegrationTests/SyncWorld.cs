@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Settings;

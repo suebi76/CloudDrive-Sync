@@ -1,4 +1,4 @@
-﻿using System.Windows.Automation.Peers;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 
 namespace CloudDriveSync.App.Infrastructure;

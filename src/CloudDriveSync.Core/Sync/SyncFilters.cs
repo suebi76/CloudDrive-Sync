@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Sync;

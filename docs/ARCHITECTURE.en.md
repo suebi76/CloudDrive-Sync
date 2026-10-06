@@ -1,0 +1,329 @@
+# Architecture of CloudDrive-Sync
+
+*Deutsche Fassung: [ARCHITECTURE.md](ARCHITECTURE.md)*
+
+This document explains how CloudDrive-Sync is built and why: its building blocks, the path of a synchronisation, the
+safety mechanisms, and the quirks of rclone and the servers you need to know. How to build, test and publish the
+project is in the [developer handbook](DEVELOPMENT.en.md); the rules for new code are in
+[CONTRIBUTING.en.md](../CONTRIBUTING.en.md).
+
+The user interface and user documentation are German; German terms in quotes ("Aktivität", "Abgleich überprüfen") are
+names the user sees.
+
+## Overview
+
+CloudDrive-Sync keeps folders on a Windows PC in step with Nextcloud, IServ and other WebDAV storage, in both
+directions. The actual work with the servers is done by [rclone](https://rclone.org) - more precisely `rclone bisync` -
+in a hidden background process. CloudDrive-Sync controls it, wraps it in a safety net and shows everything in a
+Windows 11 style interface.
+
+```mermaid
+flowchart LR
+    subgraph App["CloudDriveSync.App (WPF)"]
+        Views["Windows and pages<br/>Views"] --> VMs["ViewModels"]
+        Tray["Notification area symbol<br/>TrayIcon"] --> VMs
+    end
+    subgraph Core["CloudDriveSync.Core"]
+        Host["CloudDriveSyncHost"]
+        Accounts["AccountService"]
+        Sync["SyncService<br/>one PairWorker per synchronisation"]
+        Runner["SyncRunner<br/>one run"]
+        Engine["RcloneEngine + RcClient"]
+        Settings["SettingsStore"]
+        Secrets["SecretStore"]
+    end
+    VMs --> Host
+    Host --> Accounts
+    Host --> Sync
+    Host --> Settings
+    Sync --> Runner --> Engine
+    Accounts --> Engine
+    Engine -- "RC API on 127.0.0.1" --> Rclone["rclone rcd<br/>hidden process"]
+    Rclone -- "WebDAV over HTTPS" --> Cloud[("Nextcloud · IServ · WebDAV")]
+    Rclone --> Local[("Folders on the PC")]
+    Secrets -. "key of the configuration" .-> WinCred[("Windows<br/>Credential Manager")]
+```
+
+## Projects and folders
+
+| Folder | Content |
+|---|---|
+| `src/CloudDriveSync.Core` | All the logic: accounts, engine, synchronisation, settings, errors. Knows no user interface. |
+| `src/CloudDriveSync.App` | The WPF interface (MVVM): windows, pages, notification area symbol, updates. |
+| `tests/CloudDriveSync.Core.Tests` | Unit tests without network and without rclone (xUnit). |
+| `tests/CloudDriveSync.Core.IntegrationTests` | Real rclone against a local WebDAV test server: file operations, safety mechanisms, the service. |
+| `tools/` | Release (`New-Release.ps1`), program icon (`New-AppIcon.ps1`), encoding of source files (`Format-SourceFiles.ps1`). |
+
+**Dependencies point one way only:** App → Core. The core uses no WPF; the tests put it together exactly like the
+program does, through `CloudDriveSyncHost`.
+
+Folders of the core:
+
+| Folder | Responsibility |
+|---|---|
+| `Accounts` | Connecting and checking accounts, Nextcloud browser sign-in, WebDAV addresses, IServ folder names. |
+| `Engine` | Providing rclone (`RcloneInstaller`), starting and stopping it (`RcloneEngine`), its RC API (`RcClient`). |
+| `Sync` | Managing synchronisations (`SyncService`), carrying out one run (`SyncRunner`) and all safety building blocks. |
+| `Settings` | Data model (`AppSettings`) and saving it safely as JSON (`SettingsStore`). |
+| `Security` | The key of the rclone configuration in the Windows Credential Manager (`SecretStore`). |
+| `Errors` | Error codes `CD-xxxx` with title and fix in German and English (`ErrorCatalog`). |
+| `Diagnostics` | The log (`Log`); secrets are redacted before anything is written. |
+
+Folders of the app: `Infrastructure` (Windows integration: notification area symbol, autostart, updates, one instance
+per user …), `ViewModels`, `Views` with `Views/Pages` (one file per page of the main window), `Themes/Styles.xaml`
+(shared styles), `Assets` (program icon).
+
+## Start-up
+
+1. `Program.Main` lets [Velopack](https://velopack.io) speak first: while installing, updating and uninstalling,
+   Velopack runs the program briefly with arguments of its own and ends it again.
+2. `App.OnStartup` makes sure only one CloudDrive-Sync runs per user and data folder (`SingleInstance`): a second start
+   asks the first one to show its window and ends.
+3. The installed program records itself under "App Paths" (`AppRegistration`), so CloudDrives can find it.
+4. `CloudDriveSyncHost` puts everything together: paths, log, settings, secrets, engine, accounts, synchronisations.
+5. User interface: `MainViewModel`, notification area symbol, main window. With `--background` (start with Windows) the
+   window stays closed.
+6. `StartAsync` starts the engine and then every synchronisation.
+
+Closing the window only hides it; CloudDrive-Sync keeps synchronising from the notification area. Only "Beenden"
+(exit) stops all synchronisations cleanly and ends the engine.
+
+## Data folder
+
+Everything lives below one folder, by default `%LOCALAPPDATA%\CloudDrive-Sync` - separate from CloudDrives. The
+environment variable `CLOUDDRIVE_SYNC_HOME` chooses another one (tests, portable copy). The installed program itself
+lives elsewhere: `%LOCALAPPDATA%\CloudDriveSync\current` (Velopack).
+
+| Path | Content |
+|---|---|
+| `settings.json` (+ `.bak`) | Accounts, synchronisations, preferences - **never a secret**. Saved through a temporary file with a backup; when the file is damaged, `SettingsStore` takes the backup. |
+| `rclone.conf` | The rclone configuration with the sign-ins. **Always encrypted** (`RCLONE_ENCRYPT_V0:`). |
+| `logs\` | `clouddrive-sync-<date>.log` (14 days), `rclone.log` (10 MB × 5). |
+| `deps\rclone\1.75.1\` | `rclone.exe` in the pinned version. |
+| `cache\` | rclone's cache. |
+| `sync\<id>\` | State of one synchronisation, see below. |
+
+In the synchronised folder itself, CloudDrive-Sync creates only two hidden things: the **sentinel file**
+`.clouddrive-sync` and the **recycle bin** `.clouddrive-papierkorb\<date time>\`.
+
+## Security of sign-ins
+
+- Sign-in details are only entered when connecting. The password (for Nextcloud an app password of its own from the
+  browser sign-in) stays in memory only until rclone takes it over.
+- rclone keeps it in `rclone.conf`, which is always encrypted. The key lives in the Windows Credential Manager
+  (`SecretStore`), protected by DPAPI for the signed-in user.
+- `settings.json`, the log and the reports contain no secrets; `Log.Redact` blanks out passwords, tokens and `Bearer`
+  values before writing.
+- Another data folder gets entries of its own in the Credential Manager (`AppPaths.SecretPrefix`), so tests never touch
+  the keys of the real installation.
+- "Neu anmelden" (sign in again) first tries the new sign-in on a temporary remote (`cd-signin-<id>`); only when the
+  server accepts it does it replace the old one.
+
+## The engine
+
+`RcloneEngine` starts exactly one hidden `rclone rcd` process and talks to it through the RC API (`RcClient`):
+
+- only on `127.0.0.1`, with a random port and random credentials on every start (as environment variables, never on
+  the command line),
+- with the encrypted configuration (`RCLONE_CONFIG_PASS` from the Credential Manager),
+- inside a Windows job object: when CloudDrive-Sync ends - even by a crash - the engine ends with it.
+
+`RcloneInstaller` provides rclone in the pinned version 1.75.1: from the data folder, from `CLOUDDRIVE_SYNC_RCLONE`
+(development, tests) or downloaded from rclone.org or GitHub - **accepted only when the SHA256 checksum matches**.
+
+Every account is an rclone remote named `cd-<id>` (type WebDAV, with vendor nextcloud or other).
+
+## A synchronisation
+
+A synchronisation (`SyncPairSettings`) connects a cloud folder (`RemotePath`, empty = the whole account) with a folder
+on the PC (`LocalPath`). It also has the selection (everything or only chosen folders and files), the conflict rule, the
+interval, the deletion limit, `CloudCheckFile` (whether the sentinel file is in the cloud as well) and `LocalOnly`
+(files the server did not take). In rclone's terms the cloud is **Path1**, the PC **Path2**.
+
+Its state lives in `sync\<id>\`:
+
+| File | Purpose |
+|---|---|
+| `filter.txt`, `filter.txt.md5`, `filter-base.txt` | The selection as an rclone filter (`SyncFilters`); the checksum belongs to bisync, the base file tells real selection changes from "PC only" files. |
+| `bisync\` | bisync's work folder: the listings of both sides after the last run. |
+| `last-good\` | A copy of these listings after the last good run (`RunSafety`). |
+| `local-files.txt` | Every file on the PC with size and time after the last run (`DeleteGuard`). |
+| `server-times.json` | Size and server time of every file on both sides (`QuietServerChanges`). |
+| `state.json` | What survives a restart: first sync done, last run, open error, open decision. |
+| `runs.jsonl` | The latest runs with the files they changed (`RunHistory`, for "Aktivität"). |
+| `last-run.txt` | bisync's redacted report of the last run, for troubleshooting. |
+
+### Who starts a run, and when
+
+`SyncService` manages all synchronisations: adding (with sentinel files), removing (files stay on both sides),
+pausing, changing settings, answering decisions, "Abgleich überprüfen" (verify). Every synchronisation has a
+**`PairWorker`** of its own (`SyncService.PairWorker.cs`):
+
+- An **interval timer** fetches changes from the cloud (default: every 5 minutes).
+- A **folder watcher** (`FileSystemWatcher`) notices changes on the PC; after 5 seconds of quiet a run starts. Temporary
+  files of Office and LibreOffice do not count.
+- **Retries:** a file held open by another program is tried again every minute, network or server trouble after 1, 2,
+  4 … minutes, at most the interval.
+- Requests that arrive during a run are merged; the strongest wins (rebuild over "apply the changes" over a normal run).
+- At most **two runs at the same time** across all synchronisations. "Abgleich überprüfen" waits until a running sync
+  of the same synchronisation has finished.
+- When a synchronisation needs a **decision** (too many deletions, rebuild, sign-in, missing folder), no automatic runs
+  happen until the user answers.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Waiting: interval, change on the PC, "sync now"
+    Waiting --> Syncing: free slot (at most two runs)
+    Syncing --> Idle: success
+    Syncing --> Error: passing failure
+    Error --> Waiting: retry after 1, 2, 4 … minutes
+    Syncing --> NeedsAttention: decision needed
+    NeedsAttention --> Waiting: the user answers
+    Idle --> Paused: pause
+    Paused --> Idle: resume
+```
+
+### One run
+
+`SyncRunner` carries out one run. The order is deliberate: first it checks whether a run can be safe at all, then
+rclone synchronises, then the outcome is evaluated.
+
+```mermaid
+sequenceDiagram
+    participant W as PairWorker
+    participant R as SyncRunner
+    participant E as rclone (engine)
+    W->>R: run (normal, rebuild or "apply the changes")
+    R->>R: pre-flight checks: folder, sentinel file, deletion guard, open files
+    R->>E: write filter, check cloud folder, case-only renames
+    R->>E: carry over same-size changes (not for Nextcloud)
+    R->>E: sync/bisync
+    E-->>R: result, report, statistics
+    R->>R: remember the good state or classify the failure
+    R-->>W: outcome with files, conflicts, error code, decision
+    W->>W: save state, write history, notify
+```
+
+1. **Pre-flight checks** - without network, before anything changes:
+   - Without the folder on the PC (e.g. a USB stick pulled out) nothing runs: an empty folder is never taken as
+     "everything deleted" (`CD-4501`).
+   - Without the sentinel file the synchronisation stops (`CD-4503`).
+   - **Deletion guard** (`DeleteGuard`): when more files are missing on the PC than allowed, it stops before anything is
+     deleted in the cloud (`CD-4502`).
+   - When a changed file is held exclusively by another program, the run waits (`CD-4510`) instead of rclone giving up
+     the whole run.
+2. **Preparation:** write the filter file. Without a sentinel file in the cloud, `CloudFolderCheck` makes sure the cloud
+   folder is there and does not suddenly look empty (`CD-4512`). `CaseRenames` carries over renames that only change
+   upper and lower case.
+3. **Same-size changes** (`QuietServerChanges`, not for Nextcloud): servers without modification times of their own do
+   not reveal a change that keeps the size. CloudDrive-Sync therefore remembers size and server time of every file and
+   carries such changes over itself - in both directions, as a conflict copy when both sides changed.
+4. **bisync** with the settings of `BisyncCommand` (see below).
+5. **Evaluation:**
+   - Success: the deletion guard's list, the server times and the good state (`last-good`) are remembered; `RunChanges`
+     reads from the report which file went where.
+   - When the server refuses single files (e.g. a read-only folder), they stay on the PC and out of the synchronisation
+     (`LocalOnly`); the run is repeated without them - without a rebuild.
+   - Names that differ only in upper and lower case: the PC takes the server's spelling and the run is repeated once.
+   - When a run breaks off on something that passes (a file in use, the network gone), `RunSafety` restores the last
+     good state and the next try comes soon - without a rebuild.
+   - Everything else is mapped to an error code by `ErrorCatalog.Classify`; some codes ask the user for a decision.
+
+### bisync settings
+
+| Setting | Why |
+|---|---|
+| `checkAccess` + `checkFilename .clouddrive-sync` | A sentinel file on both sides: when a folder is gone or moved, bisync stops instead of deleting everything. |
+| `maxDelete` = the synchronisation's deletion limit | More deletions than allowed stop the run (in addition to `DeleteGuard`). |
+| `compare = size,modtime,checksum`, `slowHashSyncOnly` | Each side compares with what it supports; checksums on the PC only where needed. |
+| `conflictResolve`, `conflictLoser = num`, `conflictSuffix` | Conflicts follow the chosen rule; the other version stays as `Name.Konflikt-PC1.docx` or `Konflikt-Cloud1`. |
+| `recover`, `resilient`, `maxLock = 30m` | Continue cleanly after an interruption; retry less serious errors at the next run. |
+| `backupDir2` | What the synchronisation deletes or replaces on the PC goes to the recycle bin on the PC. |
+| `TrackRenames`, `SuffixKeepExtension` | Renamed files are not uploaded again; conflict copies keep their extension. |
+| `resync` + `resyncMode = newer` (first sync and rebuild only) | Merge both sides, **delete nothing**. |
+| `force` (only after confirmation) | Apply deletions above the limit when the user explicitly wants it. |
+
+## Key decisions
+
+- **rclone bisync instead of a sync engine of our own.** bisync is proven, knows WebDAV, Nextcloud and many other
+  storage systems, and works traceably with listings of both sides. CloudDrive-Sync wraps a safety net around it instead
+  of reinventing synchronisation. For files on demand (version 0.3, Windows Cloud Files API) a core of its own is
+  planned.
+- **A deletion guard of its own, counted in files.** rclone's limit counts folders as well; in small folder trees it
+  triggers too late or too early. `DeleteGuard` counts files, the way people read "more than half".
+- **A sentinel file on both sides** - and where the server takes no file (IServ: "Gruppen" itself, the whole account,
+  read-only folders), `CloudFolderCheck` checks the cloud folder itself before every run.
+- **Server times of its own** (`QuietServerChanges`) for servers without reliable modification times, so same-size
+  changes are not lost.
+- **The last good state** (`RunSafety`): passing problems no longer cost a rebuild.
+- **Refused files stay on the PC** (`LocalOnly`) instead of forcing a rebuild; the checksum of the filter file is renewed
+  deliberately for that.
+- **Recycle bin on the PC only.** A recycle bin folder in the cloud would be visible on the server - in shared folders to
+  everybody. What is deleted on the PC is in the Windows recycle bin anyway; Nextcloud has one of its own.
+- **Secrets only encrypted** in the rclone configuration, the key in the Windows Credential Manager - never in settings,
+  logs or this repository.
+- **One engine** on `127.0.0.1` with a random port and random credentials, bound to CloudDrive-Sync (job object).
+- **Velopack** for installation and updates: per user without administrator rights, .NET included, updates only from the
+  GitHub project and checked against their checksum.
+- **Separate from CloudDrives:** own data folder, own keys, own program. Each opens the other from its notification area
+  symbol, but neither depends on the other.
+
+## Quirks of rclone and the servers
+
+- **Filter changes:** bisync remembers the checksum of the filter file (`filter.txt.md5`) and insists on a rebuild after
+  any change. A changed selection therefore deliberately triggers a rebuild. Only when nothing but the "PC only" files
+  change does `SyncFilters.Write` renew the checksum itself - recognised by `filter-base.txt`.
+- **"must resync":** after some failures bisync insists on a rebuild. With `last-good` and `resilient`/`recover`,
+  CloudDrive-Sync gets by without one for passing failures.
+- **bisync's report** is the source of which file went where (`RunChanges`): `Queue copy to Path1` (uploaded),
+  `Queue copy to Path2` (fetched), `Queue delete`, during a rebuild `Resync is copying files to`.
+- **IServ** keeps no modification times of its own (rclone compares sizes only there) and takes no files in its root and
+  in "Groups" itself (answer 500). In WebDAV its folders are called `Files` and `Groups`, on its web pages "Eigene
+  Dateien" and "Gruppen" - CloudDrive-Sync shows the familiar names (`CloudFolderNames`).
+- **Nextcloud** has modification times and checksums and answers refused writes with 403. `rclone serve webdav` cannot
+  emulate Nextcloud; testing it needs a real account.
+- **Upper and lower case:** Windows takes `Bericht.docx` and `bericht.docx` for the same file, the servers for two.
+  bisync then stops with "out of sync"; `CaseRenames` aligns the spellings beforehand.
+- **rclone's deletion limit** counts folders as well (see above).
+
+## Error codes
+
+Every error has a code `CD-xxxx` with title and fix in German and English (`ErrorCatalog`). The numbers follow the same
+ranges as in CloudDrives:
+
+| Range | Topic |
+|---|---|
+| `CD-1xxx` | Downloads and checksums (e.g. rclone) |
+| `CD-2xxx` | Settings, configuration, keys |
+| `CD-3xxx` | Sign-in and servers |
+| `CD-45xx` | Synchronisation (folder, deletion guard, rebuild, files in use …) |
+| `CD-5xxx` | Connection and engine |
+| `CD-9000` | Unexpected error |
+
+`ErrorCatalog.Classify` recognises codes by patterns in the answers of rclone and the servers. Whether a code asks for
+a decision is decided by `SyncRunner` (`SyncDecision`).
+
+## The user interface
+
+- **MVVM** with the [CommunityToolkit.Mvvm](https://learn.microsoft.com/dotnet/communitytoolkit/mvvm/): properties with
+  `[ObservableProperty]`, commands with `[RelayCommand]`. Views hold no business logic, only window behaviour (e.g. the
+  folder picker).
+- `MainViewModel` holds the pages (`Page`), the cards of the synchronisations (`SyncPairViewModel`) and accounts
+  (`AccountViewModel`), the activity and the updates. Every page of the main window lives in `Views/Pages`.
+- **Threads:** `SyncService` reports changes on any thread; `MainViewModel` hands them to the window thread
+  (`OnWindowThread`).
+- **Dialogs** go through `IDialogs`/`DialogService`, so view models know no windows.
+- **Notification area symbol** (`TrayIcon`): status dot, menu, notifications.
+- **Updates:** `UpdatesViewModel` with `Updater` (Velopack, GitHub releases; test versions are pre-releases).
+- **Accessibility:** controls carry `AutomationProperties.Name`; lists of cards use `CardList`, so screen readers find
+  their entries.
+- **User interface texts** are German and live directly in XAML and the view models.
+- **Pictures of its own windows** for tests: `CLOUDDRIVE_SYNC_SNAPSHOTS=<folder>` (`WindowSnapshots`).
+
+## Logs and troubleshooting
+
+- `logs\clouddrive-sync-<date>.log`: what CloudDrive-Sync does (time, level, component, text), redacted.
+- `logs\rclone.log`: the engine's log.
+- `sync\<id>\last-run.txt`: bisync's report of the last run.
+- "Abgleich überprüfen" in the interface compares every file of both sides without changing anything (`SyncVerifier`).

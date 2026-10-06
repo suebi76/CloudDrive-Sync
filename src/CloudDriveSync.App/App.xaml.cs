@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Threading;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.App.ViewModels;

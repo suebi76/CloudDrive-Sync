@@ -1,4 +1,4 @@
-﻿# Verwendete Bausteine / Third-party notices
+# Verwendete Bausteine / Third-party notices
 
 CloudDrive-Sync © 2026 Steffen Schwabe verwendet die folgenden Bausteine anderer Projekte. Alle stehen unter der
 MIT-Lizenz; ihr Wortlaut steht am Ende dieser Datei.

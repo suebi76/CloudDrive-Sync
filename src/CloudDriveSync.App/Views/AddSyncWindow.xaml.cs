@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using CloudDriveSync.App.ViewModels;
 using Microsoft.Win32;

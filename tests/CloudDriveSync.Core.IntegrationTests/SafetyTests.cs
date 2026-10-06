@@ -1,4 +1,4 @@
-﻿using CloudDriveSync.Core.Errors;
+using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.IntegrationTests;

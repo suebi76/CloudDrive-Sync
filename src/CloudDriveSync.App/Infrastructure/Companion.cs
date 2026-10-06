@@ -20,12 +20,22 @@ internal static class Companion
         }
     }
 
+    /// <summary>
+    /// Opens CloudDrives the way it opens its own windows: in the classic console window with "--window", which shows the
+    /// CloudDrives symbol in the taskbar. Started directly, the batch file would open in Windows Terminal first.
+    /// </summary>
     public static void OpenDrivesProgram()
     {
         if (DrivesProgram is not { } file) return;
         try
         {
-            using var process = Process.Start(new ProcessStartInfo(file) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(file)! });
+            // Through the shell, so the console window is a new one of its own.
+            using var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "conhost.exe"))
+            {
+                UseShellExecute = true,
+                Arguments = $"\"{file}\" --window",
+                WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            });
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {

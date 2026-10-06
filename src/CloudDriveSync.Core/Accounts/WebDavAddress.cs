@@ -10,6 +10,7 @@ namespace CloudDriveSync.Core.Accounts;
 /// </summary>
 public sealed record WebDavAddress(string Url, string Server, string HostName, bool Insecure);
 
+/// <summary>Reads the address a user typed when connecting an account.</summary>
 public static partial class WebDavAddresses
 {
     /// <summary>

@@ -1,7 +1,8 @@
-﻿using CloudDriveSync.Core.Settings;
+using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.App.ViewModels;
 
+/// <summary>The button the user chose in a question.</summary>
 public enum DialogChoice
 {
     None,

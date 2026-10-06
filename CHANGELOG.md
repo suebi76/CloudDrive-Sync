@@ -1,7 +1,28 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
+
+## [Unreleased]
+
+### Added
+
+- Developer documentation in German and English: architecture (`docs/ARCHITECTURE.md`), developer handbook
+  (`docs/DEVELOPMENT.md`) and the rules for contributions and code (`CONTRIBUTING.md`)
+- `tools/Format-SourceFiles.ps1` and the unit test `SourceFileTests` keep every source file UTF-8 without BOM
+  (PowerShell scripts with BOM) with Windows line ends
+
+### Changed
+
+- Code reorganised for readers, without a change in behaviour: the worker that keeps one synchronisation in step has
+  a file of its own (`SyncService.PairWorker.cs`), the run history is a class of its own (`RunHistory`), every page of
+  the main window has a file of its own (`Views/Pages`), the unit tests have one file per topic, and every public type
+  has a documentation comment
+
+### Fixed
+
+- "CloudDrives öffnen" opens CloudDrives in its own console window with the CloudDrives symbol in the taskbar, as
+  CloudDrives does itself - before, Windows 11 opened it in Windows Terminal first
 
 ## [0.2.0-preview.7] – 2026-10-05
 

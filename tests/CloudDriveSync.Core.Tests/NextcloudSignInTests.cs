@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;

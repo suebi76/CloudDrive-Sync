@@ -1,4 +1,4 @@
-﻿using System.Windows.Threading;
+using System.Windows.Threading;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Settings;

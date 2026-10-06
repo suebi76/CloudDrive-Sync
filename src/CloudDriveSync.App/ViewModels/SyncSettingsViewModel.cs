@@ -1,4 +1,4 @@
-﻿using CloudDriveSync.App.Infrastructure;
+using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;

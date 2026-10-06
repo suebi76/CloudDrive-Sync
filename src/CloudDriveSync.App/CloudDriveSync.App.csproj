@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- The desktop program: WPF with the Windows 11 (Fluent) look, symbol in the notification area. -->
   <PropertyGroup>

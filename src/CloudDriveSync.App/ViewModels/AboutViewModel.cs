@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using CloudDriveSync.App.Infrastructure;
 using CommunityToolkit.Mvvm.Input;
 

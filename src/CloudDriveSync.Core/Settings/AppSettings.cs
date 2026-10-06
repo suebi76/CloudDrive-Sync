@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace CloudDriveSync.Core.Settings;
 
@@ -25,6 +25,10 @@ public enum WebDavKind
     Other,
 }
 
+/// <summary>
+/// A connected cloud account. Its sign-in is not here: the password or app password lies only in the encrypted rclone
+/// configuration, as the remote "cd-&lt;id&gt;" (see AccountService).
+/// </summary>
 public sealed class AccountSettings
 {
     public string Id { get; set; } = "";
@@ -39,12 +43,14 @@ public sealed class AccountSettings
     public override string ToString() => Label;
 }
 
+/// <summary>Who is signed in to an account: the user ID on the server and the name to show.</summary>
 public sealed class AccountIdentity
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
 }
 
+/// <summary>What a synchronisation takes from its cloud folder.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SelectionMode>))]
 public enum SelectionMode
 {
@@ -54,6 +60,7 @@ public enum SelectionMode
     Selected,
 }
 
+/// <summary>What happens to a file that changed on both sides since the last run.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ConflictPolicy>))]
 public enum ConflictPolicy
 {
@@ -67,6 +74,7 @@ public enum ConflictPolicy
     PcWins,
 }
 
+/// <summary>Which folders and files of the cloud folder take part in a synchronisation.</summary>
 public sealed class SyncSelection
 {
     public SelectionMode Mode { get; set; } = SelectionMode.All;
@@ -105,6 +113,7 @@ public sealed class SyncPairSettings
     public List<string> LocalOnly { get; set; } = [];
 }
 
+/// <summary>Settings of the program as a whole (the page "Einstellungen").</summary>
 public sealed class Preferences
 {
     public bool StartWithWindows { get; set; } = true;

@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;

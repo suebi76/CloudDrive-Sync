@@ -1,4 +1,4 @@
-﻿using CloudDriveSync.App.Infrastructure;
+using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;
@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CloudDriveSync.App.ViewModels;
 
+/// <summary>The steps of the window "Konto verbinden".</summary>
 public enum AddAccountStep
 {
     Choose,

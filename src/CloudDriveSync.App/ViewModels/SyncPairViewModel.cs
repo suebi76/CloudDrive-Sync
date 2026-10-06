@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Engine;

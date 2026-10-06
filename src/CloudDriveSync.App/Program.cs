@@ -1,4 +1,4 @@
-﻿using CloudDriveSync.App.Infrastructure;
+using CloudDriveSync.App.Infrastructure;
 using Velopack;
 
 namespace CloudDriveSync.App;
