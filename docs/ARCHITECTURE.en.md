@@ -250,7 +250,7 @@ sequenceDiagram
 - **rclone bisync instead of a sync engine of our own.** bisync is proven, knows WebDAV, Nextcloud and many other
   storage systems, and works traceably with listings of both sides. CloudDrive-Sync wraps a safety net around it instead
   of reinventing synchronisation. For files on demand (version 0.3, Windows Cloud Files API) a core of its own is
-  planned.
+  being built, see [below](#files-on-demand-from-version-03-under-construction).
 - **A deletion guard of its own, counted in files.** rclone's limit counts folders as well; in small folder trees it
   triggers too late or too early. `DeleteGuard` counts files, the way people read "more than half".
 - **A sentinel file on both sides** - and where the server takes no file (IServ: "Gruppen" itself, the whole account,
@@ -295,6 +295,47 @@ sequenceDiagram
 - **Upper and lower case:** Windows takes `Bericht.docx` and `bericht.docx` for the same file, the servers for two.
   bisync then stops with "out of sync"; `CaseRenames` aligns the spellings beforehand.
 - **rclone's deletion limit** counts folders as well (see above).
+
+## Files on demand (from version 0.3, under construction)
+
+With files on demand, all files of a synchronisation appear in Explorer at once but take up space only when they are
+opened or "Always keep on this device" is chosen - as with OneDrive. For this CloudDrive-Sync gets a sync core of its
+own on Windows' **Cloud Files API** (the filter driver `cldflt.sys` with the Win32 interface `cfapi.h`, and
+`Windows.Storage.Provider` for the registration). Classic synchronisations keep running with bisync.
+
+A prototype checked beforehand, in a real Windows 11 session, what the core builds on:
+
+| Question | Result |
+|---|---|
+| Registration without an app package | Works from .NET 10 through `StorageProviderSyncRootManager`. Windows itself adds the entry in the navigation pane (CLSID and `Desktop\NameSpace` in HKCU) and removes it again on unregistering. |
+| Placeholders | `CfCreatePlaceholders` creates 10,000 placeholders in 1.3 s. They show size and time and take 0 bytes. |
+| Data on opening | Through `serve/start type=http` in the engine with HTTP range requests, in blocks of 1 MB: 100 MB in 0.6 s, 2 GB in 7.7 s. Umlauts and spaces in the path are no problem. |
+| Time limit of 60 s | Windows gives every request 60 s; every data transfer resets the clock: 80 MB at 1 MB/s (81 s) arrived complete. |
+| Cancelling | Windows sends `CANCEL_FETCH_DATA`. Parts already fetched stay; the rest comes at the next opening. |
+| Program ended or crashed | Opening an online file reports "The cloud file provider exited unexpectedly"; fetched files stay readable. A transfer running during the crash is discarded by Windows. After a restart everything continues. |
+| Reading by itself | With `CF_CONNECT_FLAG_BLOCK_SELF_IMPLICIT_HYDRATION`, CloudDrive-Sync reading an online file by accident fails ("access denied"). Fetching on purpose with `CfHydratePlaceholder` works. |
+| Pinning | "Always keep" (like `attrib +P`) only sets the state, on a folder only on the folder - the core has to fetch. New placeholders in pinned folders take the state over with `CF_PIN_STATE_INHERIT`. |
+| Change on the PC | Writing to a fetched file marks it "not in sync". Saving like Word (new file, rename) and with `ReplaceFile` leaves a normal file at the same path. |
+| Change in the cloud | When the size changes in the cloud, the core refuses to fetch; after `CfUpdatePlaceholder` with `DEHYDRATE` the new version arrives. |
+| Switching over | A folder of normal files becomes a sync root without any transfer (`CfConvertToPlaceholder`): 2,000 files in 0.8 s, all "in sync" and present. |
+| Nesting | Windows refuses a sync root inside another one. `CfGetSyncRootInfoByPath` tells whether a folder belongs to a cloud program already. |
+| Unregistering | 12,000 entries in 3.8 s. Fetched files become normal files, online-only placeholders vanish from the PC. That fits into the 30 s Velopack allows while uninstalling. |
+| Queries | `GetCurrentSyncRoots` and `GetSyncRootInformationForId` leave out sync roots in the temp folder. Tests (whose folders lie there) therefore find their sync roots through the registry. |
+| Size | The WinRT projection (`Microsoft.Windows.SDK.NET.dll`) makes the program 24 MB larger. |
+| Fallback | `core/command` with `cat` and `STREAM_ONLY_STDOUT` delivers data as well, but starts an rclone process of its own per request (the engine's bandwidth limit does not apply there) and appends `{}` and a line break to the data. It stays the fallback. |
+
+Rules for the core that follow from this:
+
+- **Only the version the placeholder stands for is fetched** (size and time, with Nextcloud also the checksum). If the
+  cloud differs, fetching fails and a run updates the placeholder; `DEHYDRATE` also discards parts of an old version.
+  So a file never consists of two versions.
+- **Only what is in sync is freed.** A file changed on the PC and not uploaded yet keeps its content, even when someone
+  chooses "Free up space".
+- **A normal file at the path of a placeholder is a change**, not a deletion plus a new file - that is how Office and
+  many other programs save.
+- **A pinned folder** passes its state on to everything in it (`CfSetPinState` with `RECURSE`), and the core fetches it.
+- **Placeholders are named like rclone names files:** `NameEncoding` translates names the way rclone's local backend
+  writes them on Windows ("Was?.docx" becomes "Was？.docx"). So a folder bisync filled matches after switching over.
 
 ## Error codes
 

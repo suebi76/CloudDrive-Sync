@@ -250,8 +250,8 @@ sequenceDiagram
 
 - **rclone bisync statt einer eigenen Sync-Engine.** bisync ist erprobt, kennt WebDAV, Nextcloud und viele andere
   Speicher und arbeitet nachvollziehbar mit Listen beider Seiten. CloudDrive-Sync legt ein eigenes Sicherheitsnetz darum,
-  statt den Abgleich neu zu erfinden. Für „Dateien bei Bedarf“ (Version 0.3, Windows Cloud Files API) ist ein eigener
-  Kern geplant.
+  statt den Abgleich neu zu erfinden. Für „Dateien bei Bedarf“ (Version 0.3, Windows Cloud Files API) entsteht ein
+  eigener Kern, siehe [unten](#dateien-bei-bedarf-ab-version-03-im-aufbau).
 - **Ein eigener Löschschutz in Dateien.** rclones Grenze zählt Ordner mit; in kleinen Ordnerbäumen schlägt sie zu spät
   oder zu früh an. `DeleteGuard` zählt Dateien, so wie Menschen „mehr als die Hälfte“ lesen.
 - **Wächterdatei auf beiden Seiten** – und wo der Server keine Datei annimmt (IServ: „Gruppen“ selbst, das ganze Konto,
@@ -296,6 +296,48 @@ sequenceDiagram
 - **Groß- und Kleinschreibung:** Windows hält `Bericht.docx` und `bericht.docx` für dieselbe Datei, die Server für zwei.
   bisync stoppt dann mit „out of sync“; `CaseRenames` gleicht die Schreibweisen vorher an.
 - **rclones Löschgrenze** zählt Ordner mit (siehe oben).
+
+## Dateien bei Bedarf (ab Version 0.3, im Aufbau)
+
+Mit „Dateien bei Bedarf“ erscheinen alle Dateien einer Synchronisation sofort im Explorer, belegen aber erst Platz, wenn
+man sie öffnet oder „Immer auf diesem Gerät behalten“ wählt – wie bei OneDrive. Dafür bekommt CloudDrive-Sync einen
+eigenen Sync-Kern auf der **Cloud Files API** von Windows (der Filtertreiber `cldflt.sys` mit der Win32-Schnittstelle
+`cfapi.h` und `Windows.Storage.Provider` für die Registrierung). Klassische Synchronisationen laufen weiter mit bisync.
+
+Ein Prototyp hat vorab in einer echten Windows-11-Sitzung geprüft, worauf der Kern baut:
+
+| Frage | Ergebnis |
+|---|---|
+| Registrierung ohne App-Paket | Klappt aus .NET 10 über `StorageProviderSyncRootManager`. Windows legt dabei selbst den Eintrag im Navigationsbereich an (CLSID und `Desktop\NameSpace` in HKCU) und entfernt ihn beim Abmelden wieder. |
+| Platzhalter | `CfCreatePlaceholders` legt 10 000 Platzhalter in 1,3 s an. Sie zeigen Größe und Zeit und belegen 0 Byte. |
+| Laden beim Öffnen | Über `serve/start type=http` in der Engine mit HTTP-Range-Anfragen, in Blöcken von 1 MB: 100 MB in 0,6 s, 2 GB in 7,7 s. Umlaute und Leerzeichen im Pfad sind kein Problem. |
+| Zeitgrenze von 60 s | Windows gibt jeder Anfrage 60 s, jede Datenübergabe setzt die Uhr zurück: 80 MB bei 1 MB/s (81 s) kamen vollständig an. |
+| Abbruch | Windows meldet `CANCEL_FETCH_DATA`. Schon geladene Teile bleiben liegen, der Rest kommt beim nächsten Öffnen. |
+| Programm beendet oder abgestürzt | Öffnen einer Online-Datei meldet „Der Clouddateianbieter wurde unerwartet beendet“, geladene Dateien bleiben lesbar. Eine Übertragung, die beim Absturz lief, verwirft Windows. Nach dem Neustart geht alles weiter. |
+| Eigenes Lesen | Mit `CF_CONNECT_FLAG_BLOCK_SELF_IMPLICIT_HYDRATION` scheitert ein versehentliches Lesen einer Online-Datei durch CloudDrive-Sync selbst („Zugriff verweigert“). Gezieltes Laden mit `CfHydratePlaceholder` geht. |
+| Anheften | „Immer behalten“ (wie `attrib +P`) setzt nur den Status, bei einem Ordner nur am Ordner – laden muss der Kern. Neue Platzhalter in angehefteten Ordnern übernehmen den Status mit `CF_PIN_STATE_INHERIT`. |
+| Änderung am PC | Schreiben in eine geladene Datei markiert sie als „nicht abgeglichen“. Speichern wie Word (neue Datei, umbenennen) und mit `ReplaceFile` hinterlässt eine normale Datei am selben Pfad. |
+| Änderung in der Cloud | Ändert sich in der Cloud die Größe, verweigert der Kern das Laden; nach `CfUpdatePlaceholder` mit `DEHYDRATE` kommt die neue Fassung. |
+| Umstellen | Ein Ordner mit normalen Dateien wird ohne Übertragung zur Sync-Root (`CfConvertToPlaceholder`): 2000 Dateien in 0,8 s, alle „abgeglichen“ und vorhanden. |
+| Verschachteln | Eine Sync-Root in einer anderen lehnt Windows ab. `CfGetSyncRootInfoByPath` erkennt, ob ein Ordner schon zu einem Cloud-Programm gehört. |
+| Abmelden | 12 000 Einträge in 3,8 s. Geladene Dateien werden normale Dateien, reine Online-Platzhalter verschwinden vom PC. Das passt in die 30 s, die Velopack beim Deinstallieren lässt. |
+| Abfragen | `GetCurrentSyncRoots` und `GetSyncRootInformationForId` blenden Sync-Roots im Temp-Ordner aus. Tests (deren Ordner im Temp-Ordner liegen) finden ihre Sync-Roots deshalb über die Registry. |
+| Größe | Die WinRT-Anbindung (`Microsoft.Windows.SDK.NET.dll`) macht das Programm 24 MB größer. |
+| Ersatzweg | `core/command` mit `cat` und `STREAM_ONLY_STDOUT` liefert ebenfalls Daten, startet aber je Anfrage einen eigenen rclone-Prozess (die Bandbreitengrenze der Engine gilt dort nicht) und hängt an die Daten `{}` und einen Zeilenumbruch an. Er bleibt Rückfallebene. |
+
+Daraus folgen Regeln für den Kern:
+
+- **Geladen wird nur die Fassung, für die der Platzhalter steht** (Größe und Zeit, bei Nextcloud auch die Prüfsumme).
+  Weicht die Cloud ab, scheitert das Laden, und ein Lauf aktualisiert den Platzhalter; `DEHYDRATE` verwirft dabei auch
+  Teile einer alten Fassung. So entsteht nie eine Datei aus zwei Fassungen.
+- **Freigegeben wird nur, was abgeglichen ist.** Eine Datei, die am PC geändert und noch nicht hochgeladen wurde, behält
+  ihren Inhalt, auch wenn jemand „Speicherplatz freigeben“ wählt.
+- **Eine normale Datei am Pfad eines Platzhalters ist eine Änderung**, kein Löschen mit neuer Datei – so speichern Office
+  und viele andere Programme.
+- **Ein angehefteter Ordner** gibt seinen Status an alles darin weiter (`CfSetPinState` mit `RECURSE`), und der Kern lädt
+  es.
+- **Platzhalter heißen wie bei rclone:** `NameEncoding` übersetzt Namen so, wie rclones lokales Backend sie unter Windows
+  schreibt („Was?.docx“ wird „Was？.docx“). So passt ein Ordner, den bisync gefüllt hat, nach dem Umstellen.
 
 ## Fehlercodes
 
