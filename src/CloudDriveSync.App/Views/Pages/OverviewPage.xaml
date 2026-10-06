@@ -20,6 +20,7 @@
                     <StackPanel Grid.Column="1" Margin="16,0,12,0">
                         <TextBlock Text="{Binding Title}" Style="{StaticResource Strong}" FontSize="15" />
                         <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding SpaceText}" Style="{StaticResource Caption}" Margin="0,2,0,0" Visibility="{Binding SpaceText, Converter={StaticResource Visible}}" />
                         <Button Content="{Binding LocalPath}" Style="{StaticResource LinkButton}" Command="{Binding OpenFolderCommand}"
                                 ToolTip="Ordner im Explorer öffnen" Margin="0,4,0,0" />
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">

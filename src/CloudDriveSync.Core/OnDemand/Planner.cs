@@ -1,3 +1,5 @@
+using CloudDriveSync.Core.CloudFiles;
+
 namespace CloudDriveSync.Core.OnDemand;
 
 /// <summary>
@@ -165,6 +167,15 @@ public static class Planner
         }
         return new SyncPlan(actions, knownFiles, cloudDeletions, localDeletions, skipped);
     }
+
+    /// <summary>
+    /// "Speicherplatz automatisch freigeben": whether a file gives its space back - its data is on the PC, it is in sync
+    /// (a change not uploaded yet is never lost), it has no pin state of its own, and it was neither opened nor changed
+    /// nor fetched after <paramref name="latestUtc"/>.
+    /// </summary>
+    public static bool ShouldFree(PlaceholderInfo info, DateTime lastAccessUtc, DateTime lastWriteUtc, long onDiskSinceTicks, DateTime latestUtc) =>
+        info is { OnDiskSize: > 0, InSync: true, Pin: PinState.Unspecified }
+        && Math.Max(Math.Max(lastAccessUtc.Ticks, lastWriteUtc.Ticks), onDiskSinceTicks) <= latestUtc.Ticks;
 
     private enum Change
     {

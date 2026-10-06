@@ -25,6 +25,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial bool StartWithWindows { get; set; }
     [ObservableProperty] public partial bool Notifications { get; set; }
     [ObservableProperty] public partial int TrashDays { get; set; }
+    [ObservableProperty] public partial int FreeUpDays { get; set; }
     [ObservableProperty] public partial UpdateMode UpdateMode { get; set; }
     [ObservableProperty] public partial bool TestVersions { get; set; }
 
@@ -47,6 +48,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         new(0, "Aus"), new(7, "7 Tage"), new(14, "14 Tage"), new(30, "30 Tage"), new(60, "60 Tage"), new(90, "90 Tage"), new(365, "1 Jahr"),
     ];
 
+    public IReadOnlyList<Choice<int>> FreeUpChoices { get; } =
+    [
+        new(0, "Nie"), new(7, "Nach 7 Tagen"), new(14, "Nach 14 Tagen"), new(30, "Nach 30 Tagen"), new(60, "Nach 60 Tagen"),
+    ];
+
     /// <summary>Only the normal installation starts with Windows - not a copy with another data folder.</summary>
     public bool CanStartWithWindows => _main.Host.Paths.IsDefaultHome;
 
@@ -62,6 +68,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         StartWithWindows = preferences.StartWithWindows;
         Notifications = preferences.Notifications;
         TrashDays = preferences.TrashDays;
+        FreeUpDays = preferences.FreeUpAfterDays;
         UpdateMode = preferences.Updates;
         TestVersions = preferences.TestVersions;
         _loading = false;
@@ -100,6 +107,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnTrashDaysChanged(int value)
     {
         if (!_loading && value >= 0) _main.Host.Settings.Update(s => s.Preferences.TrashDays = value);
+    }
+
+    partial void OnFreeUpDaysChanged(int value)
+    {
+        if (!_loading && value >= 0) _main.Host.Settings.Update(s => s.Preferences.FreeUpAfterDays = value);
     }
 
     /// <summary>CloudDrives, the drives program, is installed and can be opened from here.</summary>

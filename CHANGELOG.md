@@ -3,6 +3,19 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.3] – 2026-10-07
+
+Third test version on the way to 0.3.
+
+### Added
+
+- "Speicherplatz automatisch freigeben" (Einstellungen): files on demand that were not opened for 7, 14, 30 or 60 days
+  give their space on the PC back and stay in the cloud; opening one brings it back. The default is "Nie". Files kept
+  with "Immer auf diesem Gerät beibehalten" and changes not uploaded yet always stay, and a file fetched just now counts
+  as used.
+- The card of a synchronisation with files on demand says so ("Dateien bei Bedarf") and shows how much of the cloud
+  folder lies on the PC, e.g. "1,2 GB von 18 GB auf diesem PC".
+
 ## [0.3.0-preview.2] – 2026-10-06
 
 Second test version on the way to 0.3, with what the first test showed.

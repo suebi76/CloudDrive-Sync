@@ -34,6 +34,7 @@ public enum SyncDecision
 }
 
 /// <summary>The current state of one synchronisation, for the user interface. Replaced as a whole on every change.</summary>
+/// <param name="Space">Files on demand: what lies on the PC, as the last run measured it.</param>
 public sealed record SyncPairState(
     string Id,
     SyncStatus Status,
@@ -45,11 +46,12 @@ public sealed record SyncPairState(
     string? ErrorDetail,
     SyncDecision Decision,
     IReadOnlyList<string> Conflicts,
-    bool FirstSyncDone)
+    bool FirstSyncDone,
+    SpaceUse? Space = null)
 {
     public static SyncPairState Initial(string id, PersistedSyncState saved, bool paused) => new(
         id, paused ? SyncStatus.Paused : saved.Decision != SyncDecision.None ? SyncStatus.NeedsAttention : SyncStatus.Idle,
-        "", JobProgress.None, saved.LastRun, saved.LastSuccess, saved.ErrorCode, saved.ErrorDetail, saved.Decision, [], saved.FirstSyncDone);
+        "", JobProgress.None, saved.LastRun, saved.LastSuccess, saved.ErrorCode, saved.ErrorDetail, saved.Decision, [], saved.FirstSyncDone, saved.Space);
 }
 
 /// <summary>The part of the state that survives a restart (sync\&lt;id&gt;\state.json).</summary>
@@ -63,6 +65,8 @@ public sealed class PersistedSyncState
     public SyncDecision Decision { get; set; }
     /// <summary>A rebuild broke off and is finished before anything else.</summary>
     public bool ResyncPending { get; set; }
+    /// <summary>Files on demand: what lay on the PC after the last run.</summary>
+    public SpaceUse? Space { get; set; }
 
     public static PersistedSyncState Load(string file)
     {

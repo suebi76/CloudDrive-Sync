@@ -19,7 +19,11 @@ public sealed record SyncRunOutcome(
     IReadOnlyList<string> Conflicts,
     bool Retryable,
     IReadOnlyList<string>? LocalOnlyAdded = null,
-    IReadOnlyList<FileChange>? Changes = null);
+    IReadOnlyList<FileChange>? Changes = null,
+    SpaceUse? Space = null);
+
+/// <summary>Files on demand: what the folder takes on the PC and what the cloud folder holds, in bytes.</summary>
+public sealed record SpaceUse(long OnPcBytes, long CloudBytes);
 
 /// <summary>
 /// Carries out one run of a synchronisation: checks first (folder and sentinel file there, engine running), then

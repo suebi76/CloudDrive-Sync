@@ -154,7 +154,7 @@ Its state lives in `sync\<id>\`:
 | `state.json` | What survives a restart: first sync done, last run, open error, open decision. |
 | `runs.jsonl` | The latest runs with the files they changed (`RunHistory`, for "Aktivität"). |
 | `last-run.txt` | bisync's redacted report of the last run, for troubleshooting. |
-| `items.db` | Files on demand only: every file and folder with the version of both sides after the last run (`ItemStore`, SQLite). Instead of `bisync\`, `last-good\`, `local-files.txt` and `server-times.json`. |
+| `items.db` | Files on demand only: every file and folder with the version of both sides after the last run (`ItemStore`, SQLite), plus since when the data of a file is on the PC (`on_disk`, for freeing space automatically). Instead of `bisync\`, `last-good\`, `local-files.txt` and `server-times.json`. |
 
 ### Who starts a run, and when
 
@@ -401,6 +401,13 @@ Explorer's own columns "Availability status" and "Status" through `Shell.Applica
 the upload frees the space. New placeholders in a pinned folder are pinned themselves and fetched at once, in new
 subfolders, too. What the watcher misses (say, because CloudDrive-Sync was not running) every run catches up with
 (`Executor.ApplyPinStates`): a file without a state of its own takes that of the nearest folder above it that has one.
+
+**Freeing space automatically** (Einstellungen › "Speicherplatz automatisch freigeben", default "Nie"): after every run
+`Executor.FreeUpSpace` gives back the space of files not used for a while. The rule is `Planner.ShouldFree`: data on the
+PC, in sync, no pin state of its own, and neither opened nor changed nor fetched within the chosen number of days.
+"Opened" is NTFS' last access time, "fetched" the moment CloudDrive-Sync first saw the data on the PC (`on_disk`). It
+protects a file fetched just now and stands in where Windows keeps no last access time. The same pass measures what lies
+on the PC; the card shows it ("1,2 GB von 18 GB auf diesem PC", `SpaceUse` in `state.json`).
 
 **Registration lost:** when the folder is no longer registered with Windows after the first run, Windows has removed the
 online-only placeholders from the PC. A normal run would take them as "deleted on the PC". `OnDemandPair` registers the

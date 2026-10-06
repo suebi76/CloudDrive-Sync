@@ -281,6 +281,38 @@ public class OnDemandTests
         AssertInStep(world);
     }
 
+    /// <summary>The clock of a later day.</summary>
+    private sealed class LaterTime(TimeSpan ahead) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + ahead;
+    }
+
+    [Fact]
+    public async Task Files_not_used_for_some_days_give_their_space_back_when_that_is_chosen()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("alt.txt", "lange nicht geöffnet"); w.WriteCloud("behalten.txt", "angeheftet"); w.WriteCloud("neu.txt", "gerade geholt"); });
+        Fetch(world, "alt.txt");
+        Fetch(world, "behalten.txt");
+        Placeholders.SetPinState(world.Pc("behalten.txt"), PinState.Pinned, recurse: false);
+        await RunAsync(world);
+        // 100 days later. By default nothing goes.
+        world.Host.Sync.Time = new LaterTime(TimeSpan.FromDays(100));
+        Fetch(world, "neu.txt");
+        await RunAsync(world);
+        Assert.True(Placeholders.Read(world.Pc("alt.txt"))!.IsFullyOnDisk);
+        // "Nach 7 Tagen": what was not used goes; a kept file and a file fetched just now stay.
+        world.Host.Settings.Update(s => s.Preferences.FreeUpAfterDays = 7);
+        var outcome = await RunAsync(world);
+        Assert.Equal(0, Placeholders.Read(world.Pc("alt.txt"))!.OnDiskSize);
+        Assert.True(Placeholders.Read(world.Pc("behalten.txt"))!.IsFullyOnDisk);
+        Assert.True(Placeholders.Read(world.Pc("neu.txt"))!.IsFullyOnDisk);
+        Assert.Equal("lange nicht geöffnet", world.ReadCloud("alt.txt"));
+        // The card shows what lies on the PC.
+        long Size(string file) => new FileInfo(world.Cloud(file)).Length;
+        Assert.Equal(new SpaceUse(Size("behalten.txt") + Size("neu.txt"), Size("alt.txt") + Size("behalten.txt") + Size("neu.txt")), outcome.Space);
+        AssertInStep(world);
+    }
+
     [Fact]
     public async Task Keeping_on_this_device_fetches_and_freeing_space_gives_it_back()
     {

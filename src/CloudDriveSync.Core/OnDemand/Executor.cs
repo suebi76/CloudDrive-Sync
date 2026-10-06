@@ -445,6 +445,58 @@ internal sealed partial class Executor
         }
     }
 
+    /// <summary>
+    /// "Speicherplatz automatisch freigeben": gives back the space of files not used for <paramref name="days"/> days
+    /// (0 = never, the default). Only files in sync and without a pin state of their own - "Immer auf diesem Gerät
+    /// beibehalten" keeps a file, and a change not uploaded yet is never lost. "Used" is the latest of: last opened (the
+    /// last access time NTFS keeps), last changed, and when CloudDrive-Sync first saw the data on the PC. The last one
+    /// makes a file fetched just now count as used and stands in where Windows keeps no last access time. Returns the
+    /// bytes given back.
+    /// </summary>
+    public long FreeUpSpace(IReadOnlyCollection<LocalEntry> local, int days, DateTime nowUtc)
+    {
+        var known = _store.OnDiskSince();
+        var arrived = new Dictionary<long, long>();
+        var onDisk = new HashSet<long>();
+        var freed = 0L;
+        var latest = nowUtc.AddDays(-days);
+        foreach (var entry in local)
+        {
+            if (entry.IsDirectory || entry.ItemId is not { } id || entry.Placeholder is not { OnDiskSize: > 0 }) continue;
+            if (!known.TryGetValue(id, out var since))
+            {
+                since = nowUtc.Ticks;
+                arrived[id] = since;
+            }
+            onDisk.Add(id);
+            if (days <= 0) continue;
+            _cancel.ThrowIfCancellationRequested();
+            var full = LocalFull(entry.Path);
+            try
+            {
+                if (Placeholders.Read(full) is not { } now) continue;
+                var file = new FileInfo(full);
+                if (!Planner.ShouldFree(now, file.LastAccessTimeUtc, file.LastWriteTimeUtc, since, latest)) continue;
+                Placeholders.Dehydrate(full);
+                freed += now.OnDiskSize;
+                onDisk.Remove(id);
+                Log.Info("OnDemand", $"'{_pair.Id}': space of '{entry.Path}' freed - not used for {days} days.");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Open in a program, for example: the next run tries again.
+                Log.Debug("OnDemand", $"'{_pair.Id}': space of '{entry.Path}' not freed: {e.Message}");
+            }
+        }
+        _store.UpdateOnDisk(arrived, known.Keys.Where(id => !onDisk.Contains(id)).ToList());
+        return freed;
+    }
+
+    /// <summary>What the folder takes on the PC (data of placeholders, normal files) and what the cloud folder holds.</summary>
+    public static SpaceUse Measure(IReadOnlyCollection<LocalEntry> local, IEnumerable<CloudEntry> cloud, long freed) => new(
+        Math.Max(0, local.Where(e => !e.IsDirectory).Sum(e => e.Placeholder?.OnDiskSize ?? e.Size) - freed),
+        cloud.Where(e => !e.IsDirectory).Sum(e => e.Size));
+
     private PinState? RootPinState()
     {
         try

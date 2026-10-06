@@ -36,6 +36,8 @@ public sealed partial class SyncPairViewModel : ObservableObject
     /// <summary>The cloud folder without the account ("Unterricht › Mathe"), for the account page.</summary>
     [ObservableProperty] public partial string FolderTitle { get; set; } = "";
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
+    /// <summary>Files on demand: "1,2 GB von 18 GB auf diesem PC" (empty before the first run and in classic mode).</summary>
+    [ObservableProperty] public partial string SpaceText { get; set; } = "";
     [ObservableProperty] public partial string LocalPath { get; set; } = "";
     [ObservableProperty] public partial string KindGlyph { get; set; } = Glyphs.Cloud;
     [ObservableProperty] public partial Tone Tone { get; set; }
@@ -104,7 +106,9 @@ public sealed partial class SyncPairViewModel : ObservableObject
         var selection = _pair.Selection.Mode == SelectionMode.All
             ? "alles"
             : Format.Count(_pair.Selection.Include.Count, "ausgewähltes Element", "ausgewählte Elemente");
-        Subtitle = $"{Glyphs.NameOf(_account?.Kind ?? WebDavKind.Other)} · {selection} · {SyncChoices.IntervalTitle(_pair.IntervalMinutes)}";
+        var onDemand = _pair.Mode == SyncMode.OnDemand;
+        Subtitle = $"{Glyphs.NameOf(_account?.Kind ?? WebDavKind.Other)} · {selection}{(onDemand ? " · Dateien bei Bedarf" : "")} · {SyncChoices.IntervalTitle(_pair.IntervalMinutes)}";
+        SpaceText = onDemand && _state?.Space is { } space ? $"{Format.Bytes(space.OnPcBytes)} von {Format.Bytes(space.CloudBytes)} auf diesem PC" : "";
         IsPaused = _pair.Paused;
         PauseText = _pair.Paused ? "Fortsetzen" : "Anhalten";
 

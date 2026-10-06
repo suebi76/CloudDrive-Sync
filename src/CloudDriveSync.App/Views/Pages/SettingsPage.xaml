@@ -39,6 +39,21 @@
                               SelectedValue="{Binding TrashDays}" MinWidth="140" VerticalAlignment="Center" />
                 </Grid>
             </Border>
+            <Border Style="{StaticResource Card}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,16,0">
+                        <TextBlock Text="Speicherplatz automatisch freigeben" Style="{StaticResource Strong}" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" TextWrapping="Wrap"
+                                   Text="Für Synchronisationen mit „Dateien bei Bedarf“: Dateien, die so lange nicht geöffnet wurden, geben ihren Platz auf diesem PC wieder frei und bleiben in der Cloud – öffnest du sie, kommen sie zurück. Angeheftete Dateien („Immer auf diesem Gerät beibehalten“) und Änderungen, die noch nicht hochgeladen sind, bleiben immer." />
+                    </StackPanel>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding FreeUpChoices}" DisplayMemberPath="Title" SelectedValuePath="Value"
+                              SelectedValue="{Binding FreeUpDays}" MinWidth="140" VerticalAlignment="Center" AutomationProperties.Name="Speicherplatz automatisch freigeben" />
+                </Grid>
+            </Border>
 
             <TextBlock Text="Updates" Style="{StaticResource SectionTitle}" />
             <Border Style="{StaticResource Card}" Margin="0,0,0,4">

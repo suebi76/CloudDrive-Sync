@@ -288,6 +288,7 @@ public sealed partial class SyncService
             _saved.LastRun = finished;
             if (mode == BisyncMode.Resync && _saved.FirstSyncDone) _saved.ResyncPending = !outcome.Success;
             _failures = outcome.Success ? 0 : _failures + 1;
+            if (outcome.Space is not null) _saved.Space = outcome.Space;
             if (outcome.Success)
             {
                 _saved.FirstSyncDone = true;
@@ -314,7 +315,7 @@ public sealed partial class SyncService
             var status = outcome.Success ? (pair.Paused ? SyncStatus.Paused : SyncStatus.Idle)
                 : _saved.Decision != SyncDecision.None ? SyncStatus.NeedsAttention : SyncStatus.Error;
             Publish(new SyncPairState(_id, status, "", outcome.Final, _saved.LastRun, _saved.LastSuccess, _saved.ErrorCode, _saved.ErrorDetail,
-                _saved.Decision, outcome.Conflicts, _saved.FirstSyncDone));
+                _saved.Decision, outcome.Conflicts, _saved.FirstSyncDone, _saved.Space));
 
             Announce(pair, account, outcome, previousConflicts, previousError);
             if (!outcome.Success && outcome.Retryable && _saved.Decision == SyncDecision.None) ScheduleRetry(RetryDelay(outcome, pair));

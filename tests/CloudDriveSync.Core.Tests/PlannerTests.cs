@@ -244,4 +244,37 @@ public class PlannerTests
         Assert.Empty(plan.Actions);
         Assert.Equal(0, plan.CloudDeletions);
     }
+
+    // --- Freeing space after some days (Planner.ShouldFree).
+    private static readonly DateTime Now = new(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime Limit = Now.AddDays(-7);
+    private static readonly DateTime Old = Now.AddDays(-30);
+
+    private static PlaceholderInfo OnDisk(PinState pin = PinState.Unspecified, bool inSync = true, long onDisk = 10) => new(10, onDisk, pin, inSync, []);
+
+    [Fact]
+    public void A_file_not_used_for_longer_gives_its_space_back() =>
+        Assert.True(Planner.ShouldFree(OnDisk(), Old, Old, Old.Ticks, Limit));
+
+    [Theory]
+    [InlineData(PinState.Pinned)]
+    [InlineData(PinState.Unpinned)]
+    [InlineData(PinState.Excluded)]
+    public void A_file_with_a_pin_state_of_its_own_is_left_to_it(PinState pin) =>
+        Assert.False(Planner.ShouldFree(OnDisk(pin), Old, Old, Old.Ticks, Limit));
+
+    [Fact]
+    public void A_change_not_uploaded_yet_is_never_freed() =>
+        Assert.False(Planner.ShouldFree(OnDisk(inSync: false), Old, Old, Old.Ticks, Limit));
+
+    [Fact]
+    public void A_file_without_data_on_the_PC_has_nothing_to_give_back() =>
+        Assert.False(Planner.ShouldFree(OnDisk(onDisk: 0), Old, Old, Old.Ticks, Limit));
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public void Opened_changed_or_fetched_lately_counts_as_used(bool opened, bool changed, bool fetched) =>
+        Assert.False(Planner.ShouldFree(OnDisk(), opened ? Now : Old, changed ? Now : Old, fetched ? Now.Ticks : Old.Ticks, Limit));
 }

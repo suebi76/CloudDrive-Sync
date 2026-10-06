@@ -15,6 +15,9 @@ public sealed partial class SyncService
     private Dictionary<string, OnDemandPair>? _live;
     private OnDemandRunner? _onDemandRunner;
 
+    /// <summary>The clock for freeing space after some days; tests move it forward.</summary>
+    internal TimeProvider Time { get; set; } = TimeProvider.System;
+
     /// <summary>Files on demand need the Cloud Files API of Windows 10 1809 or later.</summary>
     [SupportedOSPlatformGuard("windows10.0.17763")]
     public static bool OnDemandSupported => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763);
@@ -59,7 +62,8 @@ public sealed partial class SyncService
         if (!OnDemandSupported)
             return Task.FromResult(new SyncRunOutcome(false, "CD-4601", "Windows 10 1809 or later is needed", SyncDecision.None, JobProgress.None, 0, [], false));
         var runner = _onDemandRunner ??= new OnDemandRunner(_paths, _engine, _files);
-        return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, cancellationToken);
+        var freeUpDays = _settings.Current.Preferences.FreeUpAfterDays;
+        return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, freeUpDays, Time.GetUtcNow().UtcDateTime, cancellationToken);
     }
 
     [SupportedOSPlatform("windows10.0.17763")]

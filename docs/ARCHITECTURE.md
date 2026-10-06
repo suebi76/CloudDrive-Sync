@@ -153,7 +153,7 @@ Ihr Zustand liegt in `sync\<id>\`:
 | `state.json` | Was einen Neustart überdauert: erster Abgleich erledigt, letzter Lauf, offener Fehler, offene Entscheidung. |
 | `runs.jsonl` | Die letzten Läufe mit den Dateien, die sie geändert haben (`RunHistory`, für „Aktivität“). |
 | `last-run.txt` | Der geschwärzte Bericht von bisync zum letzten Lauf, zur Fehlersuche. |
-| `items.db` | Nur bei „Dateien bei Bedarf“: jede Datei und jeder Ordner mit der Fassung beider Seiten nach dem letzten Lauf (`ItemStore`, SQLite). Statt `bisync\`, `last-good\`, `local-files.txt` und `server-times.json`. |
+| `items.db` | Nur bei „Dateien bei Bedarf“: jede Datei und jeder Ordner mit der Fassung beider Seiten nach dem letzten Lauf (`ItemStore`, SQLite), dazu seit wann die Daten einer Datei auf dem PC liegen (`on_disk`, fürs automatische Freigeben). Statt `bisync\`, `last-good\`, `local-files.txt` und `server-times.json`. |
 
 ### Wer wann einen Lauf auslöst
 
@@ -409,6 +409,14 @@ hochgeladen ist, geht so nie verloren; der Lauf nach dem Hochladen gibt den Plat
 angehefteten Ordner werden selbst angeheftet und gleich geladen, auch in neuen Unterordnern. Was der Wächter verpasst
 (etwa weil CloudDrive-Sync nicht lief), holt jeder Lauf nach (`Executor.ApplyPinStates`): Eine Datei ohne eigenen Status
 übernimmt den des nächsten Ordners darüber, der einen hat.
+
+**Automatisch freigeben** (Einstellungen › „Speicherplatz automatisch freigeben“, Standard „Nie“): Nach jedem Lauf gibt
+`Executor.FreeUpSpace` den Platz von Dateien frei, die länger nicht benutzt wurden. Die Regel steht in
+`Planner.ShouldFree`: Daten auf dem PC, abgeglichen, kein eigener Anheftstatus, und weder geöffnet noch geändert noch
+geholt seit der eingestellten Zahl Tage. „Geöffnet“ ist NTFS' letzter Zugriff, „geholt“ der Zeitpunkt, zu dem
+CloudDrive-Sync die Daten zuerst auf dem PC sah (`on_disk`). Er schützt eine gerade geholte Datei und springt ein, wo
+Windows keinen letzten Zugriff führt. Derselbe Durchgang misst, was auf dem PC liegt; die Karte zeigt es („1,2 GB von
+18 GB auf diesem PC“, `SpaceUse` in `state.json`).
 
 **Anmeldung verloren:** Ist der Ordner nach dem ersten Lauf nicht mehr bei Windows angemeldet, hat Windows die reinen
 Online-Platzhalter vom PC entfernt. Ein normaler Lauf hielte sie für „am PC gelöscht“. `OnDemandPair` meldet den Ordner

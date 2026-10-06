@@ -51,6 +51,7 @@ public sealed class ItemStore : IDisposable
                     cloud_hash TEXT,
                     local_size INTEGER,
                     local_ticks INTEGER);
+                CREATE TABLE IF NOT EXISTS on_disk (id INTEGER PRIMARY KEY, since INTEGER NOT NULL);
                 """);
             var schema = store.GetMeta("schema");
             if (schema is null) store.SetMeta("schema", Schema.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -159,10 +160,51 @@ public sealed class ItemStore : IDisposable
         lock (_lock)
         {
             using var command = NewCommand();
-            command.CommandText = "DELETE FROM items WHERE id = $id";
+            command.CommandText = "DELETE FROM items WHERE id = $id; DELETE FROM on_disk WHERE id = $id";
             command.Parameters.AddWithValue("$id", id);
             command.ExecuteNonQuery();
         }
+    }
+
+    /// <summary>
+    /// Since when the data of each file has been on the PC, as far as CloudDrive-Sync saw it (UTC ticks by item ID) - for
+    /// freeing space automatically (<see cref="Executor.FreeUpSpace"/>).
+    /// </summary>
+    public Dictionary<long, long> OnDiskSince()
+    {
+        lock (_lock)
+        {
+            using var command = NewCommand();
+            command.CommandText = "SELECT id, since FROM on_disk";
+            using var reader = command.ExecuteReader();
+            var result = new Dictionary<long, long>();
+            while (reader.Read()) result[reader.GetInt64(0)] = reader.GetInt64(1);
+            return result;
+        }
+    }
+
+    /// <summary>Notes files whose data arrived on the PC and forgets those whose data left it, in one transaction.</summary>
+    public void UpdateOnDisk(IReadOnlyDictionary<long, long> arrived, IReadOnlyCollection<long> left)
+    {
+        if (arrived.Count == 0 && left.Count == 0) return;
+        Batch(() =>
+        {
+            foreach (var (id, since) in arrived)
+            {
+                using var command = NewCommand();
+                command.CommandText = "INSERT INTO on_disk (id, since) VALUES ($id, $since) ON CONFLICT(id) DO UPDATE SET since = excluded.since";
+                command.Parameters.AddWithValue("$id", id);
+                command.Parameters.AddWithValue("$since", since);
+                command.ExecuteNonQuery();
+            }
+            foreach (var id in left)
+            {
+                using var command = NewCommand();
+                command.CommandText = "DELETE FROM on_disk WHERE id = $id";
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
     }
 
     /// <summary>
