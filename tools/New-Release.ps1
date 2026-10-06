@@ -51,7 +51,7 @@ function Get-Version {
 # The section of this version in CHANGELOG.md, without its heading.
 function Get-ReleaseNotes([string]$Version) {
     $lines = Get-Content (Join-Path $root 'CHANGELOG.md') -Encoding utf8
-    $start = [Array]::FindIndex([string[]]$lines, [Predicate[string]] { param($l) $l -like "## `[$Version`]*" })
+    $start = [Array]::FindIndex([string[]]$lines, [Predicate[string]] { param($l) $l.StartsWith("## [$Version]", [StringComparison]::Ordinal) })
     if ($start -lt 0) { throw "CHANGELOG.md has no section for $Version." }
     $end = [Array]::FindIndex([string[]]$lines, $start + 1, [Predicate[string]] { param($l) $l -like '## `[*' })
     if ($end -lt 0) { $end = $lines.Count }
