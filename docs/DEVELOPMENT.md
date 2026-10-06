@@ -92,18 +92,22 @@ pwsh tools/Format-SourceFiles.ps1
 
 1. Version in `Directory.Build.props` setzen (`<Version>`), z. B. `0.2.1` oder für eine Testversion `0.3.0-preview.1`.
 2. Abschnitt `## [<Version>] – <Datum>` in `CHANGELOG.md` anlegen. Er wird zu den Release-Notizen.
-3. Committen und pushen.
-4. `pwsh tools/New-Release.ps1` baut zur Probe nach `%USERPROFILE%\.clouddrive-sync-build\releases`;
-   `pwsh tools/New-Release.ps1 -Publish` baut und veröffentlicht:
-   - Das Programm wird für 64-Bit-Windows eigenständig veröffentlicht (.NET ist enthalten).
+3. Committen und nach `main` pushen.
+4. `pwsh tools/New-Release.ps1 -Publish` setzt den Tag `v<Version>` auf den Commit und pusht ihn. Den Rest erledigt
+   **GitHub** im Release-Workflow (`.github/workflows/release.yml`) – Releases entstehen nie auf einem privaten PC:
+   - Unit-Tests, dann wird das Programm für 64-Bit-Windows eigenständig veröffentlicht (.NET ist enthalten).
    - [Velopack](https://velopack.io) (`vpk`, als lokales .NET-Werkzeug in `dotnet-tools.json`) packt
      `CloudDrive-Sync-Setup.exe`, die Update-Pakete (mit einem kleinen Delta zur vorigen Version) und `releases.win.json`.
-   - Der Commit bekommt den Tag `v<Version>`; das GitHub-Release enthält diese Dateien.
+   - Das GitHub-Release zum Tag enthält diese Dateien.
    - **Versionen mit Zusatz** wie `-preview.1` werden Pre-Releases: Testversionen, die nur bekommt, wer
      „Testversionen erhalten“ eingeschaltet hat.
 
+**Probe:** `pwsh tools/New-Release.ps1` baut lokal nach `%USERPROFILE%\.clouddrive-sync-build\releases`, ohne etwas zu
+veröffentlichen. Auf GitHub tut „Run workflow“ beim Release-Workflow dasselbe und legt die Dateien als Artefakt ab.
+
 Installierte Programme finden das Update selbst (Einstellungen › Updates). Das Installationsprogramm ist noch nicht
-signiert; SmartScreen fragt deshalb beim ersten Start nach.
+signiert; SmartScreen fragt deshalb beim ersten Start nach. Die Codesignatur über die SignPath Foundation ist beantragt;
+sie wird im Release-Workflow zwischen Bauen und Veröffentlichen eingefügt (siehe „Code signing policy“ in der README).
 
 ## Fehlersuche
 

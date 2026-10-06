@@ -38,6 +38,8 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
   kannst. Dein eigentliches Passwort sieht CloudDrive-Sync dabei nicht.
 - Unverschlüsselte Verbindungen (`http://`) werden nur nach ausdrücklicher Bestätigung genutzt.
 - Laufzeitdaten liegen nie in diesem Repository (`.gitignore` arbeitet mit einer Positivliste).
+- Was CloudDrive-Sync mit wem austauscht, steht in der [Datenschutzerklärung](PRIVACY.md): keine Telemetrie, nur deine
+  Server, GitHub für Updates und einmal rclone.org für rclone.
 
 ## Zusammenspiel mit CloudDrives
 
@@ -63,6 +65,22 @@ Installation anhand seiner Prüfsumme kontrolliert. Installation und Updates erl
 
 **Deinstallieren:** *Windows-Einstellungen › Apps › Installierte Apps › CloudDrive-Sync*. Einstellungen und Anmeldungen
 (`%LOCALAPPDATA%\CloudDrive-Sync`) sowie deine synchronisierten Ordner bleiben erhalten.
+
+## Code signing policy
+
+Das Installationsprogramm ist noch nicht digital signiert. CloudDrive-Sync bewirbt sich um die kostenlose Codesignatur
+der [SignPath Foundation](https://signpath.org). Für signierte Versionen gilt:
+
+- Jede Version wird auf GitHub aus dem Quellcode dieses Repositorys gebaut
+  ([Release-Workflow](.github/workflows/release.yml)), nicht auf einem privaten PC.
+- Jede Signatur wird einzeln freigegeben.
+- Rollen / roles:
+  - Committer und Prüfer / committers and reviewers: [Steffen Schwabe](https://github.com/suebi76)
+  - Freigabe / approvers: [Steffen Schwabe](https://github.com/suebi76)
+- Datenschutz / privacy policy: [PRIVACY.md](PRIVACY.md)
+
+*The setup program is not signed yet; CloudDrive-Sync is applying for free code signing by the SignPath Foundation.
+Every release is built on GitHub from the source code in this repository, and every signature is approved one by one.*
 
 ## Voraussetzungen
 

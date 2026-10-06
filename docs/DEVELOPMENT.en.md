@@ -90,18 +90,22 @@ pwsh tools/Format-SourceFiles.ps1
 
 1. Set the version in `Directory.Build.props` (`<Version>`), e.g. `0.2.1`, or for a test version `0.3.0-preview.1`.
 2. Add a section `## [<version>] – <date>` to `CHANGELOG.md`. It becomes the release notes.
-3. Commit and push.
-4. `pwsh tools/New-Release.ps1` builds a trial into `%USERPROFILE%\.clouddrive-sync-build\releases`;
-   `pwsh tools/New-Release.ps1 -Publish` builds and publishes:
-   - The program is published self-contained for 64-bit Windows (.NET included).
+3. Commit and push to `main`.
+4. `pwsh tools/New-Release.ps1 -Publish` puts the tag `v<version>` on the commit and pushes it. **GitHub** does the rest
+   in the release workflow (`.github/workflows/release.yml`) - releases never come about on a private PC:
+   - Unit tests, then the program is published self-contained for 64-bit Windows (.NET included).
    - [Velopack](https://velopack.io) (`vpk`, a local .NET tool in `dotnet-tools.json`) packs `CloudDrive-Sync-Setup.exe`,
      the update packages (with a small delta to the previous version) and `releases.win.json`.
-   - The commit gets the tag `v<version>`; the GitHub release holds these files.
+   - The GitHub release of the tag holds these files.
    - **Versions with a suffix** such as `-preview.1` become pre-releases: test versions that only reach those who
      switched on "Testversionen erhalten" (receive test versions).
 
+**Trial:** `pwsh tools/New-Release.ps1` builds locally into `%USERPROFILE%\.clouddrive-sync-build\releases` without
+publishing anything. On GitHub, "Run workflow" on the release workflow does the same and keeps the files as an artifact.
+
 Installed programs find the update themselves (Einstellungen › Updates). The setup program is not signed yet, so
-SmartScreen asks on its first start.
+SmartScreen asks on its first start. Code signing through the SignPath Foundation is being applied for; it will be added
+to the release workflow between building and publishing (see "Code signing policy" in the README).
 
 ## Troubleshooting
 

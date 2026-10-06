@@ -1,0 +1,43 @@
+# Publishes a release when a version tag is pushed (v0.2.0 - or v0.3.0-preview.1 for a test version, which becomes a
+# pre-release). The setup program, the update packages and the feed are built here, on a GitHub-hosted runner, from the
+# source code of the tag: anyone can trace every release back to its source, which code signing through SignPath also
+# requires. On a PC, tools/New-Release.ps1 -Publish only creates and pushes the tag.
+# "Run workflow" builds everything without publishing and keeps the files as a workflow artifact (a trial run).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Unit tests
+        run: dotnet test tests/CloudDriveSync.Core.Tests -c Release
+
+      - name: Build, and publish for a version tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ('${{ github.ref_type }}' -eq 'tag') { ./tools/New-Release.ps1 -Publish -OutputDir release-files }
+          else { ./tools/New-Release.ps1 -OutputDir release-files }
+
+      - name: Keep the files
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-files
+          path: release-files/
