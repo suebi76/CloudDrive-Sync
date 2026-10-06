@@ -70,7 +70,12 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # Integrationstests
   Anmeldungen aus der Registry. `OnDemandTests` prüfen ganze Läufe in einer `SyncWorld` mit `Mode = OnDemand`.
   CloudDrive-Sync lädt nie eine Datei, indem es sie selbst liest; die Tests laden deshalb mit `Placeholders.Hydrate`, wo
   ein Mensch die Datei öffnen würde, und setzen den Anheftstatus mit `Placeholders.SetPinState` wie Explorer. Was jemand
-  tut, während das Programm nicht läuft, gehört in `SyncWorld.RestartAsync(whileStopped: …)`.
+  tut, während das Programm nicht läuft, gehört in `SyncWorld.RestartAsync(whileStopped: …)`. `ConversionTests` stellen
+  Synchronisationen in beide Richtungen um. Einen Ordner, den der Server mit „403 Forbidden“ verweigert (wie Nextcloud
+  bei einer Freigabe nur zum Hochladen), bildet `RefusingProxy` nach: `SyncWorld.CreateAsync(refusingProxy: true)`, dann
+  `world.Proxy.RefuseListing(…)`. rclones eigener WebDAV-Server kann das nicht – einen Ordner, den er nicht lesen darf,
+  zeigt er leer. Explorers Spalten und Befehle (Status, „Speicherplatz freigeben“) lassen sich ohne Bildschirm über
+  `Shell.Application` prüfen und auslösen.
 - **Nextcloud** lässt sich lokal nicht nachbilden. Änderungen an der Nextcloud-Anmeldung oder an Nextcloud-Besonderheiten
   brauchen einen Test mit einem echten Zugang.
 - **Auf GitHub** laufen bei jedem Push und Pull Request der Build, die Unit-Tests und ein Geheimnis-Scan (gitleaks,

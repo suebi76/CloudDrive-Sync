@@ -68,7 +68,11 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # integration tests
   registry. `OnDemandTests` check whole runs in a `SyncWorld` with `Mode = OnDemand`. CloudDrive-Sync never fetches a
   file by reading it itself, so the tests fetch with `Placeholders.Hydrate` where a person would open the file, and set
   pin states with `Placeholders.SetPinState` as Explorer does. What someone does while the program is not running goes
-  into `SyncWorld.RestartAsync(whileStopped: …)`.
+  into `SyncWorld.RestartAsync(whileStopped: …)`. `ConversionTests` switch synchronisations both ways. A folder the
+  server refuses with "403 Forbidden" (as Nextcloud does with a share to upload only) is played by `RefusingProxy`:
+  `SyncWorld.CreateAsync(refusingProxy: true)`, then `world.Proxy.RefuseListing(…)`. rclone's own WebDAV server cannot
+  do that - a folder it may not read, it shows as empty. Explorer's columns and commands (status, "Free up space") can
+  be checked and carried out without a screen through `Shell.Application`.
 - **Nextcloud** cannot be emulated locally. Changes to the Nextcloud sign-in or to Nextcloud specifics need a test with a
   real account.
 - **On GitHub** every push and pull request runs the build, the unit tests and a secret scan (gitleaks,
