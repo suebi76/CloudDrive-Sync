@@ -3,33 +3,60 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.2.0] – 2026-10-06
+
+The first regular version after 0.1.2. It brings together the test versions 0.2.0-preview.1 to preview.7 and what
+followed them.
 
 ### Added
 
-- Developer documentation in German and English: architecture (`docs/ARCHITECTURE.md`), developer handbook
-  (`docs/DEVELOPMENT.md`) and the rules for contributions and code (`CONTRIBUTING.md`)
-- `tools/Format-SourceFiles.ps1` and the unit test `SourceFileTests` keep every source file UTF-8 without BOM
-  (PowerShell scripts with BOM) with Windows line ends
-- `PRIVACY.md` (German and English): no telemetry; CloudDrive-Sync talks only to the servers you enter, to GitHub
-  for updates (as set) and once to rclone.org for rclone
-- A "Code signing policy" in the README, linked from every release page: CloudDrive-Sync applies for free code
-  signing by the SignPath Foundation
-- Releases are built on GitHub from the tagged source (release workflow) instead of on a PC; every push and pull
-  request is checked there (build, unit tests, secret scan)
+- Setup program "CloudDrive-Sync-Setup.exe": installs for the signed-in user without administrator rights, with .NET
+  included, and adds entries to the start menu and the desktop. It is uninstalled in the Windows settings ("Apps");
+  settings, sign-ins and synchronised files stay.
+- Updates from the GitHub project (Einstellungen › Updates): a notice and installation with one click (default),
+  automatic installation at a quiet moment, or only when you look. "Testversionen erhalten" brings test versions.
+- The settings of a synchronisation on one page - from the gear symbol on its card or "Einstellungen …" on the account
+  page: what is synchronised, how often, conflicts, deletion guard. The step-by-step assistant stays for new ones.
+- Account page: the synchronised folders of each account with their interval, changeable right there, and
+  "Weiteren Ordner synchronisieren …". Short explanations say what each interval means.
+- IServ: all groups at once ("Gruppen") or the whole account - everything, or ticked groups and folders. The top
+  folders carry the names of IServ's web pages: "Eigene Dateien" and "Gruppen".
+- Folders that take no files of their own get no protection file in the cloud; instead CloudDrive-Sync checks before
+  each run that the cloud folder is there and does not suddenly look empty, and stops before anything is deleted
+  (CD-4512).
+- Files the server does not take (e.g. in a group to read only) stay on the PC: the rest of the run goes on without a
+  rebuild, and the card names the files with "Im Ordner zeigen" and "Erneut versuchen".
+- "Aktivität" names the files of every run: uploaded, fetched to the PC, deleted in the cloud, deleted on the PC (in the
+  recycle bin) or kept on the PC only - each with a button that shows it in its folder.
+- "Abgleich überprüfen" in the menu of each synchronisation compares every file on the PC with the one in the cloud
+  (names and sizes, checksums where the server has them, on request the content). It changes nothing.
+- Page "Über", also from the menu of the notification-area symbol: version, © 2026 Steffen Schwabe, licence, project on
+  GitHub and the components used. The licence texts come with the program.
+- Privacy policy (`PRIVACY.md`): no telemetry; CloudDrive-Sync talks only to the servers you enter, to GitHub for
+  updates (as set) and once to rclone.org for rclone. The README has a code signing policy: CloudDrive-Sync applies for
+  free code signing by the SignPath Foundation.
 
 ### Changed
 
-- The program icon is under the MIT License like the source code; only the documentation stays CC BY 4.0
-- Code reorganised for readers, without a change in behaviour: the worker that keeps one synchronisation in step has
-  a file of its own (`SyncService.PairWorker.cs`), the run history is a class of its own (`RunHistory`), every page of
-  the main window has a file of its own (`Views/Pages`), the unit tests have one file per topic, and every public type
-  has a documentation comment
+- Licences: the program (source code and icon) is under the MIT License, the documentation under CC BY 4.0;
+  THIRD-PARTY-NOTICES.md lists the components used.
+- Screen readers reach the texts and buttons of all cards.
+- "Änderungen am PC sofort hochladen" says "wenige Sekunden" - changes go up about 5 seconds after the last change.
+- The log files are called "clouddrive-sync-<date>.log" (before: "clouddrives-…", the name of CloudDrives).
+- For developers: documentation of the architecture, a developer handbook and code rules in German and English; the
+  code is split into smaller files; releases are built on GitHub from the tagged source code, and every push is checked
+  there (build, unit tests, secret scan).
 
 ### Fixed
 
-- "CloudDrives öffnen" opens CloudDrives in its own console window with the CloudDrives symbol in the taskbar, as
-  CloudDrives does itself - before, Windows 11 opened it in Windows Terminal first
+- After the first synchronisation of a folder whose files were on both sides already, the next run took the files on
+  the PC for changed: it uploaded them all again - possibly over a newer version on the server - or stopped with
+  "Ungewöhnlich viele Änderungen". Now and then the same happened to the protection file alone, which the server
+  receives a moment after the PC wrote it. CloudDrive-Sync now keeps bisync's record of the PC side true to the files.
+- Setting up a synchronisation of a cloud folder the server takes no files in (on IServ "Groups" itself, or a folder
+  with the right to read only) ended in "Unerwarteter Fehler". Now it works as described above.
+- "CloudDrives öffnen" opens CloudDrives in its own console window with the CloudDrives symbol in the taskbar - before,
+  Windows 11 opened it in Windows Terminal first.
 
 ## [0.2.0-preview.7] – 2026-10-05
 

@@ -3,7 +3,7 @@
 Hält Ordner auf deinem Windows-PC mit **Nextcloud**, **IServ** und anderen **WebDAV**-Speichern aktuell – in beide
 Richtungen, mit einer Oberfläche im Stil von Windows 11.
 
-> **Status:** Vorabversion. Der Kern ist mit Unit- und Integrationstests abgesichert, darunter alle üblichen
+> **Status:** Version 0.2. Der Kern ist mit Unit- und Integrationstests abgesichert, darunter alle üblichen
 > Dateivorgänge gegen einen IServ-ähnlichen Testserver. Probiere es zuerst mit einem kleinen Ordner aus.
 
 ## Was es kann
