@@ -11,6 +11,8 @@ public partial class SyncSettingsWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         viewModel.CloseRequested += (_, _) => Close();
+        // Questions appear over this window.
+        viewModel.Confirm = (title, text, primary) => MessageDialog.Show(this, title, text, primary, null, "Abbrechen", false) == DialogChoice.Primary;
         Loaded += async (_, _) => await viewModel.InitializeAsync();
     }
 }

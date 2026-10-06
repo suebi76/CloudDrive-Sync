@@ -32,12 +32,13 @@ internal sealed class OnDemandRunner
 
     /// <param name="mode">Resync: first run or rebuild - both sides are merged, nothing is deleted.</param>
     /// <param name="freeUpDays">Files not used for so many days give their space back; 0 = never.</param>
+    /// <param name="converting">Switching a classic synchronisation: what its last run left in step (see <see cref="InStep"/>).</param>
     public async Task<SyncRunOutcome> RunAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken)
+        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null)
     {
         try
         {
-            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, cancellationToken);
+            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, cancellationToken);
             // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
             live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4605" ? ProviderStatus.Idle
                 : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
@@ -51,7 +52,7 @@ internal sealed class OnDemandRunner
     }
 
     private async Task<SyncRunOutcome> RunCoreAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken)
+        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, CancellationToken cancellationToken)
     {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath)) return Failed("CD-4501", pair.LocalPath, SyncDecision.Folder, retryable: true);
@@ -83,7 +84,8 @@ internal sealed class OnDemandRunner
             var local = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
             var localTime = clock.Elapsed;
 
-            var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync, cloud.Unreadable));
+            var inStep = converting is null ? null : InStep(converting, cloud.Entries, local);
+            var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync, cloud.Unreadable, inStep));
             foreach (var skipped in plan.Skipped) Log.Info("OnDemand", $"'{pair.Id}': {skipped}");
             if (mode == BisyncMode.Normal && plan.TooManyDeletions(pair.MaxDeletePercent, DeleteGuard.MinimumDeletions))
             {
@@ -119,6 +121,25 @@ internal sealed class OnDemandRunner
             var decision = e.Code == "CD-3012" ? SyncDecision.SignIn : SyncDecision.None;
             return Failed(e.Code, e.Detail ?? e.Message, decision, retryable: decision == SyncDecision.None);
         }
+    }
+
+    /// <summary>
+    /// Switching a classic synchronisation: the files neither side changed since bisync's last run - on the PC and in the
+    /// cloud they still have the size and time bisync noted (to the second). Only these count as the same without a
+    /// checksum; a file of the same size that changed on one side meanwhile is kept in both versions.
+    /// </summary>
+    internal static HashSet<string> InStep(BisyncRecord before, IReadOnlyDictionary<string, CloudEntry> cloud, IReadOnlyList<LocalEntry> local)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in local)
+        {
+            if (entry.IsDirectory || !before.Pc.TryGetValue(entry.Path, out var pc) || !Unchanged(pc, entry.Size, entry.Ticks)) continue;
+            if (!cloud.TryGetValue(entry.Path, out var now) || !before.Cloud.TryGetValue(entry.Path, out var noted) || !Unchanged(noted, now.Size, now.Ticks)) continue;
+            result.Add(entry.Path);
+        }
+        return result;
+
+        static bool Unchanged(NotedFile noted, long size, long ticks) => noted.Size == size && Math.Abs(noted.Time.Ticks - ticks) <= TimeSpan.TicksPerSecond;
     }
 
     private static SyncRunOutcome Failed(string code, string detail, SyncDecision decision, bool retryable) =>

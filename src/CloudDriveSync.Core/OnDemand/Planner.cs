@@ -24,8 +24,12 @@ public static class Planner
 {
     /// <param name="Rebuild">First run or rebuild: the past only helps to recognise files, nothing is deleted.</param>
     /// <param name="Unreadable">Cloud folders the server did not let be read in this run (see <see cref="Listings.CloudSide"/>).</param>
+    /// <param name="InStep">
+    /// Converting a classic synchronisation: the files its last run left in step that did not change since. Only these
+    /// count as the same file on both sides without a checksum; any other file on both sides is kept twice.
+    /// </param>
     public sealed record Input(IReadOnlyList<SyncItem> Known, IReadOnlyDictionary<string, CloudEntry> Cloud, IReadOnlyList<LocalEntry> Local, bool Rebuild,
-        IReadOnlyCollection<string>? Unreadable = null);
+        IReadOnlyCollection<string>? Unreadable = null, IReadOnlySet<string>? InStep = null);
 
     public static SyncPlan Plan(Input input)
     {
@@ -90,7 +94,8 @@ public static class Planner
             if (known is null)
             {
                 if (inCloud is not null && onPc is not null)
-                    actions.Add(isDirectory || Same(onPc, inCloud) ? new Adopt(onPc, inCloud) : new Conflict(onPc, inCloud, null));
+                    actions.Add(isDirectory || (Same(onPc, inCloud) && (input.InStep is null || input.InStep.Contains(place)))
+                        ? new Adopt(onPc, inCloud) : new Conflict(onPc, inCloud, null));
                 else if (inCloud is not null)
                     actions.Add(new CreatePlaceholder(inCloud));
                 else if (onPc!.IsDirectory)

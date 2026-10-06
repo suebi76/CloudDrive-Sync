@@ -277,4 +277,22 @@ public class PlannerTests
     [InlineData(false, false, true)]
     public void Opened_changed_or_fetched_lately_counts_as_used(bool opened, bool changed, bool fetched) =>
         Assert.False(Planner.ShouldFree(OnDisk(), opened ? Now : Old, changed ? Now : Old, fetched ? Now.Ticks : Old.Ticks, Limit));
+
+    // --- Converting a classic synchronisation (Input.InStep).
+    [Fact]
+    public void Converting_takes_files_its_last_run_left_in_step_as_they_are()
+    {
+        var plan = Planner.Plan(new Planner.Input([], new Dictionary<string, CloudEntry> { ["a.txt"] = Cloud("a.txt") }, [Normal("a.txt")], Rebuild: true,
+            InStep: new HashSet<string>(["a.txt"], StringComparer.OrdinalIgnoreCase)));
+        Single<Adopt>(plan);
+    }
+
+    [Fact]
+    public void Converting_keeps_both_versions_of_a_file_that_changed_since_the_last_run()
+    {
+        // Same size, but not in step any more: without a checksum, the same size proves nothing.
+        var plan = Planner.Plan(new Planner.Input([], new Dictionary<string, CloudEntry> { ["a.txt"] = Cloud("a.txt") }, [Normal("a.txt")], Rebuild: true,
+            InStep: new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
+        Single<Conflict>(plan);
+    }
 }

@@ -33,8 +33,26 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="28,12,28,16">
 
-                <!-- What is synchronised -->
+                <!-- How the files come onto this PC -->
                 <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="So kommen die Dateien auf diesen PC" Style="{StaticResource Strong}" Margin="0,0,0,10" />
+                        <TextBlock Text="{Binding ModeTitle}" />
+                        <TextBlock Text="{Binding ModeText}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,2,0,10" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="{Binding SwitchText}" Command="{Binding SwitchModeCommand}" />
+                            <ProgressBar IsIndeterminate="True" Width="120" Margin="12,0,0,0" VerticalAlignment="Center"
+                                         Visibility="{Binding IsSwitching, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding SwitchProgress}" Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                   Visibility="{Binding IsSwitching, Converter={StaticResource Visible}}" />
+                        <TextBlock Text="{Binding SwitchProblem, StringFormat='„Dateien bei Bedarf“ geht in diesem Ordner nicht: {0}'}" Style="{StaticResource Caption}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" Visibility="{Binding HasSwitchProblem, Converter={StaticResource Visible}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- What is synchronised -->
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                     <StackPanel>
                         <TextBlock Text="Was wird synchronisiert?" Style="{StaticResource Strong}" Margin="0,0,0,10" />
                         <StackPanel IsEnabled="{Binding CanChangeSelection}">

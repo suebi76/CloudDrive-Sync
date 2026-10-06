@@ -359,6 +359,14 @@ public sealed partial class SyncService
             _service.StateChanged?.Invoke(_service, state);
         }
 
+        /// <summary>The next run merges both sides - also after a restart (the state remembers it).</summary>
+        public void RebuildNext()
+        {
+            _saved.ResyncPending = true;
+            SaveState();
+            Request(BisyncMode.Resync, answersDecision: true);
+        }
+
         private void SaveState()
         {
             try

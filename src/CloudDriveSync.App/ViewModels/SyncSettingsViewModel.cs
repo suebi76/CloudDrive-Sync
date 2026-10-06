@@ -3,6 +3,7 @@ using CloudDriveSync.Core;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
+using CloudDriveSync.Core.Sync;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -15,7 +16,7 @@ namespace CloudDriveSync.App.ViewModels;
 public sealed partial class SyncSettingsViewModel : ObservableObject
 {
     private readonly CloudDriveSyncHost _host;
-    private readonly SyncPairSettings _pair;
+    private SyncPairSettings _pair;
 
     public SyncSettingsViewModel(CloudDriveSyncHost host, SyncPairSettings pair)
     {
@@ -30,6 +31,71 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         OnLocalChange = pair.OnLocalChange;
         ConflictPolicy = pair.Conflicts;
         MaxDeletePercent = pair.MaxDeletePercent;
+        SwitchProblem = pair.Mode == SyncMode.Classic && SyncService.OnDemandSupported ? SyncService.OnDemandProblem(pair.LocalPath) ?? "" : "";
+    }
+
+    /// <summary>Asks before switching (title, text, button); the window shows the question over itself.</summary>
+    public Func<string, string, string, bool>? Confirm { get; set; }
+
+    public bool IsOnDemand => _pair.Mode == SyncMode.OnDemand;
+
+    public string ModeTitle => IsOnDemand ? "Dateien bei Bedarf" : "Alle Dateien auf diesem PC";
+
+    public string ModeText => IsOnDemand
+        ? "Alle Dateien sind im Explorer zu sehen, belegen aber erst Platz, wenn du sie öffnest oder „Immer auf diesem Gerät beibehalten“ wählst."
+        : "Jede Datei liegt vollständig auf diesem PC.";
+
+    public string SwitchText => IsOnDemand ? "Auf „Alle Dateien auf diesem PC“ umstellen …" : "Auf „Dateien bei Bedarf“ umstellen …";
+
+    /// <summary>Why this folder cannot hold files on demand ("" when it can).</summary>
+    public string SwitchProblem { get; }
+
+    public bool HasSwitchProblem => SwitchProblem.Length > 0;
+
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(SwitchModeCommand))]
+    public partial bool IsSwitching { get; set; }
+
+    [ObservableProperty] public partial string SwitchProgress { get; set; } = "";
+
+    private bool CanSwitchMode => !IsSwitching && SyncService.OnDemandSupported && (IsOnDemand || !HasSwitchProblem);
+
+    /// <summary>Switches between "all files on this PC" and files on demand, after a question that says what happens.</summary>
+    [RelayCommand(CanExecute = nameof(CanSwitchMode))]
+    private async Task SwitchModeAsync()
+    {
+        Error = "";
+        var toOnDemand = !IsOnDemand;
+        var missing = _host.Sync.GetState(_pair.Id)?.Space is { } space && space.CloudBytes > space.OnPcBytes ? $" (etwa {Format.Bytes(space.CloudBytes - space.OnPcBytes)})" : "";
+        var asked = toOnDemand
+            ? Confirm?.Invoke("Auf „Dateien bei Bedarf“ umstellen?",
+                "CloudDrive-Sync gleicht beide Seiten noch einmal ab und macht dann aus den Dateien in diesem Ordner Dateien bei Bedarf – ohne etwas neu zu übertragen. Sie bleiben vorerst auf diesem PC; Platz schaffst du im Explorer mit „Speicherplatz freigeben“ oder automatisch (Einstellungen). Zurückstellen geht jederzeit.",
+                "Umstellen")
+            : Confirm?.Invoke("Auf „Alle Dateien auf diesem PC“ umstellen?",
+                $"Dafür lädt CloudDrive-Sync alle Dateien herunter, die nur online liegen{missing}. Danach sind es normale Dateien auf diesem PC, und der Eintrag im Navigationsbereich des Explorers verschwindet.",
+                "Umstellen");
+        if (asked != true || !SyncService.OnDemandSupported) return;
+        IsSwitching = true;
+        var progress = new Progress<string>(text => SwitchProgress = text);
+        try
+        {
+            if (toOnDemand) await _host.Sync.ConvertToOnDemandAsync(_pair.Id, progress);
+            else await _host.Sync.ConvertToClassicAsync(_pair.Id, progress);
+            _pair = _host.Sync.FindPair(_pair.Id) ?? _pair;
+            // The overview shows the new mode.
+            Saved = true;
+            foreach (var name in new[] { nameof(IsOnDemand), nameof(ModeTitle), nameof(ModeText), nameof(SwitchText), nameof(CanChangeSelection), nameof(SelectionHint) })
+                OnPropertyChanged(name);
+        }
+        catch (CdException e)
+        {
+            var entry = ErrorCatalog.Get(e.Code);
+            Error = $"{entry.Title}: {entry.Fix}";
+        }
+        finally
+        {
+            IsSwitching = false;
+            SwitchProgress = "";
+        }
     }
 
     public SelectionTree Selection { get; }
@@ -96,6 +162,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
     [RelayCommand]
     private void Save()
     {
+        if (IsSwitching) return;
         Error = "";
         var includes = SelectAll ? [] : Selection.Collect();
         if (CanChangeSelection && !SelectAll && includes.Count == 0)

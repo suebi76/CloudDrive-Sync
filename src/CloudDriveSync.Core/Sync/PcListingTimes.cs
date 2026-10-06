@@ -16,6 +16,12 @@ namespace CloudDriveSync.Core.Sync;
 /// server's time to the digit, have the file's size and are newer than the file are corrected: a change on the PC makes
 /// a file newer, never older, so no real change is hidden. The files themselves are not touched.
 /// </summary>
+/// <summary>A file as bisync noted it after its last run.</summary>
+internal readonly record struct NotedFile(long Size, DateTime Time);
+
+/// <summary>bisync's record of both sides after its last run (see <see cref="PcListingTimes.ReadRecord"/>).</summary>
+internal sealed record BisyncRecord(IReadOnlyDictionary<string, NotedFile> Cloud, IReadOnlyDictionary<string, NotedFile> Pc);
+
 internal static partial class PcListingTimes
 {
     /// <summary>Corrects the PC listing in bisync's work folder; returns how many entries changed.</summary>
@@ -50,6 +56,26 @@ internal static partial class PcListingTimes
         File.WriteAllText(temporary, string.Join('\n', lines));
         File.Move(temporary, pcListing, overwrite: true);
         return aligned;
+    }
+
+    /// <summary>
+    /// bisync's record of both sides after its last run - the cloud (path1) and the PC (path2): size and time of every
+    /// file, by path in rclone's standard encoding. Empty sides when there is no record.
+    /// </summary>
+    public static BisyncRecord ReadRecord(string workDir) => new(ReadListing(Find(workDir, ".path1.lst")), ReadListing(Find(workDir, ".path2.lst")));
+
+    private static Dictionary<string, NotedFile> ReadListing(string? listing)
+    {
+        var files = new Dictionary<string, NotedFile>(StringComparer.Ordinal);
+        if (listing is null) return files;
+        foreach (var line in File.ReadLines(listing))
+        {
+            if (EntryPattern().Match(line) is not { Success: true } entry) continue;
+            if (Unquote(entry.Groups["path"].Value) is not { } path || ParseTime(entry.Groups["time"].Value) is not { } time) continue;
+            if (!long.TryParse(entry.Groups["size"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var size)) continue;
+            files[path] = new NotedFile(size, time);
+        }
+        return files;
     }
 
     /// <summary>A time as bisync writes it into its listings: UTC, nine decimals ("2026-10-06T09:16:26.123456700+0000").</summary>
