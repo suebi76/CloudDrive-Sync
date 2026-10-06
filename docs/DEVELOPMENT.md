@@ -61,6 +61,9 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # Integrationstests
   Geht das auf einem PC nicht, schlagen genau diese drei mit einem klaren Hinweis fehl.
 - **Nextcloud** lässt sich lokal nicht nachbilden. Änderungen an der Nextcloud-Anmeldung oder an Nextcloud-Besonderheiten
   brauchen einen Test mit einem echten Zugang.
+- **Auf GitHub** laufen bei jedem Push und Pull Request der Build, die Unit-Tests und ein Geheimnis-Scan (gitleaks,
+  `.github/workflows/ci.yml`). Die Integrationstests laufen lokal: Sie brauchen Ordner, die Groß- und Kleinschreibung
+  unterscheiden, und dauern einige Minuten.
 
 Gute Tests lesen sich wie ein Satz (`Changing_a_file_on_the_PC_without_changing_its_size`) und prüfen ein Verhalten,
 nicht eine Umsetzung.

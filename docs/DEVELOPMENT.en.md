@@ -59,6 +59,9 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # integration tests
   not possible, exactly these three fail with a clear message.
 - **Nextcloud** cannot be emulated locally. Changes to the Nextcloud sign-in or to Nextcloud specifics need a test with a
   real account.
+- **On GitHub** every push and pull request runs the build, the unit tests and a secret scan (gitleaks,
+  `.github/workflows/ci.yml`). The integration tests run locally: they need folders that tell upper and lower case
+  apart, and they take a few minutes.
 
 Good tests read like a sentence (`Changing_a_file_on_the_PC_without_changing_its_size`) and check behaviour, not an
 implementation.

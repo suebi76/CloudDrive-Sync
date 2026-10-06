@@ -84,7 +84,9 @@ Vorwissen verstehen. Die Regeln gelten für neuen und geänderten Code.
 
 ## Änderungen einreichen
 
-- Vorher: `dotnet build CloudDriveSync.slnx` ohne Warnungen, `dotnet test CloudDriveSync.slnx` grün.
+- Vorher: `dotnet build CloudDriveSync.slnx` ohne Warnungen, `dotnet test CloudDriveSync.slnx` grün (auch die
+  Integrationstests, die nur lokal laufen).
+- Die automatische Prüfung auf GitHub muss grün sein: Build, Unit-Tests und Geheimnis-Scan.
 - Commit-Nachrichten auf Englisch: Die erste Zeile sagt, was sich ändert; darunter, warum und wie.
 - Was Nutzer bemerken, bekommt einen Eintrag in `CHANGELOG.md` (englisch, im Stil der vorhandenen).
 - Beiträge kommen als Pull Request auf einem eigenen Branch.

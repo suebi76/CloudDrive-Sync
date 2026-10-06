@@ -78,7 +78,9 @@ country - understands it without prior knowledge. The rules apply to new and cha
 
 ## Submitting changes
 
-- Before: `dotnet build CloudDriveSync.slnx` without warnings, `dotnet test CloudDriveSync.slnx` green.
+- Before: `dotnet build CloudDriveSync.slnx` without warnings, `dotnet test CloudDriveSync.slnx` green (including the
+  integration tests, which run only locally).
+- The automatic checks on GitHub must be green: build, unit tests and secret scan.
 - Commit messages in English: the first line says what changes; below it, why and how.
 - Whatever users notice gets an entry in `CHANGELOG.md` (English, in the style of the existing ones).
 - Contributions come as a pull request on a branch of their own.
