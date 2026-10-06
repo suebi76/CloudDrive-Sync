@@ -222,7 +222,8 @@ sequenceDiagram
 4. **bisync** with the settings of `BisyncCommand` (see below).
 5. **Evaluation:**
    - Success: the deletion guard's list, the server times and the good state (`last-good`) are remembered; `RunChanges`
-     reads from the report which file went where.
+     reads from the report which file went where. `PcListingTimes` puts the real file times into bisync's listing of the
+     PC side where bisync noted the server's time (see quirks).
    - When the server refuses single files (e.g. a read-only folder), they stay on the PC and out of the synchronisation
      (`LocalOnly`); the run is repeated without them - without a rebuild.
    - Names that differ only in upper and lower case: the PC takes the server's spelling and the run is repeated once.
@@ -274,6 +275,14 @@ sequenceDiagram
 - **Filter changes:** bisync remembers the checksum of the filter file (`filter.txt.md5`) and insists on a rebuild after
   any change. A changed selection therefore deliberately triggers a rebuild. Only when nothing but the "PC only" files
   change does `SyncFilters.Write` renew the checksum itself - recognised by `filter-base.txt`.
+- **Times of the PC side:** when a file lies on both sides with the same size and the server's time is newer, bisync
+  notes that time for the PC as well - without carrying it over, because IServ lets no times be set and rclone compares
+  only sizes there. At the next run the PC file would look "older": bisync would upload it again, possibly over a newer
+  version on the server, and stop with "all files were changed" when that concerns every file - the protection file
+  included, which the server receives a moment after the PC wrote it. This happens after the first synchronisation of a
+  folder whose files were on both sides already. `PcListingTimes` corrects such entries after every successful run:
+  only entries with the server's time, the file's size and a time newer than the file - a change on the PC makes a file
+  newer, never older.
 - **"must resync":** after some failures bisync insists on a rebuild. With `last-good` and `resilient`/`recover`,
   CloudDrive-Sync gets by without one for passing failures.
 - **bisync's report** is the source of which file went where (`RunChanges`): `Queue copy to Path1` (uploaded),

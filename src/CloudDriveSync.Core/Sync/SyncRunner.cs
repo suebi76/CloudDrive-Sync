@@ -140,6 +140,16 @@ public sealed partial class SyncRunner
             }
             try
             {
+                // bisync notes the server's time for files it did not copy to the PC; the PC side keeps the real time.
+                if (PcListingTimes.Align(workDir, pair.LocalPath) is var aligned and > 0)
+                    Log.Info("Sync", $"'{pair.Id}': {aligned} time(s) of the PC side in bisync's listing set to the real file time.");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException)
+            {
+                Log.Warn("Sync", $"'{pair.Id}': times of the PC side not checked: {e.Message}");
+            }
+            try
+            {
                 RunSafety.RememberGoodState(workDir, folder);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)

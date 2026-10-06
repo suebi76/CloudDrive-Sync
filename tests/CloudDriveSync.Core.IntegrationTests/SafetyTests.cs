@@ -222,4 +222,52 @@ public class SafetyTests
         Assert.True(File.Exists(world.Cloud("B.bak")));
         Assert.True(File.Exists(world.Pc("B.bak")));
     }
+
+    [Fact]
+    public async Task The_protection_file_never_looks_changed_when_the_server_noted_a_later_time()
+    {
+        // Servers like IServ note the time they received a file, in whole seconds - here a little after the PC wrote
+        // the protection file. When the only other file then changes, the protection file must still count as
+        // unchanged; otherwise bisync stops with "all files were changed".
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Plan.txt", "Mo 08:00");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        var serverSecond = TruncateToSecond(File.GetLastWriteTimeUtc(world.Cloud(SyncFilters.SentinelFile)));
+        File.SetLastWriteTimeUtc(world.Pc(SyncFilters.SentinelFile), serverSecond.AddMilliseconds(-300));
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        Assert.True((await world.RunAsync()).Success);
+
+        await Task.Delay(1100);
+        world.WritePc("Plan.txt", "Mo 09:00");
+        var run = await world.RunAsync();
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+        Assert.Equal("Mo 09:00", world.ReadCloud("Plan.txt"));
+    }
+
+    [Fact]
+    public async Task Files_that_were_on_both_sides_before_the_first_run_do_not_look_changed_afterwards()
+    {
+        // A folder set up with copies of the cloud files that are older on the PC (the server noted when they arrived).
+        await using var world = await SyncWorld.CreateAsync();
+        foreach (var name in new[] { "Plan.txt", "Liste.txt", "Brief.txt" })
+        {
+            world.WriteCloud(name, $"Inhalt {name}");
+            world.WritePc(name, $"Inhalt {name}");
+            File.SetLastWriteTimeUtc(world.Pc(name), DateTime.UtcNow.AddHours(-3));
+        }
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+
+        var calm = await world.RunAsync();
+        Assert.True(calm.Success, $"{calm.ErrorCode}: {calm.ErrorDetail}");
+        Assert.Empty(calm.Changes ?? []);
+        world.WritePc("Plan.txt", "Inhalt Plan neu");
+        var changed = await world.RunAsync();
+        Assert.True(changed.Success, $"{changed.ErrorCode}: {changed.ErrorDetail}");
+        Assert.Equal("Inhalt Plan neu", world.ReadCloud("Plan.txt"));
+    }
+
+    private static DateTime TruncateToSecond(DateTime time) => new(time.Ticks - time.Ticks % TimeSpan.TicksPerSecond, time.Kind);
 }

@@ -57,6 +57,9 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # Integrationstests
   `%TEMP%\clouddrive-sync-it\…` mit Datenordner, PC-Ordner und Server-Ordner (`SyncWorld`). Der Testserver verhält sich
   wie IServ: keine eigenen Änderungszeiten, kein Papierkorb, Groß- und Kleinschreibung werden unterschieden. Eine
   Variante nur zum Lesen prüft abgelehnte Uploads.
+- **Einen Fehlschlag ansehen:** `CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS=1` behält jede Testwelt. bisyncs Bericht steht dann in
+  `home\sync\<id>\last-run.txt`, seine Listen in `home\sync\<id>\bisync\`. Danach den Ordner von Hand löschen – er wird
+  schnell mehrere Gigabyte groß.
 - Drei Tests brauchen einen Ordner, der Groß- und Kleinschreibung unterscheidet (`fsutil file setCaseSensitiveInfo`).
   Geht das auf einem PC nicht, schlagen genau diese drei mit einem klaren Hinweis fehl.
 - **Nextcloud** lässt sich lokal nicht nachbilden. Änderungen an der Nextcloud-Anmeldung oder an Nextcloud-Besonderheiten

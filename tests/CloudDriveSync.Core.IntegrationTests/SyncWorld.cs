@@ -227,6 +227,8 @@ internal sealed class SyncWorld : IAsyncDisposable
         await Host.DisposeAsync();
         await Server.DisposeAsync();
         Host.Secrets.Delete("config");
+        // For looking into a failure: CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS=1 keeps every world in %TEMP%\clouddrive-sync-it.
+        if (Environment.GetEnvironmentVariable("CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS") == "1") return;
         for (var attempt = 0; attempt < 5; attempt++)
         {
             try

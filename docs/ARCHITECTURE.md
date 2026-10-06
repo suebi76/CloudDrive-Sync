@@ -222,7 +222,8 @@ sequenceDiagram
 4. **bisync** mit den Einstellungen aus `BisyncCommand` (siehe unten).
 5. **Auswertung:**
    - Erfolg: Löschschutz-Liste, Serverzeiten und guter Zustand (`last-good`) werden gemerkt; `RunChanges` liest aus dem
-     Bericht, welche Datei wohin ging.
+     Bericht, welche Datei wohin ging. `PcListingTimes` setzt in bisyncs Liste der PC-Seite die echten Dateizeiten ein,
+     wo bisync die Zeit des Servers notiert hat (siehe Eigenheiten).
    - Lehnt der Server einzelne Dateien ab (z. B. ein Ordner nur zum Lesen), bleiben sie am PC und aus dem Abgleich
      heraus (`LocalOnly`); der Lauf wird ohne sie wiederholt – ohne Neuaufbau.
    - Namen, die sich nur in Groß-/Kleinschreibung unterscheiden: Der PC übernimmt die Schreibweise des Servers, der Lauf
@@ -275,6 +276,14 @@ sequenceDiagram
 - **Filteränderungen:** bisync merkt sich die Prüfsumme der Filterdatei (`filter.txt.md5`) und verlangt nach jeder
   Änderung einen Neuaufbau. Eine geänderte Auswahl löst deshalb bewusst einen Neuaufbau aus. Nur wenn sich allein die
   „nur am PC“-Dateien ändern, erneuert `SyncFilters.Write` die Prüfsumme selbst – erkennbar an `filter-base.txt`.
+- **Zeiten der PC-Seite:** Liegt eine Datei auf beiden Seiten gleich groß und ist die Zeit des Servers neuer, notiert
+  bisync diese Zeit auch für den PC – ohne sie zu übertragen, denn IServ lässt keine Zeiten setzen und rclone vergleicht
+  dort nur Größen. Beim nächsten Lauf sähe die PC-Datei „älter“ aus: bisync lüde sie erneut hoch, womöglich über eine
+  neuere Fassung auf dem Server, und hielte mit „all files were changed“ an, wenn das alle Dateien betrifft – auch die
+  Wächterdatei, die der Server einen Moment nach dem PC bekommt. Das geschieht nach dem ersten Abgleich eines Ordners,
+  dessen Dateien schon auf beiden Seiten lagen. `PcListingTimes` korrigiert solche Einträge nach jedem erfolgreichen
+  Lauf: nur Einträge mit der Serverzeit, der Größe der Datei und einer Zeit, die neuer ist als die Datei – eine Änderung
+  am PC macht eine Datei neuer, nie älter.
 - **„must resync“:** Nach manchen Fehlern verlangt bisync einen Neuaufbau. Mit `last-good` und `resilient`/`recover`
   kommt CloudDrive-Sync bei vorübergehenden Fehlern ohne ihn aus.
 - **Der Bericht von bisync** ist die einzige Quelle dafür, welche Datei wohin ging (`RunChanges`): `Queue copy to Path1`

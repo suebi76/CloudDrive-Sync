@@ -55,6 +55,9 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # integration tests
   (`rclone serve webdav`) on a random local port. Every test gets a world of its own in `%TEMP%\clouddrive-sync-it\…`
   with a data folder, a PC folder and a server folder (`SyncWorld`). The test server behaves like IServ: no modification
   times of its own, no recycle bin, upper and lower case are told apart. A read-only variant checks refused uploads.
+- **Looking into a failure:** `CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS=1` keeps every test world. bisync's report is then in
+  `home\sync\<id>\last-run.txt`, its listings in `home\sync\<id>\bisync\`. Delete the folder by hand afterwards - it
+  quickly grows to several gigabytes.
 - Three tests need a folder that tells upper and lower case apart (`fsutil file setCaseSensitiveInfo`). Where that is
   not possible, exactly these three fail with a clear message.
 - **Nextcloud** cannot be emulated locally. Changes to the Nextcloud sign-in or to Nextcloud specifics need a test with a
