@@ -11,6 +11,12 @@ All notable changes to CloudDrive-Sync are documented here. The format follows
   (`docs/DEVELOPMENT.md`) and the rules for contributions and code (`CONTRIBUTING.md`)
 - `tools/Format-SourceFiles.ps1` and the unit test `SourceFileTests` keep every source file UTF-8 without BOM
   (PowerShell scripts with BOM) with Windows line ends
+- `PRIVACY.md` (German and English): no telemetry; CloudDrive-Sync talks only to the servers you enter, to GitHub
+  for updates (as set) and once to rclone.org for rclone
+- A "Code signing policy" in the README, linked from every release page: CloudDrive-Sync applies for free code
+  signing by the SignPath Foundation
+- Releases are built on GitHub from the tagged source (release workflow) instead of on a PC; every push and pull
+  request is checked there (build, unit tests, secret scan)
 
 ### Changed
 

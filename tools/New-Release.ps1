@@ -67,8 +67,9 @@ $version = Get-Version
 $tag = "v$version"
 $isTestVersion = $version.Contains('-')
 Write-Host "CloudDrive-Sync $version$(if ($isTestVersion) { ' - Testversion' })"
-# The release notes must exist before anything is tagged or built.
-$notes = Get-ReleaseNotes $version
+# The release notes must exist before anything is tagged or built. Every release page links to the code signing policy
+# and the privacy policy.
+$notes = (Get-ReleaseNotes $version) + "`n`n---`n`n[Code signing policy]($repoUrl#code-signing-policy) · [Datenschutz / privacy policy]($repoUrl/blob/main/PRIVACY.md)"
 
 # On a PC, publishing means: tag the commit and let GitHub build the release from it.
 if ($Publish -and -not $inWorkflow) {
