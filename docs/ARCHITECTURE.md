@@ -59,8 +59,10 @@ Ordner im Core:
 | Ordner | Aufgabe |
 |---|---|
 | `Accounts` | Konten verbinden und prüfen, Nextcloud-Anmeldung im Browser, WebDAV-Adressen, Ordnernamen von IServ. |
-| `Engine` | rclone bereitstellen (`RcloneInstaller`), starten und beenden (`RcloneEngine`), seine RC-API (`RcClient`). |
+| `Engine` | rclone bereitstellen (`RcloneInstaller`), starten und beenden (`RcloneEngine`), seine RC-API (`RcClient`), Dateidaten für „Dateien bei Bedarf“ lesen (`FileServer`). |
 | `Sync` | Synchronisationen verwalten (`SyncService`), einen Lauf ausführen (`SyncRunner`) und alle Schutzbausteine. |
+| `CloudFiles` | Die Cloud Files API von Windows: Ordner anmelden (`SyncRoots`), Platzhalter (`Placeholders`), Daten beim Öffnen liefern (`SyncRootConnection`, `FetchRequest`). |
+| `OnDemand` | Der Sync-Kern für „Dateien bei Bedarf“ (im Aufbau): Zustand (`ItemStore`, `ItemIdentity`), Namen wie bei rclone (`NameEncoding`). |
 | `Settings` | Datenmodell (`AppSettings`) und das sichere Speichern als JSON (`SettingsStore`). |
 | `Security` | Der Schlüssel der rclone-Konfiguration in der Windows-Anmeldeinformationsverwaltung (`SecretStore`). |
 | `Errors` | Fehlercodes `CD-xxxx` mit Titel und Lösung auf Deutsch und Englisch (`ErrorCatalog`). |
@@ -322,7 +324,7 @@ Ein Prototyp hat vorab in einer echten Windows-11-Sitzung geprüft, worauf der K
 | Verschachteln | Eine Sync-Root in einer anderen lehnt Windows ab. `CfGetSyncRootInfoByPath` erkennt, ob ein Ordner schon zu einem Cloud-Programm gehört. |
 | Abmelden | 12 000 Einträge in 3,8 s. Geladene Dateien werden normale Dateien, reine Online-Platzhalter verschwinden vom PC. Das passt in die 30 s, die Velopack beim Deinstallieren lässt. |
 | Abfragen | `GetCurrentSyncRoots` und `GetSyncRootInformationForId` blenden Sync-Roots im Temp-Ordner aus. Tests (deren Ordner im Temp-Ordner liegen) finden ihre Sync-Roots deshalb über die Registry. |
-| Größe | Die WinRT-Anbindung (`Microsoft.Windows.SDK.NET.dll`) macht das Programm 24 MB größer. |
+| WinRT ohne Fremdbibliothek | Microsofts Projektion des Windows SDK (`Microsoft.Windows.SDK.NET.dll`, 24 MB) steht nicht unter einer Open-Source-Lizenz. CloudDrive-Sync braucht davon nur `Register` und `Unregister` und ruft beide direkt über COM auf (`WinRtSyncRootManager`); die Zielplattform bleibt `net10.0-windows`, der Code für Windows 10 trägt `[SupportedOSPlatform("windows10.0.17763")]`. Den Zustand speichert SQLite aus Windows selbst (`winsqlite3`), es kommt keine native Bibliothek mit. |
 | Ersatzweg | `core/command` mit `cat` und `STREAM_ONLY_STDOUT` liefert ebenfalls Daten, startet aber je Anfrage einen eigenen rclone-Prozess (die Bandbreitengrenze der Engine gilt dort nicht) und hängt an die Daten `{}` und einen Zeilenumbruch an. Er bleibt Rückfallebene. |
 
 Daraus folgen Regeln für den Kern:

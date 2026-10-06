@@ -62,6 +62,12 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # Integrationstests
   schnell mehrere Gigabyte groß.
 - Drei Tests brauchen einen Ordner, der Groß- und Kleinschreibung unterscheidet (`fsutil file setCaseSensitiveInfo`).
   Geht das auf einem PC nicht, schlagen genau diese drei mit einem klaren Hinweis fehl.
+- **Dateien bei Bedarf** (`CloudFilesTests`, `TestSyncRoot`): Diese Tests melden echte Ordner bei Windows an – unter
+  `CloudDriveSyncTest-<Prüfsumme>!…`, nie unter dem `CloudDriveSync!…` der Installation – und melden sie am Ende wieder
+  ab. Sie brauchen NTFS (das `%TEMP%` von Windows genügt). Bricht ein Testlauf hart ab, kann eine Anmeldung übrig
+  bleiben; `SyncRoots.RemoveTestRegistrations()` entfernt alle `CloudDriveSyncTest-…` des Benutzers. Windows' eigene
+  Abfragen (`GetCurrentSyncRoots`) zeigen Ordner im Temp-Ordner nicht – deshalb liest der Code die Anmeldungen aus der
+  Registry.
 - **Nextcloud** lässt sich lokal nicht nachbilden. Änderungen an der Nextcloud-Anmeldung oder an Nextcloud-Besonderheiten
   brauchen einen Test mit einem echten Zugang.
 - **Auf GitHub** laufen bei jedem Push und Pull Request der Build, die Unit-Tests und ein Geheimnis-Scan (gitleaks,

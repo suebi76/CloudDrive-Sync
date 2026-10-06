@@ -34,6 +34,9 @@ public sealed class RcloneEngine : IAsyncDisposable
 
     public bool IsRunning => _process is { HasExited: false } && _rc is not null;
 
+    /// <summary>Counts the starts of the engine; what lived inside an earlier engine (servers of <see cref="FileServer"/>) is gone.</summary>
+    public int Generation { get; private set; }
+
     public RcClient Rc => _rc ?? throw new CdException("CD-5003", "the engine is not running");
 
     /// <summary>Starts the engine (or does nothing when it runs).</summary>
@@ -182,6 +185,7 @@ public sealed class RcloneEngine : IAsyncDisposable
             try
             {
                 await _rc.CallAsync("rc/noop", timeout: TimeSpan.FromSeconds(2), cancellationToken: cancellationToken);
+                Generation++;
                 Log.Info("Engine", $"Engine started (process {process.Id}, port {port}).");
                 return;
             }

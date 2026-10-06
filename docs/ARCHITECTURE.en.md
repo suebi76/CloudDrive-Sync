@@ -62,8 +62,10 @@ Folders of the core:
 | Folder | Responsibility |
 |---|---|
 | `Accounts` | Connecting and checking accounts, Nextcloud browser sign-in, WebDAV addresses, IServ folder names. |
-| `Engine` | Providing rclone (`RcloneInstaller`), starting and stopping it (`RcloneEngine`), its RC API (`RcClient`). |
+| `Engine` | Providing rclone (`RcloneInstaller`), starting and stopping it (`RcloneEngine`), its RC API (`RcClient`), reading file data for files on demand (`FileServer`). |
 | `Sync` | Managing synchronisations (`SyncService`), carrying out one run (`SyncRunner`) and all safety building blocks. |
+| `CloudFiles` | Windows' Cloud Files API: registering folders (`SyncRoots`), placeholders (`Placeholders`), delivering data on opening (`SyncRootConnection`, `FetchRequest`). |
+| `OnDemand` | The sync core for files on demand (under construction): state (`ItemStore`, `ItemIdentity`), names like rclone's (`NameEncoding`). |
 | `Settings` | Data model (`AppSettings`) and saving it safely as JSON (`SettingsStore`). |
 | `Security` | The key of the rclone configuration in the Windows Credential Manager (`SecretStore`). |
 | `Errors` | Error codes `CD-xxxx` with title and fix in German and English (`ErrorCatalog`). |
@@ -321,7 +323,7 @@ A prototype checked beforehand, in a real Windows 11 session, what the core buil
 | Nesting | Windows refuses a sync root inside another one. `CfGetSyncRootInfoByPath` tells whether a folder belongs to a cloud program already. |
 | Unregistering | 12,000 entries in 3.8 s. Fetched files become normal files, online-only placeholders vanish from the PC. That fits into the 30 s Velopack allows while uninstalling. |
 | Queries | `GetCurrentSyncRoots` and `GetSyncRootInformationForId` leave out sync roots in the temp folder. Tests (whose folders lie there) therefore find their sync roots through the registry. |
-| Size | The WinRT projection (`Microsoft.Windows.SDK.NET.dll`) makes the program 24 MB larger. |
+| WinRT without a third-party library | Microsoft's projection of the Windows SDK (`Microsoft.Windows.SDK.NET.dll`, 24 MB) is not under an open-source licence. CloudDrive-Sync needs only `Register` and `Unregister` of it and calls both directly through COM (`WinRtSyncRootManager`); the target stays `net10.0-windows`, the code for Windows 10 carries `[SupportedOSPlatform("windows10.0.17763")]`. The state is stored by Windows' own SQLite (`winsqlite3`); no native library ships. |
 | Fallback | `core/command` with `cat` and `STREAM_ONLY_STDOUT` delivers data as well, but starts an rclone process of its own per request (the engine's bandwidth limit does not apply there) and appends `{}` and a line break to the data. It stays the fallback. |
 
 Rules for the core that follow from this:

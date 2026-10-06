@@ -1,6 +1,9 @@
 <Project>
   <!-- Common settings of every CloudDrive-Sync project. -->
   <PropertyGroup>
+    <!-- No Windows SDK version on purpose: it would bring Microsoft's projection of the Windows SDK, which is not open
+         source. Files on demand need Windows 10 1809 - that code says so itself ([SupportedOSPlatform]), and its few
+         Windows Runtime calls go directly through COM (CloudFiles/WinRtSyncRootManager.cs). -->
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

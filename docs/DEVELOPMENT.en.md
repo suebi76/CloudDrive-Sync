@@ -60,6 +60,12 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # integration tests
   quickly grows to several gigabytes.
 - Three tests need a folder that tells upper and lower case apart (`fsutil file setCaseSensitiveInfo`). Where that is
   not possible, exactly these three fail with a clear message.
+- **Files on demand** (`CloudFilesTests`, `TestSyncRoot`): these tests register real folders with Windows - under
+  `CloudDriveSyncTest-<checksum>!…`, never under the installation's `CloudDriveSync!…` - and unregister them at the end.
+  They need NTFS (Windows' `%TEMP%` will do). When a test run breaks off hard, a registration may stay behind;
+  `SyncRoots.RemoveTestRegistrations()` removes all `CloudDriveSyncTest-…` of the user. Windows' own queries
+  (`GetCurrentSyncRoots`) do not show folders in the temp folder - that is why the code reads the registrations from
+  the registry.
 - **Nextcloud** cannot be emulated locally. Changes to the Nextcloud sign-in or to Nextcloud specifics need a test with a
   real account.
 - **On GitHub** every push and pull request runs the build, the unit tests and a secret scan (gitleaks,

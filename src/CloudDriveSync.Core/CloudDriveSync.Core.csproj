@@ -3,7 +3,18 @@
   <!-- Everything below the user interface: engine (rclone), accounts, synchronisation, settings, secrets. -->
   <PropertyGroup>
     <RootNamespace>CloudDriveSync.Core</RootNamespace>
+    <!-- The Cloud Files API (files on demand) is called through generated P/Invoke code that works with pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Generates the P/Invoke code for the functions listed in NativeMethods.txt; nothing of it ships as a package. -->
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.347" PrivateAssets="all" />
+    <!-- The state of synchronisations with files on demand. It uses the SQLite that is part of Windows (winsqlite3),
+         so no native library ships with CloudDrive-Sync. -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.12" />
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.11" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="CloudDriveSync.Core.Tests" />

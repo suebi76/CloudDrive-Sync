@@ -43,15 +43,16 @@ public sealed class AppPaths
     /// Prefix of the entries in the Windows Credential Manager. Another home gets its own entries, so tests never
     /// touch the keys of the real installation.
     /// </summary>
-    public string SecretPrefix
-    {
-        get
-        {
-            if (IsDefaultHome) return "CloudDrive-Sync";
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(Home.ToUpperInvariant()));
-            return "CloudDrive-Sync-" + Convert.ToHexString(hash)[..12];
-        }
-    }
+    public string SecretPrefix => IsDefaultHome ? "CloudDrive-Sync" : "CloudDrive-Sync-" + HomeHash;
+
+    /// <summary>
+    /// Provider part of the IDs of folders registered with Windows for files on demand. Another home - tests above all -
+    /// registers under "CloudDriveSyncTest-…", so cleaning up after tests never touches the real installation.
+    /// </summary>
+    public string SyncRootProvider => IsDefaultHome ? "CloudDriveSync" : "CloudDriveSyncTest-" + HomeHash;
+
+    /// <summary>12 hex digits that tell homes apart (the default home never needs them).</summary>
+    private string HomeHash => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Home.ToUpperInvariant())))[..12];
 
     public void EnsureCreated()
     {

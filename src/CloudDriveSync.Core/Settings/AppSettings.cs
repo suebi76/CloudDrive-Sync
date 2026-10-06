@@ -74,6 +74,19 @@ public enum ConflictPolicy
     PcWins,
 }
 
+/// <summary>How the files of a synchronisation live on the PC.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SyncMode>))]
+public enum SyncMode
+{
+    /// <summary>Every file lies on the PC, kept in step by rclone's bisync - the only way on drives without NTFS.</summary>
+    Classic,
+    /// <summary>
+    /// Files on demand: every file appears in Explorer at once, its data comes from the cloud when it is opened or kept
+    /// on this device (Windows Cloud Files API).
+    /// </summary>
+    OnDemand,
+}
+
 /// <summary>Which folders and files of the cloud folder take part in a synchronisation.</summary>
 public sealed class SyncSelection
 {
@@ -92,6 +105,13 @@ public sealed class SyncPairSettings
     /// <summary>Folder in the cloud, relative to the account ("" = everything).</summary>
     public string RemotePath { get; set; } = "";
     public string LocalPath { get; set; } = "";
+    /// <summary>
+    /// Classic unless chosen otherwise: synchronisations from before version 0.3 have no such entry and must stay as
+    /// they are. The setup preselects files on demand where the folder allows it.
+    /// </summary>
+    public SyncMode Mode { get; set; } = SyncMode.Classic;
+    /// <summary>The name in Explorer's navigation pane; empty means "account – cloud folder".</summary>
+    public string? ExplorerName { get; set; }
     public SyncSelection Selection { get; set; } = new();
     public ConflictPolicy Conflicts { get; set; } = ConflictPolicy.NewerWins;
     /// <summary>Cloud changes are fetched this often; local changes go up shortly after they happen.</summary>
@@ -120,6 +140,11 @@ public sealed class Preferences
     public bool Notifications { get; set; } = true;
     /// <summary>Days deleted or overwritten local files stay in the sync recycle bin.</summary>
     public int TrashDays { get; set; } = 30;
+    /// <summary>
+    /// Files on demand: files not opened for this many days give their space back (pinned ones never); 0 = never, the
+    /// default.
+    /// </summary>
+    public int FreeUpAfterDays { get; set; }
     /// <summary>How new versions of CloudDrive-Sync arrive.</summary>
     public UpdateMode Updates { get; set; } = UpdateMode.Notify;
     /// <summary>Also test versions (pre-releases on GitHub) - for testers.</summary>

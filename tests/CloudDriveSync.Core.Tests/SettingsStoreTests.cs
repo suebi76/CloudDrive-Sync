@@ -30,6 +30,32 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Synchronisations_from_before_files_on_demand_stay_classic()
+    {
+        // As version 0.2 wrote it: no mode, no name in Explorer, no setting for freeing space.
+        var file = Path.Combine(_folder, "settings.json");
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(file, """
+            { "schemaVersion": 1, "accounts": [], "syncs": [ { "id": "p", "accountId": "a", "localPath": "E:\\X" } ], "preferences": { "trashDays": 30 } }
+            """);
+        var loaded = new SettingsStore(file).Current;
+        Assert.Equal(SyncMode.Classic, loaded.Syncs[0].Mode);
+        Assert.Null(loaded.Syncs[0].ExplorerName);
+        Assert.Equal(0, loaded.Preferences.FreeUpAfterDays);
+    }
+
+    [Fact]
+    public void Files_on_demand_are_remembered_by_name()
+    {
+        var file = Path.Combine(_folder, "settings.json");
+        new SettingsStore(file).Update(s => s.Syncs.Add(new SyncPairSettings { Id = "p", Mode = SyncMode.OnDemand, ExplorerName = "IServ – Eigene Dateien" }));
+        Assert.Contains("\"mode\": \"OnDemand\"", File.ReadAllText(file));
+        var loaded = new SettingsStore(file).Current.Syncs[0];
+        Assert.Equal(SyncMode.OnDemand, loaded.Mode);
+        Assert.Equal("IServ – Eigene Dateien", loaded.ExplorerName);
+    }
+
+    [Fact]
     public void A_damaged_file_falls_back_to_the_backup()
     {
         var file = Path.Combine(_folder, "settings.json");
