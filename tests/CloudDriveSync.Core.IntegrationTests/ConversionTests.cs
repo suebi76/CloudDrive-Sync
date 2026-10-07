@@ -63,7 +63,7 @@ public class ConversionTests
         await world.AddAccountAsync();
         await world.AddPairAsync(p => p.Mode = SyncMode.OnDemand);
         Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
-        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair.Id);
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
         world.WritePc("Neu am PC.txt", "neu");
 
         await world.Host.Sync.ConvertToClassicAsync(world.Pair.Id);

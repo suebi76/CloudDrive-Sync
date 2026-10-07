@@ -69,6 +69,8 @@ public sealed partial class AddSyncViewModel : ObservableObject
     [ObservableProperty] public partial bool IsBusy { get; set; }
     [ObservableProperty] public partial string Error { get; set; } = "";
     [ObservableProperty] public partial string PreviewText { get; set; } = "";
+    /// <summary>The cloud is still being counted; starting is possible meanwhile.</summary>
+    [ObservableProperty] public partial bool IsCounting { get; set; }
     [ObservableProperty] public partial bool NotEnoughSpace { get; set; }
     [ObservableProperty] public partial bool AcceptSpace { get; set; }
     [ObservableProperty] public partial bool OnDemand { get; set; } = true;
@@ -261,6 +263,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
     [RelayCommand]
     private void Back()
     {
+        StopCounting();
         Error = "";
         if (Step != AddSyncStep.Folder) Step -= 1;
     }
@@ -314,41 +317,79 @@ public sealed partial class AddSyncViewModel : ObservableObject
         }
     }
 
+    private CancellationTokenSource? _counting;
+
+    /// <summary>Ends a count still running (going back, starting, closing the window).</summary>
+    public void StopCounting()
+    {
+        _counting?.Cancel();
+        _counting = null;
+        IsCounting = false;
+    }
+
+    /// <summary>
+    /// Counts what lies in the chosen part of the cloud - a whole account can take minutes, so the count shows how far it
+    /// got, and starting never waits for it. Files on demand need no room for the cloud's files anyway.
+    /// </summary>
     private async Task PreviewAsync()
     {
-        PreviewText = "Größe wird ermittelt …";
+        StopCounting();
+        var counting = _counting = new CancellationTokenSource();
         NotEnoughSpace = false;
         AcceptSpace = false;
-        IsBusy = true;
+        IsCounting = true;
+        PreviewText = CountingText(null);
+        var progress = new Progress<ListingProgress>(p =>
+        {
+            if (!counting.IsCancellationRequested) PreviewText = CountingText(p);
+        });
         try
         {
-            var preview = await _host.Sync.PreviewAsync(BuildDraft());
+            var preview = await _host.Sync.PreviewAsync(BuildDraft(), progress, counting.Token);
+            if (counting.IsCancellationRequested) return;
+            var lines = new List<string> { $"In der Cloud: {Format.Count(preview.CloudFiles, "Datei", "Dateien")} · {Format.Bytes(preview.CloudBytes)}" };
+            if (preview.UnreadableFolders > 0)
+                lines.Add($"{Format.Count(preview.UnreadableFolders, "Ordner lässt", "Ordner lassen")} sich nicht lesen (z. B. Freigaben nur zum Hochladen) – sie bleiben außen vor.");
             if (OnDemand)
             {
-                PreviewText = $"In der Cloud: {Format.Count(preview.CloudFiles, "Datei", "Dateien")} · {Format.Bytes(preview.CloudBytes)}" + Environment.NewLine +
-                    "Auf diesem PC: braucht kaum Platz – geladen wird erst, was du öffnest oder immer behalten willst." +
-                    (preview.LocalFiles > 0 ? Environment.NewLine + $"Schon am PC: {Format.Count(preview.LocalFiles, "Datei", "Dateien")} – wird zusammengeführt, nichts wird gelöscht" : "");
-                return;
+                lines.Add("Auf diesem PC: braucht kaum Platz – geladen wird erst, was du öffnest oder immer behalten willst.");
+                if (preview.LocalFiles > 0) lines.Add($"Schon am PC: {Format.Count(preview.LocalFiles, "Datei", "Dateien")} – wird zusammengeführt, nichts wird gelöscht");
             }
-            var lines = new List<string>
+            else
             {
-                $"In der Cloud: {Format.Count(preview.CloudFiles, "Datei", "Dateien")} · {Format.Bytes(preview.CloudBytes)}",
-                preview.LocalFiles > 0
+                lines.Add(preview.LocalFiles > 0
                     ? $"Schon am PC: {Format.Count(preview.LocalFiles, "Datei", "Dateien")} · {Format.Bytes(preview.LocalBytes)} – wird zusammengeführt, nichts wird gelöscht"
-                    : "Am PC: noch leer",
-            };
-            if (preview.FreeBytes > 0) lines.Add($"Frei auf dem Laufwerk: {Format.Bytes(preview.FreeBytes)}");
+                    : "Am PC: noch leer");
+                if (preview.FreeBytes > 0) lines.Add($"Frei auf dem Laufwerk: {Format.Bytes(preview.FreeBytes)}");
+                NotEnoughSpace = preview.FreeBytes > 0 && !preview.EnoughSpace;
+            }
             PreviewText = string.Join(Environment.NewLine, lines);
-            NotEnoughSpace = preview.FreeBytes > 0 && !preview.EnoughSpace;
+        }
+        catch (OperationCanceledException)
+        {
+            // Gone back, started or closed meanwhile.
         }
         catch (CdException e)
         {
-            PreviewText = $"Die Größe konnte nicht ermittelt werden ({ErrorCatalog.Get(e.Code).Title}). Du kannst trotzdem starten.";
+            if (!counting.IsCancellationRequested)
+                PreviewText = $"Die Größe konnte nicht ermittelt werden ({ErrorCatalog.Get(e.Code).Title}). Du kannst trotzdem starten.";
         }
         finally
         {
-            IsBusy = false;
+            if (_counting == counting) IsCounting = false;
         }
+    }
+
+    /// <summary>What the count found so far - and that starting need not wait.</summary>
+    private string CountingText(ListingProgress? progress)
+    {
+        var found = progress is { } p
+            ? $"Zählt die Dateien in der Cloud … bisher {Format.Count(p.Folders, "Ordner", "Ordner")}, {Format.Count(p.Files, "Datei", "Dateien")}, {Format.Bytes(p.Bytes)}"
+            : "Zählt die Dateien in der Cloud …";
+        var start = OnDemand
+            ? "Du kannst schon starten – bei „Dateien bei Bedarf“ braucht der PC dafür kaum Platz."
+            : "Du kannst schon starten; ob der Platz reicht, ist dann aber nicht geprüft.";
+        return found + Environment.NewLine + start;
     }
 
     private async Task FinishAsync()
@@ -358,6 +399,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
             Error = "Der freie Speicher reicht voraussichtlich nicht. Bestätige, dass du trotzdem starten möchtest – oder wähle weniger aus.";
             return;
         }
+        StopCounting();
         IsBusy = true;
         try
         {

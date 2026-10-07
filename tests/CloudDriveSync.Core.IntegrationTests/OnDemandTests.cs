@@ -262,6 +262,34 @@ public class OnDemandTests
         AssertFoldersInSync(world);
     }
 
+    /// <summary>Collects reports at once (Progress&lt;T&gt; would post them later).</summary>
+    private sealed class Collect<T>(List<T> into) : IProgress<T>
+    {
+        public void Report(T value)
+        {
+            lock (into) into.Add(value);
+        }
+    }
+
+    [Fact]
+    public async Task The_preview_counts_the_cloud_tells_how_far_it_got_and_leaves_a_refused_folder_out()
+    {
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        world.WriteCloud("a.txt", "eins");
+        world.WriteCloud("Ordner/b.txt", "zwei");
+        world.WriteCloud("Ablage/c.txt", "drei");
+        await world.AddAccountAsync();
+        world.Proxy!.RefuseListing($"{SyncWorld.CloudFolder}/Ablage");
+        var reports = new List<ListingProgress>();
+        var draft = new SyncPairSettings { AccountId = world.Account.Id, RemotePath = SyncWorld.CloudFolder, LocalPath = world.Local, Mode = SyncMode.OnDemand };
+
+        var preview = await world.Host.Sync.PreviewAsync(draft, new Collect<ListingProgress>(reports));
+
+        Assert.Equal(2, preview.CloudFiles);
+        Assert.Equal(1, preview.UnreadableFolders);
+        Assert.Equal(new ListingProgress(2, 2, 8), reports[^1]);
+    }
+
     [Fact]
     public async Task A_folder_the_server_does_not_let_be_read_is_left_alone_and_the_rest_goes_on()
     {
@@ -372,7 +400,7 @@ public class OnDemandTests
     {
         await using var world = await WorldAsync(cloud: w => { w.WriteCloud("nur online.txt", "eins"); w.WriteCloud("Ordner/auch online.txt", "zwei"); w.WriteCloud("geladen.txt", "drei"); });
         Fetch(world, "geladen.txt");
-        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair.Id);
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
         // As when uninstalling and installing again: with the registration, Windows removes the online-only files from the PC.
         await world.RestartAsync(whileStopped: () => Assert.Equal([id], SyncRoots.UnregisterAll(world.Host.Paths)));
         Assert.False(File.Exists(world.Pc("nur online.txt")));
@@ -401,7 +429,7 @@ public class OnDemandTests
     public async Task The_name_in_Explorer_can_be_changed_while_the_folder_is_connected()
     {
         await using var world = await WorldAsync(cloud: w => w.WriteCloud("a.txt", "a"));
-        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair.Id);
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
         world.Host.Sync.Update(world.Pair.Id, p => p.ExplorerName = "Unterricht 7b");
         using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey($@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\{id}");
         Assert.NotNull(key);
@@ -454,13 +482,77 @@ public class OnDemandTests
     [Fact]
     public async Task Ending_the_synchronisation_keeps_fetched_files_and_removes_online_only_ones()
     {
-        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("geholt.txt", "da"); w.WriteCloud("online.txt", "x"); });
+        await using var world = await WorldAsync(cloud: w =>
+        {
+            w.WriteCloud("geholt.txt", "da");
+            w.WriteCloud("online.txt", "x");
+            w.WriteCloud("Nur online/a.txt", "a");
+            w.WriteCloud("Gemischt/b.txt", "b");
+            w.WriteCloud("Gemischt/c.txt", "c");
+        });
         Fetch(world, "geholt.txt");
+        Fetch(world, "Gemischt/b.txt");
         await world.Host.Sync.RemoveAsync(world.Pair.Id);
+        // Nothing is left that Windows would call corrupt - at once, not only some time later.
+        Assert.Equal(0, Leftovers.Count(world.Local));
         Assert.Equal("da", world.ReadPc("geholt.txt"));
         Assert.Null(Placeholders.Read(world.Pc("geholt.txt")));
+        Assert.Equal("b", world.ReadPc("Gemischt/b.txt"));
         Assert.False(File.Exists(world.Pc("online.txt")));
+        Assert.False(File.Exists(world.Pc("Gemischt/c.txt")));
+        Assert.False(Directory.Exists(world.Pc("Nur online")));
         // In the cloud everything stays.
-        Assert.Equal(["geholt.txt", "online.txt"], world.CloudFiles());
+        Assert.Equal(["Gemischt/b.txt", "Gemischt/c.txt", "Nur online/a.txt", "geholt.txt", "online.txt"], world.CloudFiles());
+    }
+
+    [Fact]
+    public async Task What_a_program_held_while_ending_is_cleared_at_the_next_start()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("a.txt", "a"); w.WriteCloud("gehalten.txt", "nur online"); });
+        world.Host.Sync.CleanUpWait = TimeSpan.FromSeconds(2);
+        var noted = Path.Combine(world.Host.Paths.Home, "cleanup.json");
+        // A program holds an online-only file while the synchronisation ends (nothing is fetched by that).
+        using (new FileStream(world.Pc("gehalten.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await world.Host.Sync.RemoveAsync(world.Pair.Id);
+        }
+        Assert.True(File.Exists(noted));
+        // The next start clears it, with the registration it belongs to.
+        world.Host.Sync.FinishCleanUps();
+        Assert.Equal(0, Leftovers.Count(world.Local));
+        Assert.False(File.Exists(noted));
+        Assert.False(File.Exists(world.Pc("gehalten.txt")));
+        Assert.Equal("nur online", world.ReadCloud("gehalten.txt"));
+    }
+
+    [Fact]
+    public async Task A_noted_clean_up_never_touches_a_registration_a_synchronisation_uses()
+    {
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("a.txt", "a"));
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
+        // A note for the folder and the registration of the running synchronisation (as after reinstalling).
+        var noted = Path.Combine(world.Host.Paths.Home, "cleanup.json");
+        File.WriteAllText(noted, System.Text.Json.JsonSerializer.Serialize(new List<SyncService.PendingCleanUp> { new(id, world.Local, world.Pair.Id) }, SettingsStore.JsonOptions));
+        world.Host.Sync.FinishCleanUps();
+        Assert.True(SyncRoots.IsRegistered(id));
+        Assert.NotNull(Placeholders.Read(world.Pc("a.txt")));
+        Assert.True(File.Exists(noted));
+        var run = await RunAsync(world);
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+        // Ending the synchronisation clears its folder; the note is done with it.
+        await world.Host.Sync.RemoveAsync(world.Pair.Id);
+        Assert.Equal(0, Leftovers.Count(world.Local));
+        Assert.False(File.Exists(noted));
+    }
+
+    [Fact]
+    public async Task Ending_again_in_another_folder_never_takes_over_the_registration_of_the_first()
+    {
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("a.txt", "a"));
+        var first = SyncRoots.IdFor(world.Host.Paths, world.Pair);
+        await world.Host.Sync.RemoveAsync(world.Pair.Id);
+        var again = await world.AddPairAsync(p => { p.Mode = SyncMode.OnDemand; p.LocalPath = world.Local + " 2"; });
+        Assert.Equal(world.Pair.Id, again.Id);
+        Assert.NotEqual(first, SyncRoots.IdFor(world.Host.Paths, again));
     }
 }

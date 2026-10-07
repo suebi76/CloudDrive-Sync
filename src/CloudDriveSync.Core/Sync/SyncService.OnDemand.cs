@@ -72,13 +72,13 @@ public sealed partial class SyncService
     }
 
     internal Task<SyncRunOutcome> RunOnDemandAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress> progress, bool keepTrash, CancellationToken cancellationToken,
-        BisyncRecord? converting = null)
+        BisyncRecord? converting = null, Action<string>? activity = null)
     {
         if (!OnDemandSupported)
             return Task.FromResult(new SyncRunOutcome(false, "CD-4601", "Windows 10 1809 or later is needed", SyncDecision.None, JobProgress.None, 0, [], false));
         var runner = _onDemandRunner ??= new OnDemandRunner(_paths, _engine, _files);
         var freeUpDays = _settings.Current.Preferences.FreeUpAfterDays;
-        return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, freeUpDays, Time.GetUtcNow().UtcDateTime, cancellationToken, converting);
+        return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, freeUpDays, Time.GetUtcNow().UtcDateTime, cancellationToken, converting, activity);
     }
 
     [SupportedOSPlatform("windows10.0.17763")]
@@ -112,8 +112,17 @@ public sealed partial class SyncService
         }
     }
 
+    /// <summary>A new registration: left-overs of an earlier synchronisation in the folder are cleared first.</summary>
     [SupportedOSPlatform("windows10.0.17763")]
-    private void ConnectNew(string id) => LiveFor(id).EnsureConnected();
+    private void ConnectNew(string id)
+    {
+        if (FindPair(id)?.LocalPath is { } folder)
+        {
+            FinishCleanUps(folder);
+            if (Leftovers.Count(folder) > 0) throw new Errors.CdException("CD-4602", "placeholders of an earlier synchronisation are still in the folder");
+        }
+        LiveFor(id).EnsureConnected();
+    }
 
     [SupportedOSPlatform("windows10.0.17763")]
     private void RenameInExplorer(string id)
@@ -130,8 +139,9 @@ public sealed partial class SyncService
     }
 
     /// <summary>
-    /// Ends a synchronisation with files on demand: the registration with Windows goes, Windows keeps the files whose
-    /// data is on the PC as normal files and removes the online-only placeholders (their data stays in the cloud).
+    /// Ends a synchronisation with files on demand: the placeholders are cleared (files with their data on the PC stay
+    /// as normal files, online-only ones leave the PC - their data stays in the cloud), then the registration with
+    /// Windows ends. What a program held meanwhile is noted and cleared at the next start, with the same registration.
     /// </summary>
     [SupportedOSPlatform("windows10.0.17763")]
     private void EndOnDemand(string id)
@@ -139,6 +149,8 @@ public sealed partial class SyncService
         OnDemandPair? live = null;
         lock (_gate) _live?.Remove(id, out live);
         live ??= new OnDemandPair(_paths, id, _files, () => FindPair(id), () => null, () => { });
+        var folder = FindPair(id)?.LocalPath;
+        var registration = live.SyncRootId.Split('!')[^1];
         try
         {
             live.Unregister();
@@ -150,6 +162,14 @@ public sealed partial class SyncService
         finally
         {
             live.Dispose();
+        }
+        var clear = folder is null || !Directory.Exists(folder) || Leftovers.WaitUntilClear(folder, CleanUpWait);
+        // The registration that ended may be the one older left-overs belong to: they can be cleared now.
+        FinishCleanUps(ending: id);
+        if (!clear)
+        {
+            RememberCleanUp(new PendingCleanUp(SyncRoots.IdFor(_paths, registration), folder!, id));
+            Log.Warn("OnDemand", $"'{id}': {Leftovers.Count(folder!)} placeholder(s) left in the folder - a program held them; they are cleared at the next start.");
         }
     }
 

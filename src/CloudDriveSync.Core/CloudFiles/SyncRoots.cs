@@ -28,6 +28,12 @@ public static class SyncRoots
 
     public static string IdFor(AppPaths paths, string pairId) => $"{paths.SyncRootProvider}!{UserSid}!{pairId}";
 
+    /// <summary>The ID of a synchronisation's registration (see <see cref="Settings.SyncPairSettings.RegistrationKey"/>).</summary>
+    public static string IdFor(AppPaths paths, Settings.SyncPairSettings pair) => IdFor(paths, pair.RegistrationKey ?? pair.Id);
+
+    /// <summary>A registration key never used before: the synchronisation's ID and a random tail.</summary>
+    public static string NewKey(string pairId) => $"{pairId}-{System.Security.Cryptography.RandomNumberGenerator.GetHexString(8, lowercase: true)}";
+
     /// <summary>
     /// Registers (or updates) a sync root. Full hydration (a file comes completely when opened), all entries created by
     /// CloudDrive-Sync itself, no automatic freeing of space by Windows - CloudDrive-Sync's own setting decides that.
@@ -55,6 +61,20 @@ public static class SyncRoots
     {
         using var key = Registry.LocalMachine.OpenSubKey($@"{ManagerKey}\{id}");
         return key?.GetValue("NamespaceCLSID") as string;
+    }
+
+    /// <summary>The folder a registration of this user points to, or null when there is no such registration.</summary>
+    public static string? FolderOf(string id)
+    {
+        try
+        {
+            using var roots = Registry.LocalMachine.OpenSubKey($@"{ManagerKey}\{id}\UserSyncRoots");
+            return roots?.GetValue(UserSid) as string;
+        }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The folders of all of this user's sync roots, of any program (Windows keeps them under "UserSyncRoots").</summary>

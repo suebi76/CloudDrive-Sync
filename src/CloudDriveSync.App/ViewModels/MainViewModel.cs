@@ -374,29 +374,24 @@ public sealed partial class MainViewModel : ObservableObject
         _ = RefreshQuotasAsync();
     }
 
-    public async Task RemoveSyncAsync(SyncPairViewModel pair)
+    /// <summary>Ends a synchronisation after asking what stays on this PC; the window shows the work until it is done.</summary>
+    public Task RemoveSyncAsync(SyncPairViewModel pair)
     {
-        var answer = Dialogs.Ask("Synchronisation beenden?",
-            $"„{pair.Title}“ wird nicht mehr abgeglichen. Alle Dateien bleiben erhalten – im Ordner {pair.LocalPath} und in der Cloud.",
-            "Beenden", danger: true);
-        if (answer != DialogChoice.Primary) return;
-        await RunGuardedAsync(() => Host.Sync.RemoveAsync(pair.Id));
-        Reload();
+        var dialog = new EndSyncViewModel(Host, [pair.Settings], "Synchronisation beenden",
+            $"„{pair.Title}“ wird nicht mehr abgeglichen. In der Cloud bleibt alles, wie es ist.", "Beenden");
+        if (Dialogs.End(dialog)) Reload();
+        return Task.CompletedTask;
     }
 
-    public async Task RemoveAccountAsync(AccountViewModel account)
+    /// <summary>Removes an account with its synchronisations, after asking what stays on this PC.</summary>
+    public Task RemoveAccountAsync(AccountViewModel account)
     {
-        var pairs = Pairs.Where(p => p.Settings.AccountId == account.Id).ToList();
-        var text = pairs.Count == 0
+        var pairs = Pairs.Where(p => p.Settings.AccountId == account.Id).Select(p => p.Settings).ToList();
+        var intro = pairs.Count == 0
             ? $"Die Anmeldung von „{account.Label}“ wird von diesem PC entfernt. In der Cloud ändert sich nichts."
-            : $"Die Anmeldung von „{account.Label}“ und {Format.Count(pairs.Count, "seine Synchronisation", "seine Synchronisationen")} werden entfernt. Alle Dateien bleiben am PC und in der Cloud erhalten.";
-        if (Dialogs.Ask("Konto entfernen?", text, "Entfernen", danger: true) != DialogChoice.Primary) return;
-        await RunGuardedAsync(async () =>
-        {
-            foreach (var pair in pairs) await Host.Sync.RemoveAsync(pair.Id);
-            await Host.Accounts.RemoveAsync(account.Id);
-        });
-        Reload();
+            : $"Die Anmeldung von „{account.Label}“ wird von diesem PC entfernt, und {Format.Count(pairs.Count, "seine Synchronisation endet", "seine Synchronisationen enden")}. In der Cloud bleibt alles, wie es ist.";
+        if (Dialogs.End(new EndSyncViewModel(Host, pairs, "Konto entfernen", intro, "Entfernen", account.Id))) Reload();
+        return Task.CompletedTask;
     }
 
     public void ShowActivity() => SelectedNav = Navigation[2];

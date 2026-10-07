@@ -42,7 +42,7 @@ internal sealed class OnDemandPair : IDisposable
     public ItemStore Store { get; }
 
     /// <summary>The ID of the registration with Windows.</summary>
-    public string SyncRootId => SyncRoots.IdFor(_paths, Id);
+    public string SyncRootId => _pair() is { } pair ? SyncRoots.IdFor(_paths, pair) : SyncRoots.IdFor(_paths, Id);
 
     /// <summary>
     /// The registration was lost after the first run: Windows removed the online-only files from the PC then. The next
@@ -123,14 +123,22 @@ internal sealed class OnDemandPair : IDisposable
     }
 
     /// <summary>
-    /// Ends the registration: Windows keeps the files whose data is on the PC as normal files and removes the
-    /// online-only ones from the PC (their data stays in the cloud).
+    /// Ends the registration. The placeholders are cleared first, here and now (<see cref="Leftovers.Dissolve"/>): files
+    /// whose data is on the PC become normal files, online-only ones leave the PC (their data stays in the cloud) -
+    /// Windows' own clear-up afterwards then has nothing left that a program could hold.
     /// </summary>
-    public void Unregister()
+    public CleanUpResult Unregister()
     {
         Disconnect();
-        if (SyncRoots.IsRegistered(SyncRootId)) SyncRoots.Unregister(SyncRootId);
-        Log.Info("OnDemand", $"'{Id}': registration with Windows ended.");
+        var result = new CleanUpResult(0, 0, []);
+        var id = SyncRootId;
+        if (SyncRoots.IsRegistered(id))
+        {
+            if (_pair()?.LocalPath is { } folder && Directory.Exists(folder)) result = Leftovers.Dissolve(folder);
+            SyncRoots.Unregister(id);
+        }
+        Log.Info("OnDemand", $"'{Id}': registration with Windows ended ({result.Removed} online-only file(s) removed, {result.Kept} kept as normal files, {result.Failed.Count} held by a program).");
+        return result;
     }
 
     /// <summary>

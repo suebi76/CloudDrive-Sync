@@ -104,6 +104,7 @@ lives elsewhere: `%LOCALAPPDATA%\CloudDriveSync\current` (Velopack).
 | `deps\rclone\1.75.1\` | `rclone.exe` in the pinned version. |
 | `cache\` | rclone's cache. |
 | `sync\<id>\` | State of one synchronisation, see below. |
+| `cleanup.json` | Only when needed: folders in which placeholders stayed behind when a synchronisation with files on demand ended, with the registration they belong to (see "Ending" under "Files on demand"). |
 
 In the synchronised folder itself, CloudDrive-Sync creates only two hidden things: the **sentinel file**
 `.clouddrive-sync` and the **recycle bin** `.clouddrive-papierkorb\<date time>\`.
@@ -158,8 +159,8 @@ Its state lives in `sync\<id>\`:
 
 ### Who starts a run, and when
 
-`SyncService` manages all synchronisations: adding (with sentinel files), removing (files stay on both sides),
-pausing, changing settings, answering decisions, "Abgleich überprüfen" (verify). Every synchronisation has a
+`SyncService` manages all synchronisations: adding (with sentinel files), ending (with the question what stays on the
+PC, see "Ending and removing an account"), pausing, changing settings, answering decisions, "Abgleich überprüfen" (verify). Every synchronisation has a
 **`PairWorker`** of its own (`SyncService.PairWorker.cs`):
 
 - An **interval timer** fetches changes from the cloud (default: every 5 minutes).
@@ -247,6 +248,26 @@ sequenceDiagram
 | `TrackRenames`, `SuffixKeepExtension` | Renamed files are not uploaded again; conflict copies keep their extension. |
 | `resync` + `resyncMode = newer` (first sync and rebuild only) | Merge both sides, **delete nothing**. |
 | `force` (only after confirmation) | Apply deletions above the limit when the user explicitly wants it. |
+
+While bisync reads both sides, rclone counts the entries read (`listed` in `core/stats`, `JobProgress.Listed`); the card
+shows them ("Liest Cloud und PC: 12.345 Einträge …"), so a large first run does not look stuck.
+
+### Ending and removing an account
+
+When a synchronisation ends or an account is removed, a window (`EndSyncViewModel`) asks what stays on the PC
+(`KeepOnPc`, `SyncService.Removal.cs`). Nothing ever changes in the cloud.
+
+| Choice | What happens |
+|---|---|
+| Keep fetched files (default) | A classic folder stays as it is. With files on demand, files with their data on the PC become normal files; online-only files leave the PC. |
+| Fetch and keep everything (files on demand only) | A last run, then the space check (`CD-4606`) and every online-only file is fetched; then as above - a complete copy stays. |
+| Delete from the PC | A last run must succeed, otherwise the synchronisation stays (`CD-4608`). Then the files provably in the cloud go into Windows' recycle bin (`RecycleBin`) - with files on demand the placeholders in sync, classic the files still exactly as bisync's listing noted them for the PC - together with the folder's own recycle bin (`.clouddrive-papierkorb`). Empty folders go, the folder itself last. |
+
+Whatever stays - files only on this PC such as Office's lock files, files changed just then, files a program holds - the
+window names and asks about; only on "In den Papierkorb" does `RecycleRestAsync` move them to the recycle bin, too, and
+remove the folder. Never a folder another synchronisation uses, or one above or inside it. The recycle bin is filled
+with `SHFileOperation` and undo; when a file is too large for it, Windows asks first instead of deleting it for good
+silently.
 
 ## Key decisions
 
@@ -388,7 +409,9 @@ the log names it. Only a missing connection, sign-in or engine ends the run, as 
 at least 10 ms between two requests - at most 100 folders a second, however fast the server. For listing, CloudDrive-Sync
 sets the pause to 1 ms (`pacer_min_sleep` in the remote string; not 0, because rclone doubles it after "too many
 requests"). Measured with 10,525 entries in 526 folders on the test server: 1.2 s instead of 5.4 s. Every run writes the
-times of both listings to the log.
+times of both listings to the log. The same reading (`CloudWalker`) counts in the assistant's last step what the
+synchronisation covers and reports folders, files and size as it goes; the card of a running synchronisation shows as
+well how far the reading got.
 
 **Status in Explorer:** Windows takes the state "in sync" from folders (the root never has it at first), and Explorer
 shows no symbol for such folders ("sync pending"). After every run `Executor.MarkFoldersInSync` therefore marks all
@@ -414,10 +437,23 @@ online-only placeholders from the PC. A normal run would take them as "deleted o
 folder again and records that in the state (`items.db`, so it survives a crash); the next run then merges both sides
 like a rebuild and deletes nothing - even when "apply deletions" was chosen before.
 
-**Removing** unregisters the folder with Windows: fetched files stay as normal files, online-only placeholders vanish
-from the PC, everything stays in the cloud. When uninstalling, the Velopack hook unregisters all of the program's folders
-(`SyncRoots.UnregisterAll`, 12 000 entries in less than 4 s); should CloudDrive-Sync come back, the rule "registration
-lost" applies.
+**Ending** (see "Ending and removing an account") dissolves the placeholders *before* the registration ends
+(`Leftovers.Dissolve`): an online-only placeholder in sync leaves the PC, a file with its data on the PC or with a change
+not uploaded yet becomes a normal file (`CfRevertPlaceholder`), a placeholder folder likewise, or it goes when empty.
+Only then does the registration end. The reason: a placeholder left after unregistering - because a program such as
+Explorer or the search index held it open just then - belongs to a registration that no longer exists. Windows calls
+it damaged (error 363), nothing can open or delete it, and Explorer cannot even delete the folder. Therefore:
+- After unregistering, `EndOnDemand` waits up to 60 s until the folder is clear (`Leftovers.WaitUntilClear`).
+- Should something stay, `cleanup.json` notes folder and registration. At the next start (and the next ending)
+  `FinishCleanUps` registers exactly that registration at that folder again for a moment - only then can Windows read
+  the placeholders again -, dissolves them and unregisters. A registration a synchronisation uses, or one pointing to
+  another folder by now, is never touched; the entry waits until that synchronisation ends.
+- Every new synchronisation with files on demand and every switch gets a registration of its own (`RegistrationKey`,
+  "&lt;synchronisation&gt;-&lt;8 characters&gt;"), so remains of an earlier one never fit a new one. `ConnectNew` does not
+  register a folder with remains at all (`CD-4602`).
+
+When uninstalling, the Velopack hook unregisters all of the program's folders (`SyncRoots.UnregisterAll`, 12 000 entries
+in less than 4 s); should CloudDrive-Sync come back, the rule "registration lost" applies.
 
 **Switching** (`SyncService.Conversion.cs`, in the window "Einstellungen der Synchronisation"):
 - **Classic → files on demand:**

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.Versioning;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
@@ -33,12 +34,13 @@ internal sealed class OnDemandRunner
     /// <param name="mode">Resync: first run or rebuild - both sides are merged, nothing is deleted.</param>
     /// <param name="freeUpDays">Files not used for so many days give their space back; 0 = never.</param>
     /// <param name="converting">Switching a classic synchronisation: what its last run left in step (see <see cref="InStep"/>).</param>
+    /// <param name="activity">What the run is doing, for its card - large trees take a while to read.</param>
     public async Task<SyncRunOutcome> RunAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null)
+        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null, Action<string>? activity = null)
     {
         try
         {
-            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, cancellationToken);
+            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, activity, cancellationToken);
             // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
             live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4605" ? ProviderStatus.Idle
                 : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
@@ -52,7 +54,7 @@ internal sealed class OnDemandRunner
     }
 
     private async Task<SyncRunOutcome> RunCoreAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, CancellationToken cancellationToken)
+        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, Action<string>? activity, CancellationToken cancellationToken)
     {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath)) return Failed("CD-4501", pair.LocalPath, SyncDecision.Folder, retryable: true);
@@ -72,7 +74,9 @@ internal sealed class OnDemandRunner
             await File.WriteAllTextAsync(filters, SyncFilters.Build(pair), cancellationToken);
 
             var clock = Stopwatch.StartNew();
-            var cloud = await Listings.ListCloudAsync(rc, pair, filters, account.Kind == WebDavKind.Nextcloud, cancellationToken);
+            activity?.Invoke("Liest die Cloud …");
+            var cloud = await Listings.ListCloudAsync(rc, pair, filters, account.Kind == WebDavKind.Nextcloud, cancellationToken,
+                p => activity?.Invoke($"Liest die Cloud: {Count(p.Folders)} Ordner, {Count(p.Files)} Dateien …"));
             var cloudTime = clock.Elapsed;
             if (pair.CloudCheckFile && !cloud.SentinelFound)
                 return Failed("CD-4503", "check file check failed: the protection file is missing in the cloud folder", SyncDecision.Folder, retryable: false);
@@ -81,6 +85,7 @@ internal sealed class OnDemandRunner
                 return Failed("CD-4512", "cloud folder appears empty although the last run saw files in it", SyncDecision.Folder, retryable: false);
             foreach (var clash in cloud.CaseClashes) Log.Warn("OnDemand", $"'{pair.Id}': '{clash}' left out - another name in the cloud differs only in upper and lower case.");
             clock.Restart();
+            activity?.Invoke("Liest den Ordner auf diesem PC …");
             var local = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
             var localTime = clock.Elapsed;
 
@@ -96,6 +101,7 @@ internal sealed class OnDemandRunner
             Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); cloud listed in {cloudTime.TotalSeconds:0.0} s "
                 + $"({cloud.Entries.Count} entries in {cloud.Folders} folders{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")}), "
                 + $"PC in {localTime.TotalSeconds:0.0} s ({local.Count} entries).");
+            if (plan.Actions.Count > 0) activity?.Invoke($"Gleicht ab: {Count(plan.Actions.Count)} Schritte …");
             clock.Restart();
 
             var executor = new Executor(rc, _files, live.Store, pair, account, keepTrash, cloud.Entries.Keys, progress, cancellationToken);
@@ -141,6 +147,8 @@ internal sealed class OnDemandRunner
 
         static bool Unchanged(NotedFile noted, long size, long ticks) => noted.Size == size && Math.Abs(noted.Time.Ticks - ticks) <= TimeSpan.TicksPerSecond;
     }
+
+    private static string Count(long number) => number.ToString("N0", CultureInfo.GetCultureInfo("de-DE"));
 
     private static SyncRunOutcome Failed(string code, string detail, SyncDecision decision, bool retryable) =>
         new(false, code, detail, decision, JobProgress.None, 0, [], retryable);

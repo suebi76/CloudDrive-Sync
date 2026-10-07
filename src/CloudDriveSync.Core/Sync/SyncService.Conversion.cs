@@ -33,6 +33,10 @@ public sealed partial class SyncService
 
             progress?.Report("Stellt auf „Dateien bei Bedarf“ um …");
             SetMode(id, SyncMode.OnDemand);
+            _settings.Update(s =>
+            {
+                if (s.Syncs.FirstOrDefault(p => p.Id == id) is { } converted) converted.RegistrationKey = SyncRoots.NewKey(id);
+            });
             // Windows makes its own entry in Explorer for the registered folder.
             RemoveExplorerEntry(id);
             SyncRunOutcome outcome;

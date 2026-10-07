@@ -23,6 +23,9 @@ public interface IDialogs
     /// <summary>The settings of an existing synchronisation; true when they were saved.</summary>
     bool SyncSettings(SyncPairSettings pair);
 
+    /// <summary>Ends synchronisations (and removes their account) after asking what stays on this PC. True when something ended.</summary>
+    bool End(EndSyncViewModel viewModel);
+
     /// <summary>"Abgleich überprüfen" for a synchronisation.</summary>
     void Verify(SyncPairSettings pair, string title);
 

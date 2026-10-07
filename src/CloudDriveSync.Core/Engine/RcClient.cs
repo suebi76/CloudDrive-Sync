@@ -7,7 +7,9 @@ using CloudDriveSync.Core.Errors;
 namespace CloudDriveSync.Core.Engine;
 
 /// <summary>Progress of a running engine job (bytes and files so far, of how many).</summary>
-public sealed record JobProgress(long Bytes, long TotalBytes, long Transfers, long TotalTransfers, double BytesPerSecond, long Checks, long TotalChecks, long Errors)
+/// <param name="Listed">Entries read so far while listing both sides - before anything is compared or transferred.</param>
+public sealed record JobProgress(long Bytes, long TotalBytes, long Transfers, long TotalTransfers, double BytesPerSecond, long Checks, long TotalChecks, long Errors,
+    long Listed = 0)
 {
     public static JobProgress None { get; } = new(0, 0, 0, 0, 0, 0, 0, 0);
 }
@@ -129,7 +131,7 @@ public sealed class RcClient : IDisposable
         static long Long(JsonObject o, string name) => o[name] is JsonValue v && v.TryGetValue<double>(out var d) ? (long)d : 0;
         static double Double(JsonObject o, string name) => o[name] is JsonValue v && v.TryGetValue<double>(out var d) ? d : 0;
         return new JobProgress(Long(stats, "bytes"), Long(stats, "totalBytes"), Long(stats, "transfers"), Long(stats, "totalTransfers"),
-            Double(stats, "speed"), Long(stats, "checks"), Long(stats, "totalChecks"), Long(stats, "errors"));
+            Double(stats, "speed"), Long(stats, "checks"), Long(stats, "totalChecks"), Long(stats, "errors"), Long(stats, "listed"));
     }
 
     private static JsonObject ParseObject(string text)

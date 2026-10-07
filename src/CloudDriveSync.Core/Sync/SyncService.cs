@@ -74,16 +74,23 @@ public sealed partial class SyncService : IAsyncDisposable
         {
             Log.Warn("Sync", $"Explorer entries not checked: {e.Message}");
         }
-        // Files on demand: connected at once, so online-only files open before the first run.
+        // Files on demand: connected at once, so online-only files open before the first run - and what an ended
+        // synchronisation left behind is cleared.
         if (OnDemandSupported)
+        {
             foreach (var pair in Pairs.Where(p => p.Mode == SyncMode.OnDemand)) ConnectEarly(pair.Id);
+            _ = Task.Run(() =>
+            {
+                if (OnDemandSupported) FinishCleanUps();
+            });
+        }
     }
 
     public IReadOnlyList<FolderWarning> CheckFolder(string localPath, string? exceptPairId = null) =>
         LocalFolderCheck.Check(localPath, Pairs.Where(p => p.Id != exceptPairId));
 
-    public Task<SyncPreviewResult> PreviewAsync(SyncPairSettings draft, CancellationToken cancellationToken = default) =>
-        SyncPreview.CalculateAsync(_accounts, draft, cancellationToken);
+    public async Task<SyncPreviewResult> PreviewAsync(SyncPairSettings draft, IProgress<ListingProgress>? progress = null, CancellationToken cancellationToken = default) =>
+        await SyncPreview.CalculateAsync(await _engine.EnsureRunningAsync(cancellationToken), _paths, draft, progress, cancellationToken);
 
     /// <summary>
     /// Adds a synchronisation: creates the local folder, places the sentinel file on both sides and starts the
@@ -129,6 +136,9 @@ public sealed partial class SyncService : IAsyncDisposable
             Created = DateTimeOffset.Now,
             CloudCheckFile = cloudCheckFile,
         };
+        // Every registration with Windows gets a key of its own: never the one of an earlier synchronisation, whose
+        // left-overs it would otherwise take over.
+        if (pair.Mode == SyncMode.OnDemand && OnDemandSupported) pair.RegistrationKey = SyncRoots.NewKey(pair.Id);
         var folder = _paths.SyncPairDir(pair.Id);
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         _settings.Update(s => s.Syncs.Add(pair));
@@ -141,7 +151,7 @@ public sealed partial class SyncService : IAsyncDisposable
             catch (CdException)
             {
                 // Windows did not take the folder: the synchronisation does not come about.
-                await RemoveAsync(pair.Id, cancellationToken);
+                await RemoveAsync(pair.Id, cancellationToken: cancellationToken);
                 throw;
             }
         }
@@ -155,8 +165,11 @@ public sealed partial class SyncService : IAsyncDisposable
     }
 
     /// <summary>Ends a synchronisation. Files stay on both sides; only CloudDrive-Sync's own files are removed.</summary>
-    public async Task RemoveAsync(string id, CancellationToken cancellationToken = default)
+    public async Task<EndResult> RemoveAsync(string id, KeepOnPc keep = KeepOnPc.OnPc, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
+        if (FindPair(id) is not { } before) return new EndResult(0, []);
+        // What is to stay comes onto the PC, what is to go is provably in the cloud - should that fail, everything stays as it was.
+        var leave = keep == KeepOnPc.OnPc ? [] : await ExclusiveAsync(id, () => PrepareEndAsync(before, keep, progress, cancellationToken), cancellationToken);
         PairWorker? worker;
         lock (_gate)
         {
@@ -164,8 +177,15 @@ public sealed partial class SyncService : IAsyncDisposable
         }
         if (worker is not null) await worker.StopAsync();
         var pair = FindPair(id);
-        if (pair is null) return;
-        if (pair.Mode == SyncMode.OnDemand && OnDemandSupported) EndOnDemand(id);
+        if (pair is null) return new EndResult(0, []);
+        if (pair.Mode == SyncMode.OnDemand && OnDemandSupported)
+        {
+            progress?.Report("Räumt den Ordner auf …");
+            await Task.Run(() =>
+            {
+                if (OnDemandSupported) EndOnDemand(id);
+            }, CancellationToken.None);
+        }
         RemoveExplorerEntry(id);
         TryDelete(Path.Combine(pair.LocalPath, SyncFilters.SentinelFile));
         try
@@ -191,7 +211,9 @@ public sealed partial class SyncService : IAsyncDisposable
         {
             Log.Warn("Sync", $"State of '{id}' could not be removed: {e.Message}");
         }
-        Log.Info("Sync", $"Synchronisation '{id}' removed (files kept on both sides).");
+        var result = keep == KeepOnPc.Nothing ? await Task.Run(() => RecycleAndTidy(pair.LocalPath, leave, progress), CancellationToken.None) : new EndResult(0, []);
+        Log.Info("Sync", $"Synchronisation '{id}' removed (on the PC: {keep}; in the cloud everything stays).");
+        return result;
     }
 
     public void SetPaused(string id, bool paused)

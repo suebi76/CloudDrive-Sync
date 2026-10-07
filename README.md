@@ -38,6 +38,9 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
   - Dateien bei Bedarf: Freigegeben wird nur, was hochgeladen ist. Ändert sich eine Datei in der Cloud, während sie
     geladen wird, kommt nie eine Mischung aus zwei Fassungen an. Ein Ordner, den der Server nicht lesen lässt, bleibt
     außen vor, statt als gelöscht zu gelten.
+  - Beenden: Du wählst, was auf dem PC bleibt – die Dateien, alles (vorher heruntergeladen) oder nichts. „Vom PC
+    löschen“ lädt erst alles hoch und legt dann den Ordner in den Papierkorb von Windows; Dateien, die es nur auf dem PC
+    gibt, nur nach Rückfrage. Es bleiben keine Platzhalter zurück, die sich nicht löschen lassen.
 - **IServ-Besonderheit:** IServ speichert keine eigenen Änderungszeiten. CloudDrive-Sync merkt sich die Zeiten des
   Servers selbst und erkennt so auch Änderungen, die die Dateigröße nicht verändern.
 - **Im Hintergrund:** Symbol im Infobereich mit Statuspunkt, Windows-Benachrichtigungen bei Konflikten und

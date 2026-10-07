@@ -102,6 +102,7 @@ liegt woanders: `%LOCALAPPDATA%\CloudDriveSync\current` (Velopack).
 | `deps\rclone\1.75.1\` | `rclone.exe` in der festgelegten Version. |
 | `cache\` | Zwischenspeicher von rclone. |
 | `sync\<id>\` | Zustand einer Synchronisation, siehe unten. |
+| `cleanup.json` | Nur wenn nötig: Ordner, in denen beim Beenden einer Synchronisation „bei Bedarf“ Platzhalter übrig blieben, mit der Anmeldung, zu der sie gehören (siehe „Beenden“ unter „Dateien bei Bedarf“). |
 
 Im synchronisierten Ordner selbst legt CloudDrive-Sync nur zwei versteckte Dinge an: die **Wächterdatei**
 `.clouddrive-sync` und den **Papierkorb** `.clouddrive-papierkorb\<Datum Uhrzeit>\`.
@@ -157,8 +158,8 @@ Ihr Zustand liegt in `sync\<id>\`:
 
 ### Wer wann einen Lauf auslöst
 
-`SyncService` verwaltet alle Synchronisationen: hinzufügen (mit Wächterdateien), entfernen (Dateien bleiben auf beiden
-Seiten), pausieren, Einstellungen ändern, Entscheidungen beantworten, „Abgleich überprüfen“. Jede Synchronisation hat
+`SyncService` verwaltet alle Synchronisationen: hinzufügen (mit Wächterdateien), beenden (mit der Frage, was auf dem PC
+bleibt, siehe „Beenden und Konto entfernen“), pausieren, Einstellungen ändern, Entscheidungen beantworten, „Abgleich überprüfen“. Jede Synchronisation hat
 einen eigenen **`PairWorker`** (`SyncService.PairWorker.cs`):
 
 - Ein **Intervall-Timer** holt Änderungen aus der Cloud (Standard: alle 5 Minuten).
@@ -248,6 +249,26 @@ sequenceDiagram
 | `TrackRenames`, `SuffixKeepExtension` | Umbenannte Dateien werden nicht neu hochgeladen; Konfliktkopien behalten ihre Endung. |
 | `resync` + `resyncMode = newer` (nur erster Abgleich und Neuaufbau) | Beide Seiten zusammenführen, **nichts löschen**. |
 | `force` (nur nach Bestätigung) | Löschungen über der Grenze übernehmen, wenn der Nutzer das ausdrücklich will. |
+
+Solange bisync beide Seiten liest, zählt rclone die gelesenen Einträge (`listed` in `core/stats`, `JobProgress.Listed`);
+die Karte zeigt sie („Liest Cloud und PC: 12.345 Einträge …“), damit ein großer erster Abgleich nicht hängend wirkt.
+
+### Beenden und Konto entfernen
+
+Beim Beenden einer Synchronisation und beim Entfernen eines Kontos fragt ein Fenster (`EndSyncViewModel`), was auf dem PC
+bleibt (`KeepOnPc`, `SyncService.Removal.cs`). In der Cloud ändert sich nie etwas.
+
+| Wahl | Was geschieht |
+|---|---|
+| Heruntergeladene Dateien behalten (Standard) | Klassisch bleibt der Ordner, wie er ist. Bei Bedarf werden Dateien mit Daten auf dem PC normale Dateien, reine Online-Dateien verschwinden vom PC. |
+| Alles herunterladen und behalten (nur bei Bedarf) | Ein letzter Lauf, dann Platzprüfung (`CD-4606`) und alle Online-Dateien laden; danach wie oben – eine vollständige Kopie bleibt. |
+| Vom PC löschen | Ein letzter Lauf muss gelingen, sonst bleibt die Synchronisation (`CD-4608`). In den Papierkorb von Windows (`RecycleBin`) kommen dann die Dateien, die nachweislich in der Cloud liegen – bei Bedarf die abgeglichenen Platzhalter, klassisch die Dateien, die noch genau so sind, wie bisyncs Liste sie für den PC notiert hat – und der Papierkorb am PC (`.clouddrive-papierkorb`). Leere Ordner gehen, zuletzt der Ordner selbst. |
+
+Was dabei bleibt – Dateien nur auf diesem PC wie Sperrdateien von Office, gerade geänderte, von einem Programm gehaltene –,
+nennt das Fenster und fragt; erst auf „In den Papierkorb“ legt `RecycleRestAsync` auch sie in den Papierkorb und
+entfernt den Ordner. Nie einen Ordner, den eine andere Synchronisation nutzt, oder einen darüber oder darin. Der
+Papierkorb wird mit `SHFileOperation` und Rückgängig gefüllt; ist eine Datei zu groß für ihn, fragt Windows vorher, statt
+sie still endgültig zu löschen.
 
 ## Wichtige Entscheidungen
 
@@ -394,7 +415,9 @@ wird dort angelegt oder hochgeladen, und das Protokoll nennt ihn. Nur fehlende V
 den Lauf wie überall. rclones WebDAV-Zugang wartet zwischen zwei Anfragen mindestens 10 ms – höchstens 100 Ordner pro
 Sekunde, egal wie schnell der Server ist. Für das Auflisten setzt CloudDrive-Sync die Pause auf 1 ms (`pacer_min_sleep`
 im Remote-String; nicht 0, weil rclone sie nach „zu vielen Anfragen“ verdoppelt). Gemessen mit 10 525 Einträgen in 526
-Ordnern am Testserver: 1,2 s statt 5,4 s. Jeder Lauf schreibt die Zeiten beider Listen ins Protokoll.
+Ordnern am Testserver: 1,2 s statt 5,4 s. Jeder Lauf schreibt die Zeiten beider Listen ins Protokoll. Dasselbe Lesen
+(`CloudWalker`) zählt im letzten Schritt des Assistenten, was die Synchronisation umfasst, und meldet dabei laufend Ordner,
+Dateien und Größe; die Karte einer laufenden Synchronisation zeigt ebenso, wie weit das Lesen ist.
 
 **Status im Explorer:** Windows nimmt Ordnern den Zustand „abgeglichen“ (der Hauptordner hat ihn von Anfang an nicht),
 und Explorer zeigt für solche Ordner kein Symbol („Synchronisierung ausstehend“). Nach jedem Lauf markiert
@@ -423,10 +446,24 @@ Online-Platzhalter vom PC entfernt. Ein normaler Lauf hielte sie für „am PC g
 neu an und hält das im Zustand fest (`items.db`, übersteht also einen Absturz); der nächste Lauf führt dann beide Seiten
 zusammen wie ein Neuaufbau und löscht nichts – auch dann nicht, wenn vorher „Löschungen übernehmen“ gewählt war.
 
-**Entfernen** meldet den Ordner bei Windows ab: Geladene Dateien bleiben als normale Dateien, reine Online-Platzhalter
-verschwinden vom PC, in der Cloud bleibt alles. Beim Deinstallieren meldet der Velopack-Hook alle Ordner des Programms ab
-(`SyncRoots.UnregisterAll`, 12 000 Einträge in unter 4 s); kommt CloudDrive-Sync wieder, greift die Regel „Anmeldung
-verloren“.
+**Beenden** (siehe „Beenden und Konto entfernen“) löst die Platzhalter auf, *bevor* die Anmeldung endet
+(`Leftovers.Dissolve`): Ein abgeglichener Online-Platzhalter geht vom PC, eine Datei mit Daten auf dem PC oder einer
+Änderung, die noch nicht hochgeladen ist, wird eine normale Datei (`CfRevertPlaceholder`), ein Platzhalter-Ordner ebenso
+oder er geht, wenn er leer ist. Erst dann endet die Anmeldung. Der Grund: Ein Platzhalter, der nach dem Abmelden übrig
+bleibt – weil ein Programm wie Explorer oder der Suchindex ihn gerade offen hielt –, gehört zu einer Anmeldung, die es
+nicht mehr gibt. Windows nennt ihn beschädigt (Fehler 363), nichts kann ihn öffnen oder löschen, und Explorer kann den
+Ordner nicht einmal löschen. Deshalb:
+- Nach dem Abmelden wartet `EndOnDemand` bis zu 60 s, bis der Ordner frei ist (`Leftovers.WaitUntilClear`).
+- Bleibt doch etwas, merkt sich `cleanup.json` Ordner und Anmeldung. Beim nächsten Start (und beim nächsten Beenden)
+  meldet `FinishCleanUps` genau diese Anmeldung kurz wieder an diesem Ordner an – nur damit kann Windows die Platzhalter
+  wieder lesen –, löst sie auf und meldet wieder ab. Eine Anmeldung, die eine Synchronisation nutzt oder die inzwischen
+  auf einen anderen Ordner zeigt, bleibt unberührt; der Eintrag wartet, bis diese Synchronisation endet.
+- Jede neue Synchronisation „bei Bedarf“ und jedes Umstellen bekommt eine eigene Anmeldung (`RegistrationKey`,
+  „&lt;Synchronisation&gt;-&lt;8 Zeichen&gt;“). So passen Reste einer früheren nie zu einer neuen. Einen Ordner mit Resten
+  meldet `ConnectNew` gar nicht erst an (`CD-4602`).
+
+Beim Deinstallieren meldet der Velopack-Hook alle Ordner des Programms ab (`SyncRoots.UnregisterAll`, 12 000 Einträge in
+unter 4 s); kommt CloudDrive-Sync wieder, greift die Regel „Anmeldung verloren“.
 
 **Umstellen** (`SyncService.Conversion.cs`, im Fenster „Einstellungen der Synchronisation“):
 - **Klassisch → bei Bedarf:**

@@ -201,7 +201,10 @@ public sealed partial class SyncPairViewModel : ObservableObject
         {
             IsIndeterminate = true;
             Progress = 0;
-            ProgressText = progress.Checks > 0 ? $"{Format.Count(progress.Checks, "Datei", "Dateien")} verglichen" : "Vergleicht Cloud und PC …";
+            // A large folder takes a while to read - the count shows it is still going.
+            ProgressText = progress.Checks > 0 ? $"{Format.Count(progress.Checks, "Datei", "Dateien")} verglichen"
+                : progress.Listed > 0 ? $"Liest Cloud und PC: {Format.Count(progress.Listed, "Eintrag", "Einträge")} …"
+                : "Vergleicht Cloud und PC …";
         }
     }
 

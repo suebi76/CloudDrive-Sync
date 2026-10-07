@@ -231,8 +231,8 @@
                     <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                         <StackPanel>
                             <TextBlock Text="Umfang" Style="{StaticResource Strong}" />
-                            <TextBlock Text="{Binding PreviewText}" Style="{StaticResource Secondary}" Margin="0,6,0,0" LineHeight="20" />
-                            <ProgressBar IsIndeterminate="True" Margin="0,10,0,0" Visibility="{Binding IsBusy, Converter={StaticResource Visible}}" />
+                            <TextBlock Text="{Binding PreviewText}" Style="{StaticResource Secondary}" Margin="0,6,0,0" LineHeight="20" TextWrapping="Wrap" />
+                            <ProgressBar IsIndeterminate="True" Margin="0,10,0,0" Visibility="{Binding IsCounting, Converter={StaticResource Visible}}" />
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource InfoBarCaution}" Margin="0,12,0,0" Visibility="{Binding NotEnoughSpace, Converter={StaticResource Visible}}">

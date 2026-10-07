@@ -15,6 +15,8 @@ public partial class AddSyncWindow : Window
         InitializeComponent();
         DataContext = _viewModel = viewModel;
         viewModel.CloseRequested += (_, _) => Close();
+        // A count of a large cloud folder ends with the window.
+        Closed += (_, _) => viewModel.StopCounting();
     }
 
     private void OnFolderSelected(object sender, RoutedPropertyChangedEventArgs<object> e)

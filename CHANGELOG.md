@@ -3,6 +3,45 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.5] – 2026-10-07
+
+Fifth test version on the way to 0.3, with what the fourth showed.
+
+### Added
+
+- Ending a synchronisation or removing an account first asks what stays on this PC. In the cloud nothing changes.
+  - "Heruntergeladene Dateien behalten" (the default): with files on demand, fetched files stay as normal files and
+    files only online leave the PC; a classic folder stays as it is.
+  - "Alles herunterladen und behalten" (files on demand): every file only online comes onto the PC first - when the
+    drive has room for it.
+  - "Vom PC löschen": a last run uploads everything first; only when it succeeded does the folder go into Windows'
+    recycle bin with everything in it. Files that exist only on this PC (such as Office's lock files) are named and go
+    only when confirmed; a file too large for the recycle bin is deleted only after Windows asks. Should the upload
+    fail, the synchronisation stays.
+  The window shows what it is doing and closes by itself when it is done.
+
+### Fixed
+
+- After ending a synchronisation with files on demand, its folder could not be deleted - Explorer did nothing, or
+  Windows called the files damaged. Files a program held at that moment (Explorer, the search index) stayed behind as
+  placeholders of a registration that no longer existed. Now every placeholder becomes a normal file or leaves the PC
+  before the registration ends, CloudDrive-Sync waits until the folder is clear, and whatever still stays is noted and
+  cleared at the next start, with the registration it belongs to. A folder with such remains is never taken for a new
+  synchronisation.
+- Each synchronisation with files on demand gets a registration of its own every time it is set up or switched, so the
+  remains of an earlier one never mix with a new one.
+- The last step of the assistant no longer waits minutes for a large cloud folder, such as a whole Nextcloud account,
+  before starting is possible. It counts with the fast listing the synchronisation uses itself, shows how far it got
+  ("bisher 1.234 Ordner, 12.345 Dateien, 23 GB"), and "Synchronisation starten" works at any time. A folder the server
+  does not let be read no longer stops the count ("Größe konnte nicht ermittelt werden"); it is left out and mentioned.
+
+### Changed
+
+- While a synchronisation with files on demand reads a large cloud folder, its card says how far it got ("Liest die
+  Cloud: 1.234 Ordner, 12.345 Dateien …") instead of only "Wird synchronisiert …".
+- A classic synchronisation's card counts what it has read while it compares both sides ("Liest Cloud und PC:
+  12.345 Einträge …"), so the first run of a large folder no longer looks stuck.
+
 ## [0.3.0-preview.4] – 2026-10-07
 
 Fourth test version on the way to 0.3.

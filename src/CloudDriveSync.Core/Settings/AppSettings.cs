@@ -112,6 +112,12 @@ public sealed class SyncPairSettings
     public SyncMode Mode { get; set; } = SyncMode.Classic;
     /// <summary>The name in Explorer's navigation pane; empty means "account – cloud folder".</summary>
     public string? ExplorerName { get; set; }
+    /// <summary>
+    /// Files on demand: the last part of the folder's registration with Windows (see SyncRoots.IdFor) - new for every
+    /// registration, so it never meets what an earlier one left behind. Empty for registrations made before
+    /// 0.3.0-preview.5: they use the ID of the synchronisation.
+    /// </summary>
+    public string? RegistrationKey { get; set; }
     public SyncSelection Selection { get; set; } = new();
     public ConflictPolicy Conflicts { get; set; } = ConflictPolicy.NewerWins;
     /// <summary>Cloud changes are fetched this often; local changes go up shortly after they happen.</summary>

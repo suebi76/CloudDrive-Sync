@@ -38,6 +38,12 @@ internal sealed class DialogService(CloudDriveSyncHost host, Func<Window?> owner
 
     public void Verify(SyncPairSettings pair, string title) => Show(new VerifyWindow(new VerifyViewModel(host, pair, title)));
 
+    public bool End(EndSyncViewModel viewModel)
+    {
+        Show(new EndSyncWindow(viewModel));
+        return viewModel.Changed;
+    }
+
     public DialogChoice Ask(string title, string text, string primary, string? secondary = null, string close = "Abbrechen", bool danger = false) =>
         MessageDialog.Show(owner(), title, text, primary, secondary, close, danger);
 
