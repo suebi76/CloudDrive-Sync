@@ -40,8 +40,7 @@ public static class SyncPreview
         long localFiles = 0, localBytes = 0;
         if (Directory.Exists(draft.LocalPath))
         {
-            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
-            foreach (var file in new DirectoryInfo(draft.LocalPath).EnumerateFiles("*", options))
+            foreach (var file in FolderWalk.Files(draft.LocalPath, FileAttributes.ReparsePoint))
             {
                 if (Path.GetRelativePath(draft.LocalPath, file.FullName).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase)) continue;
                 localFiles++;

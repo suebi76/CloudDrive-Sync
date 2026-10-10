@@ -62,7 +62,18 @@ public sealed partial class SyncService : IAsyncDisposable
         lock (_gate)
         {
             _started = true;
-            foreach (var pair in _settings.Current.Syncs) WorkerFor(pair.Id).Start();
+            // One synchronisation never keeps the others - or the program - from starting.
+            foreach (var pair in _settings.Current.Syncs)
+            {
+                try
+                {
+                    WorkerFor(pair.Id).Start();
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Sync", $"Synchronisation '{pair.Id}' not started: {e}");
+                }
+            }
         }
         // Explorer's entries for classic synchronisations: brought up to date, left-overs removed.
         foreach (var pair in Pairs) UpdateExplorerEntry(pair.Id);

@@ -3,6 +3,25 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.10] – 2026-10-10
+
+Tenth test version on the way to 0.3: nothing in a folder stops the program any more.
+
+### Fixed
+
+- CloudDrive-Sync did not start ("Unerwarteter Fehler") when a synchronised folder held an entry Windows does not let be
+  opened - such as the broken placeholders of earlier test versions. Looking for conflict copies at the start stopped
+  there, and the whole program with it. Every walk through a folder on the PC now passes such a folder over and names
+  it; one synchronisation never keeps the others or the program from starting.
+- The same in the run itself (conflict copies, CloudDrive-Sync's own deletion guard - what is in such a folder counts as
+  unknown, never as deleted), in the setup preview, the recycle bin list, "Immer auf diesem Gerät behalten" and in
+  "Vom PC löschen": the rest goes, the folder Windows refuses stays and is named.
+- "Alles herunterladen und behalten" and switching back to all files on this PC stop with a clear message (CD-4609)
+  when Windows refuses folders - their files cannot be downloaded; the synchronisation stays as it was.
+- Moving the rest of an ended synchronisation's folder into the recycle bin ("In den Papierkorb") followed links: through
+  a junction in the folder it could reach files outside of it. Links are no longer followed anywhere; such a link stays
+  and is named.
+
 ## [0.3.0-preview.9] – 2026-10-10
 
 Ninth test version on the way to 0.3: placeholders that Windows made broken.

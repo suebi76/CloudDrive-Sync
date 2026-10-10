@@ -24,8 +24,10 @@ internal static class DeleteGuard
         if (pair.MaxDeletePercent >= 100) return null;
         var known = Load(pairFolder);
         if (known is null || known.Count == 0) return null;
-        var current = LocalFiles(pair);
-        var missing = known.Keys.Count(path => !current.ContainsKey(path));
+        var refused = new List<string>();
+        var current = LocalFiles(pair, refused);
+        // What is in a folder Windows refuses is unknown, not missing.
+        var missing = known.Keys.Count(path => !current.ContainsKey(path) && !IsBelow(path, refused));
         if (missing < MinimumDeletions || missing * 100L <= (long)pair.MaxDeletePercent * known.Count) return null;
         return (missing, known.Count);
     }
@@ -46,7 +48,13 @@ internal static class DeleteGuard
     {
         var file = ListFile(pairFolder);
         var temporary = file + ".tmp";
-        File.WriteAllLines(temporary, LocalFiles(pair)
+        var refused = new List<string>();
+        var files = LocalFiles(pair, refused);
+        // A folder Windows refuses keeps what was known of it.
+        if (refused.Count > 0 && Load(pairFolder) is { } known)
+            foreach (var (path, state) in known)
+                if (IsBelow(path, refused)) files.TryAdd(path, state);
+        File.WriteAllLines(temporary, files
             .OrderBy(f => f.Key, StringComparer.Ordinal)
             .Select(f => string.Create(CultureInfo.InvariantCulture, $"{f.Value.Ticks}\t{f.Value.Size}\t{f.Key}")));
         File.Move(temporary, file, overwrite: true);
@@ -70,13 +78,14 @@ internal static class DeleteGuard
     }
 
     /// <summary>The synchronised files on the PC (relative, "/" separated): selection applied, own and temporary files left out.</summary>
-    internal static Dictionary<string, LocalFileState> LocalFiles(SyncPairSettings pair)
+    /// <param name="refused">Collects the folders Windows refuses to open (relative, "/" separated): what is in them is unknown.</param>
+    internal static Dictionary<string, LocalFileState> LocalFiles(SyncPairSettings pair, List<string>? refused = null)
     {
         var files = new Dictionary<string, LocalFileState>(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(pair.LocalPath)) return files;
         var selected = pair.Selection.Mode == SelectionMode.Selected ? SyncFilters.Normalise(pair.Selection.Include) : null;
-        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
-        foreach (var info in new DirectoryInfo(pair.LocalPath).EnumerateFiles("*", options))
+        var refusedFull = new List<string>();
+        foreach (var info in FolderWalk.Files(pair.LocalPath, FileAttributes.ReparsePoint, refusedFull))
         {
             var relative = Path.GetRelativePath(pair.LocalPath, info.FullName).Replace('\\', '/');
             if (relative.StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase) || IsTemporary(info.Name)) continue;
@@ -86,8 +95,12 @@ internal static class DeleteGuard
                 continue;
             files[relative] = new LocalFileState(info.Length, info.LastWriteTimeUtc.Ticks);
         }
+        refused?.AddRange(refusedFull.Select(f => Path.GetRelativePath(pair.LocalPath, f).Replace('\\', '/')));
         return files;
     }
+
+    private static bool IsBelow(string path, List<string> folders) =>
+        folders.Any(folder => path.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The same temporary and system files the synchronisation leaves out (see <see cref="SyncFilters.StandardExcludes"/>).</summary>
     private static bool IsTemporary(string name) =>

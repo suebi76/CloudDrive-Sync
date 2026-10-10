@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.Versioning;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
+using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.OnDemand;
 
@@ -75,9 +76,11 @@ internal sealed class PinWatcher : IDisposable
             // Passing the state on changes the attributes of every folder below, too: once per state is enough.
             if (_foldersDone.TryGetValue(path, out var done) && done == info.Pin) return;
             _foldersDone[path] = info.Pin;
-            foreach (var folder in Directory.EnumerateDirectories(path, "*", SearchOption.AllDirectories)) _foldersDone[folder] = info.Pin;
+            // A folder below that Windows refuses is passed over; the rest is fetched or freed.
+            var below = FolderWalk.Entries(path, 0).ToList();
+            foreach (var folder in below.OfType<DirectoryInfo>()) _foldersDone[folder.FullName] = info.Pin;
             Placeholders.SetPinState(path, info.Pin, recurse: true);
-            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)) Enqueue(file);
+            foreach (var file in below.OfType<FileInfo>()) Enqueue(file.FullName);
             return;
         }
         Apply(path, info, _pairId);

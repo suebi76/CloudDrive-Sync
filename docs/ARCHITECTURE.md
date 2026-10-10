@@ -462,6 +462,18 @@ bleibt außen vor wie ein Cloud-Ordner, den der Server verweigert (`Listings.Loc
 `Unreadable`): nichts darin gilt als gelöscht. rclone listet einen solchen Ordner nämlich ohne ein Wort als leer – deshalb
 öffnet `Listings.RefusedFolders` jeden Ordner selbst.
 
+Auch jeder andere Gang durch einen Ordner am PC hält an einem solchen Eintrag nicht an (`FolderWalk`). .NETs eigenes
+rekursives Auflisten bricht beim ersten Ordner mit einer Ausnahme ab, den Windows aus einem anderen Grund als fehlenden
+Rechten verweigert – `IgnoreInaccessible` deckt nur diese ab. So hielt die Suche nach Konfliktkopien beim Start an einem
+kaputten Platzhalter an, und mit ihr das ganze Programm (preview.9). `FolderWalk` geht Ordner für Ordner, übergeht einen
+verweigerten und nennt ihn; was darin liegt, ist unbekannt, und so behandeln es die Aufrufer: Der Löschschutz zählt es nicht
+als fehlend und behält, was er davon wusste, „Vom PC löschen“ lässt den Ordner stehen und nennt ihn, und wo alles auf den
+PC muss (alles herunterladen, zurück zu klassisch), endet es mit `CD-4609`, bevor sich etwas ändert. Der Ordner selbst
+unlesbar wirft weiter. Und keine einzelne Synchronisation hält den Start der anderen auf (`SyncService.Start`).
+Verknüpfungen (symbolische Links, Junctions) folgt `FolderWalk` nie – Platzhalter sind zwar auch Analysepunkte, aber keine
+Links. Vorher konnte „In den Papierkorb“ für den Rest eines Ordners über eine Junction Dateien außerhalb erreichen; jetzt
+bleibt der Link stehen und wird genannt.
+
 **Status im Explorer:** Windows nimmt Ordnern den Zustand „abgeglichen“ (der Hauptordner hat ihn von Anfang an nicht),
 und Explorer zeigt für solche Ordner kein Symbol („Synchronisierung ausstehend“). Nach jedem Lauf markiert
 `Executor.MarkFoldersInSync` deshalb alle Ordner als abgeglichen – außer dem Weg zu etwas, das auf den nächsten Lauf

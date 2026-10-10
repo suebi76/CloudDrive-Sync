@@ -26,14 +26,17 @@ public static class SyncTrash
         var root = Path.Combine(localPath, SyncFilters.TrashFolder);
         if (!Directory.Exists(root)) return [];
         var entries = new List<TrashEntry>();
-        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
         foreach (var folder in Directory.EnumerateDirectories(root))
         {
             if (!DateTime.TryParseExact(Path.GetFileName(folder), StampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var removed)) continue;
-            foreach (var file in Directory.EnumerateFiles(folder, "*", options))
+            try
             {
-                var info = new FileInfo(file);
-                entries.Add(new TrashEntry(pairId, Path.GetRelativePath(folder, file), file, new DateTimeOffset(removed), info.Length));
+                foreach (var file in FolderWalk.Files(folder, FileAttributes.ReparsePoint))
+                    entries.Add(new TrashEntry(pairId, Path.GetRelativePath(folder, file.FullName), file.FullName, new DateTimeOffset(removed), file.Length));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Not shown until Windows lets it be read.
             }
         }
         return entries.OrderByDescending(e => e.Removed).ThenBy(e => e.RelativePath, StringComparer.CurrentCultureIgnoreCase).ToList();

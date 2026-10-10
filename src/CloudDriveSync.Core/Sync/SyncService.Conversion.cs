@@ -149,18 +149,35 @@ public sealed partial class SyncService
         foreach (var ending in new[] { "", "-wal", "-shm" }) TryDelete(Path.Combine(_paths.SyncPairDir(id), "items.db" + ending));
     }
 
-    /// <summary>Placeholders whose data is not (completely) on the PC, with the bytes missing.</summary>
+    /// <summary>
+    /// Placeholders whose data is not (completely) on the PC, with the bytes missing. Something Windows refuses to open
+    /// cannot be fetched either: then not everything can come onto the PC (CD-4609).
+    /// </summary>
     [SupportedOSPlatform("windows10.0.17763")]
     private static List<(string Path, long Missing)> OnlineOnlyFiles(string root)
     {
         var result = new List<(string, long)>();
-        foreach (var top in Directory.EnumerateFileSystemEntries(root))
+        var refused = new List<string>();
+        bool Own(string path) => Path.GetRelativePath(root, path).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase);
+        foreach (var file in FolderWalk.Files(root, 0, refused))
         {
-            if (Path.GetFileName(top).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase)) continue;
-            var files = Directory.Exists(top) ? Directory.EnumerateFiles(top, "*", SearchOption.AllDirectories) : [top];
-            foreach (var file in files)
-                if (Placeholders.Read(file) is { IsFullyOnDisk: false } info) result.Add((file, info.Size - info.OnDiskSize));
+            if (Own(file.FullName)) continue;
+            try
+            {
+                if (Placeholders.Read(file.FullName) is { IsFullyOnDisk: false } info) result.Add((file.FullName, info.Size - info.OnDiskSize));
+            }
+            catch (FileNotFoundException)
+            {
+                // Gone meanwhile.
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                refused.Add(file.FullName);
+            }
         }
+        refused.RemoveAll(Own);
+        if (refused.Count > 0)
+            throw new CdException("CD-4609", $"{refused.Count} folder(s) or file(s) refused by Windows, e.g. {Path.GetRelativePath(root, refused[0])}");
         return result;
     }
 

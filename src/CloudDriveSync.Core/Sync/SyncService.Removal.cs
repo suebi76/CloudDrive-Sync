@@ -152,21 +152,29 @@ public sealed partial class SyncService
         return Tidy(root, Recycle(AllFiles(root).ToList()));
     });
 
-    /// <summary>Empty folders away - the folder itself, too, when nothing is left in it. What is left is named.</summary>
+    /// <summary>
+    /// Empty folders away - the folder itself, too, when nothing is left in it. What is left is named, with folders Windows
+    /// refuses to open (what is in them is unknown) and links (they stay as they are; what they point to was never touched).
+    /// </summary>
     private static EndResult Tidy(string root, int recycled)
     {
-        foreach (var directory in Directory.Exists(root) ? Directory.EnumerateDirectories(root, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = 0, IgnoreInaccessible = true }).OrderByDescending(d => d.Length).ToList() : [])
+        var folders = Directory.Exists(root) ? FolderWalk.Entries(root, 0).OfType<DirectoryInfo>().OrderByDescending(d => d.FullName.Length).ToList() : [];
+        var links = new List<string>();
+        foreach (var directory in folders)
         {
             try
             {
-                if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+                if (FolderWalk.IsLink(directory)) links.Add(directory.FullName);
+                else if (!Directory.EnumerateFileSystemEntries(directory.FullName).Any()) Directory.Delete(directory.FullName);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 // A folder that stays is no harm.
             }
         }
-        var stayed = Directory.Exists(root) ? AllFiles(root).Select(f => Path.GetRelativePath(root, f)).ToList() : [];
+        var refused = new List<string>();
+        var stayed = Directory.Exists(root) ? AllFiles(root, refused).Select(f => Path.GetRelativePath(root, f)).ToList() : [];
+        stayed.AddRange(refused.Concat(links).Distinct(StringComparer.OrdinalIgnoreCase).Select(f => Path.GetRelativePath(root, f) + Path.DirectorySeparatorChar));
         try
         {
             if (stayed.Count == 0 && Directory.Exists(root) && !Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
@@ -180,10 +188,10 @@ public sealed partial class SyncService
         return new EndResult(recycled, stayed);
     }
 
-    private static IEnumerable<string> AllFiles(string root) =>
-        Directory.EnumerateFiles(root, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 });
+    /// <summary>Every file below <paramref name="root"/>; a folder Windows refuses is passed over (and named in <paramref name="refused"/>).</summary>
+    private static IEnumerable<string> AllFiles(string root, List<string>? refused = null) =>
+        FolderWalk.Files(root, 0, refused).Select(f => f.FullName);
 
     private static IEnumerable<string> Files(string root) =>
-        Directory.EnumerateFiles(root, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 })
-            .Where(f => !Path.GetRelativePath(root, f).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase));
+        AllFiles(root).Where(f => !Path.GetRelativePath(root, f).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase));
 }

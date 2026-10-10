@@ -110,10 +110,10 @@ public sealed partial class SyncService
         {
             LiveFor(id).EnsureConnected();
         }
-        catch (CdException e)
+        catch (Exception e)
         {
-            // The first run tries again and reports what is wrong.
-            Log.Warn("OnDemand", $"'{id}' not connected yet: {e.Code} {e.Detail}");
+            // The first run tries again and reports what is wrong; the start goes on.
+            Log.Warn("OnDemand", $"'{id}' not connected yet: {CdException.CodeOf(e)} {(e as CdException)?.Detail ?? e.Message}");
         }
     }
 

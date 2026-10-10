@@ -456,6 +456,17 @@ a cloud folder the server refuses (`Listings.LocalSide.Refused`, handed to the `
 counts as deleted. rclone lists such a folder as empty without a word - so `Listings.RefusedFolders` opens every folder
 itself.
 
+Every other walk through a folder on the PC does not stop at such an entry either (`FolderWalk`). .NET's own recursive
+enumeration ends with an exception at the first folder Windows refuses for anything but missing rights -
+`IgnoreInaccessible` covers only those. So looking for conflict copies at the start stopped at a broken placeholder, and
+the whole program with it (preview.9). `FolderWalk` goes folder by folder, passes a refused one over and names it; what is
+in it is unknown, and the callers treat it so: the deletion guard counts none of it as missing and keeps what it knew of
+it, "Vom PC löschen" leaves the folder and names it, and where everything must come onto the PC (download everything,
+back to classic) it ends with `CD-4609` before anything changes. The folder itself unreadable still throws. And no single
+synchronisation holds up the start of the others (`SyncService.Start`). `FolderWalk` never follows links (symbolic links,
+junctions) - placeholders are reparse points, too, but no links. Before, moving the rest of a folder into the recycle bin
+could reach files outside it through a junction; now the link stays and is named.
+
 **Status in Explorer:** Windows takes the state "in sync" from folders (the root never has it at first), and Explorer
 shows no symbol for such folders ("sync pending"). After every run `Executor.MarkFoldersInSync` therefore marks all
 folders in sync - except the way to something left for the next run and the unreadable folders. The state of the whole

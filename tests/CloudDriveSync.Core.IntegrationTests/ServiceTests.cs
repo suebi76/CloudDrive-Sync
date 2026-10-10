@@ -74,6 +74,36 @@ public class ServiceTests
     }
 
     [Fact]
+    public async Task A_folder_Windows_refuses_never_keeps_the_program_from_starting()
+    {
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Offen/Plan.txt", "Plan");
+        world.WriteCloud("Gesperrt/a.txt", "a");
+        await world.AddAccountAsync();
+        var log = new StateLog(world.Host.Sync);
+        world.Host.Sync.Start();
+        var first = log.WaitAsync(s => Finished(s) && s.LastRun is not null);
+        await world.AddPairAsync(p => p.OnLocalChange = false);
+        var ready = await first;
+        world.WritePc("Offen/Plan.Konflikt-PC1.txt", "alt");
+
+        // Like a placeholder Windows calls broken: the folder cannot be opened, and not for missing rights. Looking for
+        // conflict copies at the start once stopped there - and the whole program with it.
+        await world.RestartAsync();
+        using (RefusedFolder.Hold(world.Pc("Gesperrt")))
+        {
+            var restarted = new StateLog(world.Host.Sync);
+            world.Host.Sync.Start();
+            Assert.Equal([Path.Combine("Offen", "Plan.Konflikt-PC1.txt")], world.Host.Sync.GetState(world.Pair.Id)!.Conflicts);
+            var done = restarted.WaitAsync(s => Finished(s) && s.LastRun > ready.LastRun);
+            world.Host.Sync.RunNow(world.Pair.Id);
+            await done;
+        }
+        Assert.Equal("a", world.ReadCloud("Gesperrt/a.txt"));
+        Assert.Equal("Plan", world.ReadCloud("Offen/Plan.txt"));
+    }
+
+    [Fact]
     public async Task Synchronise_now_does_not_wait_for_the_pause_after_a_restart()
     {
         await using var world = await SyncWorld.CreateAsync();

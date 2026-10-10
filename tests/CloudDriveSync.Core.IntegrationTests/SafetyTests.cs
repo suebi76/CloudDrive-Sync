@@ -91,8 +91,10 @@ public class SafetyTests
         Assert.Equal("Liste", world.ReadPc("Gruppe B/Liste.txt"));
     }
 
-    [Fact]
-    public async Task A_folder_on_the_PC_that_Windows_refuses_never_counts_as_deleted()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_folder_on_the_PC_that_Windows_refuses_never_counts_as_deleted(bool held)
     {
         await using var world = await SyncWorld.CreateAsync();
         for (var i = 1; i <= 10; i++) world.WriteCloud($"Offen/Datei {i:00}.txt", $"Inhalt {i}");
@@ -103,22 +105,8 @@ public class SafetyTests
         Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
 
         // A folder the PC suddenly does not let be opened (no right to it, or broken).
-        var folder = new DirectoryInfo(world.Pc("Gesperrt"));
-        var security = folder.GetAccessControl();
-        var deny = new System.Security.AccessControl.FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User!,
-            System.Security.AccessControl.FileSystemRights.ListDirectory | System.Security.AccessControl.FileSystemRights.ReadAttributes,
-            System.Security.AccessControl.AccessControlType.Deny);
-        security.AddAccessRule(deny);
-        folder.SetAccessControl(security);
-        try
-        {
+        using (held ? RefusedFolder.Hold(world.Pc("Gesperrt")) : RefusedFolder.Deny(world.Pc("Gesperrt")))
             await world.RunAsync();
-        }
-        finally
-        {
-            security.RemoveAccessRule(deny);
-            folder.SetAccessControl(security);
-        }
         Assert.Equal("a", world.ReadCloud("Gesperrt/a.txt"));
         Assert.Equal("b", world.ReadCloud("Gesperrt/Tiefer/b.txt"));
     }

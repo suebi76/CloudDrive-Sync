@@ -228,17 +228,26 @@ public sealed partial class SyncRunner
         return new SyncRunOutcome(false, code, detail, decision, final, deletes, conflicts, retryable);
     }
 
-    /// <summary>Conflict copies in the local folder ("Bericht.Konflikt-PC1.docx"), relative to the folder.</summary>
+    /// <summary>
+    /// Conflict copies in the local folder ("Bericht.Konflikt-PC1.docx"), relative to the folder. Only for showing them:
+    /// never throws - a folder Windows refuses is passed over, an unreadable folder has none.
+    /// </summary>
     public static IReadOnlyList<string> FindConflicts(string localPath)
     {
         if (!Directory.Exists(localPath)) return [];
         var found = new List<string>();
-        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
-        foreach (var file in Directory.EnumerateFiles(localPath, "*Konflikt-*", options))
+        try
         {
-            var relative = Path.GetRelativePath(localPath, file);
-            if (relative.StartsWith(SyncFilters.TrashFolder, StringComparison.OrdinalIgnoreCase)) continue;
-            if (ConflictPattern().IsMatch(Path.GetFileName(file))) found.Add(relative);
+            foreach (var file in FolderWalk.Files(localPath, FileAttributes.ReparsePoint))
+            {
+                if (!ConflictPattern().IsMatch(file.Name)) continue;
+                var relative = Path.GetRelativePath(localPath, file.FullName);
+                if (!relative.StartsWith(SyncFilters.TrashFolder, StringComparison.OrdinalIgnoreCase)) found.Add(relative);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.Debug("Sync", $"Conflict copies not looked for: {e.Message}");
         }
         return found.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
     }

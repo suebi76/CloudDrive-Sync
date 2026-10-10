@@ -74,9 +74,9 @@ public sealed class PersistedSyncState
         {
             if (File.Exists(file)) return JsonSerializer.Deserialize<PersistedSyncState>(File.ReadAllText(file), SettingsStore.JsonOptions) ?? new();
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
-            // A damaged state file only costs the remembered times.
+            // A damaged or unreadable state file only costs the remembered times.
         }
         return new PersistedSyncState();
     }

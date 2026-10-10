@@ -67,6 +67,59 @@ public class EndingTests
     }
 
     [Fact]
+    public async Task Keeping_everything_stops_at_a_folder_Windows_refuses_and_nothing_changes()
+    {
+        await using var world = await WorldAsync(SyncMode.OnDemand);
+        using (RefusedFolder.Hold(world.Pc("Ordner")))
+        {
+            var error = await Assert.ThrowsAsync<CdException>(() => world.Host.Sync.RemoveAsync(world.Pair.Id, KeepOnPc.Everything));
+            Assert.Equal("CD-4609", error.Code);
+        }
+        Assert.NotNull(world.Host.Sync.FindPair(world.Pair.Id));
+        Placeholders.Hydrate(world.Pc("Ordner/online.txt"));
+        Assert.Equal("nur online", world.ReadPc("Ordner/online.txt"));
+    }
+
+    [Fact]
+    public async Task The_rest_goes_around_a_folder_Windows_refuses_and_that_folder_is_named()
+    {
+        await using var world = await WorldAsync(SyncMode.Classic);
+        await world.Host.Sync.RemoveAsync(world.Pair.Id, KeepOnPc.OnPc);
+        EndResult rest;
+        using (RefusedFolder.Hold(world.Pc("Ordner")))
+            rest = await world.Host.Sync.RecycleRestAsync(world.Local);
+        Assert.Contains("Ordner" + Path.DirectorySeparatorChar, rest.Stayed);
+        Assert.False(File.Exists(world.Pc("geholt.txt")));
+        Assert.Equal("nur online", world.ReadPc("Ordner/online.txt"));
+
+        // Free again: the rest goes, and the folder with it.
+        await world.Host.Sync.RecycleRestAsync(world.Local);
+        Assert.False(Directory.Exists(world.Local));
+        Assert.Equal("nur online", world.ReadCloud("Ordner/online.txt"));
+    }
+
+    [Fact]
+    public async Task The_rest_never_reaches_through_a_link_beyond_the_folder()
+    {
+        await using var world = await WorldAsync(SyncMode.Classic);
+        await world.Host.Sync.RemoveAsync(world.Pair.Id, KeepOnPc.OnPc);
+        // A junction the user made in the folder, to a folder elsewhere.
+        var elsewhere = Path.Combine(world.Root, "Woanders");
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllText(Path.Combine(elsewhere, "wichtig.txt"), "bleibt");
+        using (var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{world.Pc("Verknüpfung")}\" \"{elsewhere}\"") { CreateNoWindow = true, UseShellExecute = false })!)
+        {
+            await mklink.WaitForExitAsync();
+            Assert.Equal(0, mklink.ExitCode);
+        }
+
+        var rest = await world.Host.Sync.RecycleRestAsync(world.Local);
+        Assert.Equal("bleibt", File.ReadAllText(Path.Combine(elsewhere, "wichtig.txt")));
+        Assert.Equal(["Verknüpfung" + Path.DirectorySeparatorChar], rest.Stayed);
+        Assert.False(File.Exists(world.Pc("geholt.txt")));
+    }
+
+    [Fact]
     public async Task The_rest_of_a_folder_another_synchronisation_uses_never_goes()
     {
         await using var world = await WorldAsync(SyncMode.Classic);

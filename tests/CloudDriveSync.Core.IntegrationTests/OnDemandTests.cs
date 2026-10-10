@@ -290,29 +290,17 @@ public class OnDemandTests
         Assert.Equal(new ListingProgress(2, 2, 8), reports[^1]);
     }
 
-    [Fact]
-    public async Task A_folder_on_the_PC_that_Windows_refuses_is_left_out_and_nothing_of_it_is_deleted()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_folder_on_the_PC_that_Windows_refuses_is_left_out_and_nothing_of_it_is_deleted(bool held)
     {
         await using var world = await WorldAsync(cloud: w => { w.WriteCloud("Gesperrt/a.txt", "a"); w.WriteCloud("Gesperrt/Tiefer/b.txt", "b"); w.WriteCloud("Offen/c.txt", "c"); });
         world.WriteCloud("Offen/neu.txt", "neu");
-        // Like a placeholder Windows calls broken: the folder cannot be opened (here: by a rule that denies it).
-        var folder = new DirectoryInfo(world.Pc("Gesperrt"));
-        var security = folder.GetAccessControl();
-        var deny = new System.Security.AccessControl.FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User!,
-            System.Security.AccessControl.FileSystemRights.ListDirectory | System.Security.AccessControl.FileSystemRights.ReadAttributes,
-            System.Security.AccessControl.AccessControlType.Deny);
-        security.AddAccessRule(deny);
-        folder.SetAccessControl(security);
+        // Like a placeholder Windows calls broken: the folder cannot be opened.
         SyncRunOutcome run;
-        try
-        {
+        using (held ? RefusedFolder.Hold(world.Pc("Gesperrt")) : RefusedFolder.Deny(world.Pc("Gesperrt")))
             run = await RunAsync(world);
-        }
-        finally
-        {
-            security.RemoveAccessRule(deny);
-            folder.SetAccessControl(security);
-        }
         Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
         Assert.True(run.Deletes == 0, string.Join("; ", (run.Changes ?? []).Select(c => $"{c.Kind} {c.Path}")));
         Assert.Equal("a", world.ReadCloud("Gesperrt/a.txt"));

@@ -475,8 +475,9 @@ internal sealed partial class Executor
             {
                 var relative = folder.Length == _pair.LocalPath.Length ? "" : NameEncoding.ToStandardPath(Path.GetRelativePath(_pair.LocalPath, folder));
                 if (leftAlone.Contains(relative)) continue;
-                foreach (var below in Directory.EnumerateDirectories(folder))
-                    if (relative.Length > 0 || !Path.GetFileName(below).StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase)) folders.Push(below);
+                // A link is not part of the folder: what it points to is never marked (it may be another program's).
+                foreach (var below in new DirectoryInfo(folder).EnumerateDirectories())
+                    if ((relative.Length > 0 || !below.Name.StartsWith(".clouddrive", StringComparison.OrdinalIgnoreCase)) && !FolderWalk.IsLink(below)) folders.Push(below.FullName);
                 if (!waiting.Contains(relative) && Placeholders.Read(folder) is { InSync: false }) Placeholders.MarkFolderInSync(folder);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
