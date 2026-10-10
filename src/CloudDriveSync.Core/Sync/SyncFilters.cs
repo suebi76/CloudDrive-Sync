@@ -91,6 +91,55 @@ public static class SyncFilters
     }
 
     /// <summary>Escapes the characters rclone's filter patterns treat specially.</summary>
+    /// <summary>The rule that leaves out every file with this ending, in any case ("*.[dD][lL][lL]").</summary>
+    public static string TypeRule(string extension)
+    {
+        var text = new StringBuilder("*.");
+        foreach (var character in extension.TrimStart('.'))
+        {
+            if (char.IsLetter(character) && char.ToLowerInvariant(character) != char.ToUpperInvariant(character))
+                text.Append('[').Append(char.ToLowerInvariant(character)).Append(char.ToUpperInvariant(character)).Append(']');
+            else text.Append(EscapeGlob(character.ToString()));
+        }
+        return text.ToString();
+    }
+
+    /// <summary>The rule that leaves out one file or folder ("/" separated, relative to the synchronised folder).</summary>
+    public static string PathRule(string path, bool folder) => folder ? $"/{EscapeGlob(path.Trim('/'))}/**" : $"/{EscapeGlob(path.Trim('/'))}";
+
+    /// <summary>What a rule leaves out, in words - for the list of what is ignored.</summary>
+    public static string Describe(string rule)
+    {
+        if (rule.StartsWith("*.", StringComparison.Ordinal) && UnescapeType(rule[2..]) is { } type) return $"Dateien vom Typ .{type}";
+        if (rule.StartsWith('/') && rule.EndsWith("/**", StringComparison.Ordinal)) return $"Ordner „{Unescape(rule[1..^3])}“";
+        if (rule.StartsWith('/') && !rule.Contains('*', StringComparison.Ordinal)) return $"Datei „{Unescape(rule[1..])}“";
+        return rule;
+    }
+
+    private static string? UnescapeType(string glob)
+    {
+        var text = new StringBuilder();
+        for (var i = 0; i < glob.Length; i++)
+        {
+            if (glob[i] == '[' && i + 3 < glob.Length && glob[i + 3] == ']')
+            {
+                text.Append(glob[i + 1]);
+                i += 3;
+            }
+            else if (glob[i] == '\\' && i + 1 < glob.Length) text.Append(glob[++i]);
+            else if (glob[i] is '*' or '?' or '[' or ']' or '/') return null;
+            else text.Append(glob[i]);
+        }
+        return text.ToString();
+    }
+
+    private static string Unescape(string glob)
+    {
+        var text = new StringBuilder(glob.Length);
+        for (var i = 0; i < glob.Length; i++) text.Append(glob[i] == '\\' && i + 1 < glob.Length ? glob[++i] : glob[i]);
+        return text.ToString();
+    }
+
     public static string EscapeGlob(string path)
     {
         var text = new StringBuilder(path.Length);

@@ -45,6 +45,25 @@ internal sealed class SyncWorld : IAsyncDisposable
     public SyncPairSettings Pair { get; private set; } = null!;
 
     /// <param name="refusingProxy">CloudDrive-Sync talks to the server through a <see cref="RefusingProxy"/>.</param>
+    /// <summary>
+    /// Another PC with the same account and cloud folder: a data folder and a folder on the PC of its own, the same server.
+    /// Dispose it before this world (it never ends the server).
+    /// </summary>
+    public async Task<SyncWorld> SecondPcAsync()
+    {
+        var root = Path.Combine(Root, $"pc2-{Guid.NewGuid():N}"[..10]);
+        var local = Path.Combine(root, "pc", "Schule Übungen");
+        var paths = new AppPaths(Path.Combine(root, "home"));
+        paths.EnsureCreated();
+        await TestRclone.ProvideAsync(paths);
+        var host = new CloudDriveSyncHost(paths);
+        var pc = new SyncWorld(root, CloudRoot, CaseSensitiveCloud, local, Kind, Server, host) { Proxy = Proxy, _sharesServer = true };
+        await host.Engine.StartAsync();
+        return pc;
+    }
+
+    private bool _sharesServer;
+
     public static async Task<SyncWorld> CreateAsync(WebDavKind kind = WebDavKind.IServ, bool readOnlyServer = false, bool refusingProxy = false)
     {
         var root = Path.Combine(Path.GetTempPath(), "clouddrive-sync-it", $"{DateTime.Now:HHmmss}-{Guid.NewGuid():N}"[..13]);
@@ -288,8 +307,11 @@ internal sealed class SyncWorld : IAsyncDisposable
         }
         // Entries in Explorer's navigation pane of this world's classic synchronisations (only this data folder's).
         ExplorerEntries.RemoveAll(Host.Paths);
-        if (Proxy is not null) await Proxy.DisposeAsync();
-        await Server.DisposeAsync();
+        if (!_sharesServer)
+        {
+            if (Proxy is not null) await Proxy.DisposeAsync();
+            await Server.DisposeAsync();
+        }
         Host.Secrets.Delete("config");
         // For looking into a failure: CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS=1 keeps every world in %TEMP%\clouddrive-sync-it.
         if (Environment.GetEnvironmentVariable("CLOUDDRIVE_SYNC_KEEP_TEST_WORLDS") == "1") return;

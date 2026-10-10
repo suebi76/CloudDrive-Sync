@@ -8,8 +8,9 @@ namespace CloudDriveSync.Core.Engine;
 
 /// <summary>Progress of a running engine job (bytes and files so far, of how many).</summary>
 /// <param name="Listed">Entries read so far while listing both sides - before anything is compared or transferred.</param>
+/// <param name="Current">What is being transferred right now, e.g. "Lädt hoch: Bericht.docx"; null when nothing.</param>
 public sealed record JobProgress(long Bytes, long TotalBytes, long Transfers, long TotalTransfers, double BytesPerSecond, long Checks, long TotalChecks, long Errors,
-    long Listed = 0)
+    long Listed = 0, string? Current = null)
 {
     public static JobProgress None { get; } = new(0, 0, 0, 0, 0, 0, 0, 0);
 }
@@ -131,7 +132,22 @@ public sealed class RcClient : IDisposable
         static long Long(JsonObject o, string name) => o[name] is JsonValue v && v.TryGetValue<double>(out var d) ? (long)d : 0;
         static double Double(JsonObject o, string name) => o[name] is JsonValue v && v.TryGetValue<double>(out var d) ? d : 0;
         return new JobProgress(Long(stats, "bytes"), Long(stats, "totalBytes"), Long(stats, "transfers"), Long(stats, "totalTransfers"),
-            Double(stats, "speed"), Long(stats, "checks"), Long(stats, "totalChecks"), Long(stats, "errors"), Long(stats, "listed"));
+            Double(stats, "speed"), Long(stats, "checks"), Long(stats, "totalChecks"), Long(stats, "errors"), Long(stats, "listed"), Transferring(stats));
+    }
+
+    /// <summary>The file rclone is transferring right now, with its direction where the statistics tell it.</summary>
+    internal static string? Transferring(JsonObject stats)
+    {
+        if (stats["transferring"] is not JsonArray { Count: > 0 } list || list[0] is not JsonObject first) return null;
+        // Only read, never trusted: whatever the statistics hold, they never end a run.
+        static string? Text(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+        var name = Text(first["name"]);
+        if (string.IsNullOrEmpty(name)) return null;
+        name = name[(name.LastIndexOf('/') + 1)..];
+        var more = list.Count > 1 ? $" (+{list.Count - 1})" : "";
+        static bool OnThisPc(string? fs) => fs is not null && (fs.Length > 1 && fs[1] == ':' || fs.StartsWith(@"\\", StringComparison.Ordinal) || fs.StartsWith("//", StringComparison.Ordinal));
+        var doing = OnThisPc(Text(first["dstFs"])) ? "Lädt herunter" : OnThisPc(Text(first["srcFs"])) ? "Lädt hoch" : "Überträgt";
+        return $"{doing}: {name}{more}";
     }
 
     private static JsonObject ParseObject(string text)

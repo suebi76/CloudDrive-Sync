@@ -8,6 +8,17 @@ namespace CloudDriveSync.Core.Sync;
 public sealed partial class SyncService
 {
     /// <summary>
+    /// When a failed run is tried again: 1, 2, 4 … minutes, at most the interval - never a loop that reads the cloud over
+    /// and over. A file open in another program gets three quick tries first (saved and closed in a moment).
+    /// </summary>
+    internal static TimeSpan RetryDelay(string? errorCode, int failures, int intervalMinutes)
+    {
+        var exponent = errorCode == "CD-4510" ? failures - 3 : failures - 1;
+        var minutes = exponent <= 0 ? 1 : Math.Min(1 << Math.Min(exponent, 6), Math.Max(1, intervalMinutes));
+        return TimeSpan.FromMinutes(minutes);
+    }
+
+    /// <summary>
     /// Keeps one synchronisation in step: the interval timer, the folder watcher and retries request runs; the worker
     /// runs them one at a time (within the service's limit of parallel runs), keeps the state and tells the user.
     /// </summary>
@@ -290,6 +301,8 @@ public sealed partial class SyncService
             if (mode == BisyncMode.Resync && _saved.FirstSyncDone) _saved.ResyncPending = !outcome.Success;
             _failures = outcome.Success ? 0 : _failures + 1;
             if (outcome.Space is not null) _saved.Space = outcome.Space;
+            var leftOutBefore = _saved.LeftOut;
+            if (outcome.LeftOut is not null) _saved.LeftOut = outcome.LeftOut.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
             if (outcome.Success)
             {
                 _saved.FirstSyncDone = true;
@@ -316,17 +329,23 @@ public sealed partial class SyncService
             var status = outcome.Success ? (pair.Paused ? SyncStatus.Paused : SyncStatus.Idle)
                 : _saved.Decision != SyncDecision.None ? SyncStatus.NeedsAttention : SyncStatus.Error;
             Publish(new SyncPairState(_id, status, "", outcome.Final, _saved.LastRun, _saved.LastSuccess, _saved.ErrorCode, _saved.ErrorDetail,
-                _saved.Decision, outcome.Conflicts, _saved.FirstSyncDone, _saved.Space));
+                _saved.Decision, outcome.Conflicts, _saved.FirstSyncDone, _saved.Space, _saved.LeftOut));
 
-            Announce(pair, account, outcome, previousConflicts, previousError);
-            if (!outcome.Success && outcome.Retryable && _saved.Decision == SyncDecision.None) ScheduleRetry(RetryDelay(outcome, pair));
+            Announce(pair, account, outcome, previousConflicts, previousError, leftOutBefore);
+            if (!outcome.Success && outcome.Retryable && _saved.Decision == SyncDecision.None) ScheduleRetry(RetryDelay(outcome.ErrorCode, _failures, pair.IntervalMinutes));
             CleanTrash(pair);
         }
 
         /// <summary>Tells the user what needs them: files kept on the PC, new conflicts, a decision, a new error.</summary>
-        private void Announce(SyncPairSettings pair, AccountSettings account, SyncRunOutcome outcome, int previousConflicts, string? previousError)
+        private void Announce(SyncPairSettings pair, AccountSettings account, SyncRunOutcome outcome, int previousConflicts, string? previousError,
+            IReadOnlyList<string> leftOutBefore)
         {
             var name = pair.RemotePath.Length > 0 ? $"{account.Label} › {pair.RemotePath}" : account.Label;
+            // Folders the server newly does not let be read: once, then the card shows them.
+            if (outcome.LeftOut?.Except(leftOutBefore, StringComparer.Ordinal).ToList() is { Count: > 0 } newlyLeftOut)
+                _service.Notice?.Invoke(_service, new SyncNotice(_id, SyncNoticeKind.NeedsAttention, name,
+                    newlyLeftOut.Count == 1 ? $"Der Ordner „{newlyLeftOut[0]}“ wird ausgelassen – du darfst ihn nicht lesen."
+                        : $"{newlyLeftOut.Count} Ordner werden ausgelassen – du darfst sie nicht lesen."));
             if (outcome.LocalOnlyAdded is { Count: > 0 } kept)
             {
                 _service.KeepLocalOnly(_id, kept);
@@ -348,12 +367,6 @@ public sealed partial class SyncService
         /// minute; trouble with the network or the server gets more time with each try (1, 2, 4 … minutes, at most the
         /// interval).
         /// </summary>
-        private TimeSpan RetryDelay(SyncRunOutcome outcome, SyncPairSettings pair)
-        {
-            var minutes = outcome.ErrorCode == "CD-4510" ? 1 : Math.Min(1 << Math.Min(_failures - 1, 6), Math.Max(1, pair.IntervalMinutes));
-            return TimeSpan.FromMinutes(minutes);
-        }
-
         private void Publish(SyncPairState state)
         {
             State = state;

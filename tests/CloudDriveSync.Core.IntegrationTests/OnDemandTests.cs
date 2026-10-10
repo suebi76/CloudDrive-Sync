@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using CloudDriveSync.Core.CloudFiles;
+using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
@@ -392,6 +393,70 @@ public class OnDemandTests
         Assert.Equal("4", Fetch(world, "D/4.txt"));
         Assert.Equal("1", Fetch(world, "A/1.txt"));
         AssertInStep(world);
+    }
+
+    [Fact]
+    public async Task A_file_the_server_does_not_take_stays_on_the_PC_and_the_rest_goes_up()
+    {
+        await using var world = await WorldAsync(refusingProxy: true);
+        // Like a filter in front of Nextcloud that blocks program files with an error page of its own.
+        world.Proxy!.RefuseUploads = path => path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+        world.WritePc("Programm/werkzeug.dll", "binär");
+        world.WritePc("Programm/liesmich.txt", "Text");
+        // A large one goes up as a job of the engine (with its progress) - refused the same way.
+        File.WriteAllBytes(world.Pc("Programm/gross.dll"), new byte[5 << 20]);
+        var run = await RunAsync(world);
+        Assert.Equal(["Programm/gross.dll", "Programm/werkzeug.dll"], run.LocalOnlyAdded!.Order());
+        Assert.Equal("Text", world.ReadCloud("Programm/liesmich.txt"));
+        Assert.False(File.Exists(world.Cloud("Programm/werkzeug.dll")));
+        Assert.Equal("binär", world.ReadPc("Programm/werkzeug.dll"));
+
+        // Kept on the PC: not tried again in every run.
+        world.Host.Sync.KeepLocalOnly(world.Pair.Id, run.LocalOnlyAdded!);
+        var tries = world.Proxy.RefusedUploads;
+        await RunAsync(world);
+        Assert.Equal(tries, world.Proxy.RefusedUploads);
+        Assert.Equal("binär", world.ReadPc("Programm/werkzeug.dll"));
+
+        // "Künftig ignorieren": files of this type take no part any more - also new ones - and nothing is deleted.
+        Assert.Equal(["*.[dD][lL][lL]"], world.Host.Sync.IgnoreLocalOnly(world.Pair.Id));
+        Assert.Empty(world.Host.Sync.FindPair(world.Pair.Id)!.LocalOnly);
+        world.WritePc("Programm/NOCH.DLL", "neu");
+        var rebuilt = await RunAsync(world, BisyncMode.Resync);
+        Assert.Null(rebuilt.LocalOnlyAdded);
+        var quiet = await RunAsync(world);
+        Assert.Null(quiet.LocalOnlyAdded);
+        Assert.Equal(tries, world.Proxy.RefusedUploads);
+        Assert.Equal("binär", world.ReadPc("Programm/werkzeug.dll"));
+        Assert.Equal("neu", world.ReadPc("Programm/NOCH.DLL"));
+        Assert.Equal("Text", world.ReadCloud("Programm/liesmich.txt"));
+
+        // Taking part again: the server still refuses - kept on the PC again, never a loop.
+        world.Host.Sync.Unignore(world.Pair.Id, "*.[dD][lL][lL]");
+        var again = await RunAsync(world, BisyncMode.Resync);
+        Assert.Equal(["Programm/NOCH.DLL", "Programm/gross.dll", "Programm/werkzeug.dll"], again.LocalOnlyAdded!.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_card_learns_which_file_goes_up_and_how_far_the_run_is()
+    {
+        await using var world = await WorldAsync();
+        world.WritePc("Klein.txt", "klein");
+        var big = new byte[6 << 20];
+        Random.Shared.NextBytes(big);
+        Directory.CreateDirectory(world.Pc("Videos"));
+        File.WriteAllBytes(world.Pc("Videos/Gross.bin"), big);
+        var reports = new System.Collections.Concurrent.ConcurrentQueue<JobProgress>();
+        using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var run = await world.Host.Sync.RunOnDemandAsync(world.Host.Sync.FindPair(world.Pair.Id)!, world.Account, BisyncMode.Normal, reports.Enqueue, true, limit.Token);
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+        Assert.Contains(reports, p => p.Current == "Lädt hoch: Klein.txt");
+        Assert.Contains(reports, p => p.Current == "Lädt hoch: Gross.bin");
+        var last = reports.Last();
+        Assert.Equal(last.TotalTransfers, last.Transfers);
+        Assert.Equal(big.Length + 5, last.TotalBytes);
+        Assert.Equal(big.Length + 5, last.Bytes);
+        Assert.Equal(big, File.ReadAllBytes(world.Cloud("Videos/Gross.bin")));
     }
 
     [Fact]

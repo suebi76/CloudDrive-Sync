@@ -99,6 +99,26 @@
                     </StackPanel>
                 </Border>
 
+                <!-- What is ignored on purpose -->
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0" Visibility="{Binding HasIgnored, Converter={StaticResource Visible}}">
+                    <StackPanel>
+                        <TextBlock Text="Ignoriert" Style="{StaticResource Strong}" Margin="0,0,0,4" />
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="Wird nicht abgeglichen – auf diesem PC und in der Cloud bleibt es, wie es ist. „Wieder abgleichen“ nimmt es nach dem Speichern wieder auf." />
+                        <ItemsControl ItemsSource="{Binding Ignored}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,0,0,6">
+                                        <Button DockPanel.Dock="Right" Content="Wieder abgleichen"
+                                                Command="{Binding DataContext.UnignoreCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                                        <TextBlock Text="{Binding Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Rule}" Margin="0,0,8,0" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
                 <!-- How often -->
                 <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                     <StackPanel>

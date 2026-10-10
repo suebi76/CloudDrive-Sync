@@ -204,21 +204,9 @@ public sealed partial class SyncService : IAsyncDisposable
             ended = await Task.Run(() => !OnDemandSupported || EndOnDemand(id), CancellationToken.None);
         }
         RemoveExplorerEntry(id);
+        // The protection file in the cloud folder stays: other PCs may synchronise the same folder, and without it each of
+        // them would stop (CD-4503). Only the one on this PC goes.
         TryDelete(Path.Combine(pair.LocalPath, SyncFilters.SentinelFile));
-        try
-        {
-            var rc = await _engine.EnsureRunningAsync(cancellationToken);
-            await rc.CallAsync("operations/deletefile", new JsonObject
-            {
-                ["fs"] = AccountService.RemoteName(pair.AccountId) + ":",
-                ["remote"] = Join(pair.RemotePath, SyncFilters.SentinelFile),
-            }, cancellationToken: cancellationToken);
-        }
-        catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException or OperationCanceledException)
-        {
-            // Local removal is already underway. A failed remote cleanup must not leave the pair half-removed.
-            Log.Warn("Sync", $"Sentinel file of '{id}' in the cloud stays: {e.Message}");
-        }
         _settings.Update(s => s.Syncs.RemoveAll(p => p.Id == id));
         try
         {
@@ -315,6 +303,53 @@ public sealed partial class SyncService : IAsyncDisposable
             if (!pair.LocalOnly.Contains(path, StringComparer.OrdinalIgnoreCase)) pair.LocalOnly.Add(path);
     });
 
+    /// <summary>
+    /// "Künftig ignorieren" for files the server did not take: files of their types (a file without an ending: just this
+    /// one) are no longer synchronised - on the PC and in the cloud they stay as they are - and the notice goes. Undone in
+    /// the settings of the synchronisation (<see cref="Unignore"/>). Returns the rules added.
+    /// </summary>
+    public IReadOnlyList<string> IgnoreLocalOnly(string id)
+    {
+        var added = new List<string>();
+        Update(id, pair =>
+        {
+            foreach (var path in pair.LocalOnly)
+            {
+                var extension = Path.GetExtension(path);
+                var rule = extension.Length > 1 ? SyncFilters.TypeRule(extension) : SyncFilters.PathRule(path, folder: false);
+                if (!pair.Selection.Exclude.Contains(rule, StringComparer.Ordinal) && !added.Contains(rule, StringComparer.Ordinal)) added.Add(rule);
+            }
+            pair.Selection.Exclude.AddRange(added);
+            pair.LocalOnly.Clear();
+        });
+        Log.Info("Sync", $"'{id}': {added.Count} rule(s) added for files the server does not take: {string.Join(", ", added)}.");
+        return added;
+    }
+
+    /// <summary>
+    /// "Künftig ignorieren" for folders the server does not let be read: they are no longer even asked for. Undone in the
+    /// settings of the synchronisation (<see cref="Unignore"/>). Returns the rules added.
+    /// </summary>
+    public IReadOnlyList<string> IgnoreLeftOut(string id)
+    {
+        var folders = GetState(id)?.LeftOut ?? [];
+        var added = new List<string>();
+        Update(id, pair =>
+        {
+            foreach (var folder in folders)
+            {
+                var rule = SyncFilters.PathRule(folder, folder: true);
+                if (!pair.Selection.Exclude.Contains(rule, StringComparer.Ordinal) && !added.Contains(rule, StringComparer.Ordinal)) added.Add(rule);
+            }
+            pair.Selection.Exclude.AddRange(added);
+        });
+        Log.Info("Sync", $"'{id}': {added.Count} folder(s) the server does not let be read are ignored from now on.");
+        return added;
+    }
+
+    /// <summary>Something ignored takes part again (a rule from <see cref="SyncSelection.Exclude"/>).</summary>
+    public void Unignore(string id, string rule) => Update(id, pair => pair.Selection.Exclude.RemoveAll(r => r == rule));
+
     /// <summary>The files that stayed on the PC take part again; those the server still does not take stay again.</summary>
     public void RetryLocalOnly(string id)
     {
@@ -392,6 +427,9 @@ public sealed partial class SyncService : IAsyncDisposable
             await rc.CallAsync("operations/mkdir", new JsonObject { ["fs"] = cloud, ["remote"] = remotePath }, cancellationToken: cancellationToken);
         try
         {
+            // Another PC may have set the folder up already: its protection file is left as it is. Written again, it would
+            // look changed to every other PC - and in a folder with few files, bisync then stops with "all files were changed".
+            if (await CloudFileExistsAsync(rc, cloud, Join(remotePath, SyncFilters.SentinelFile), cancellationToken)) return true;
             await rc.CallAsync("operations/copyfile", new JsonObject
             {
                 ["srcFs"] = local,
@@ -408,6 +446,20 @@ public sealed partial class SyncService : IAsyncDisposable
             return false;
         }
         return true;
+    }
+
+    /// <summary>Whether the file is in the cloud; false also when the server does not tell (then it is written, as always).</summary>
+    private static async Task<bool> CloudFileExistsAsync(RcClient rc, string fs, string remote, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var answer = await rc.CallAsync("operations/stat", new JsonObject { ["fs"] = fs, ["remote"] = remote }, TimeSpan.FromMinutes(1), cancellationToken);
+            return answer["item"] is JsonObject;
+        }
+        catch (CdException e) when (e.Code is "CD-9000" or "CD-4511")
+        {
+            return false;
+        }
     }
 
     private PairWorker WorkerFor(string id)

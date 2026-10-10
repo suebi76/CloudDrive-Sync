@@ -47,6 +47,8 @@ public sealed partial class SyncPairViewModel : ObservableObject
     [ObservableProperty] public partial bool IsIndeterminate { get; set; }
     [ObservableProperty] public partial double Progress { get; set; }
     [ObservableProperty] public partial string ProgressText { get; set; } = "";
+    /// <summary>What is being transferred right now ("Lädt hoch: Bericht.docx"); empty when nothing.</summary>
+    [ObservableProperty] public partial string CurrentText { get; set; } = "";
     [ObservableProperty] public partial bool IsPaused { get; set; }
     [ObservableProperty] public partial string PauseText { get; set; } = "Anhalten";
     [ObservableProperty] public partial bool ShowAttention { get; set; }
@@ -57,9 +59,13 @@ public sealed partial class SyncPairViewModel : ObservableObject
     [ObservableProperty] public partial string? PrimaryActionText { get; set; }
     [ObservableProperty] public partial string? SecondaryActionText { get; set; }
     [ObservableProperty] public partial int ConflictCount { get; set; }
+    [ObservableProperty] public partial bool HasLeftOut { get; set; }
+    [ObservableProperty] public partial string LeftOutTitle { get; set; } = "";
+    [ObservableProperty] public partial string LeftOutList { get; set; } = "";
     [ObservableProperty] public partial bool HasLocalOnly { get; set; }
     [ObservableProperty] public partial string LocalOnlyTitle { get; set; } = "";
     [ObservableProperty] public partial string LocalOnlyList { get; set; } = "";
+    [ObservableProperty] public partial string LocalOnlyReason { get; set; } = "";
     [ObservableProperty] public partial string ConflictText { get; set; } = "";
 
     public bool NeedsUser => _state?.Status == SyncStatus.NeedsAttention;
@@ -172,6 +178,12 @@ public sealed partial class SyncPairViewModel : ObservableObject
                 break;
         }
 
+        // Folders the server does not let be read (e.g. a share to upload only) are left out.
+        var leftOut = state?.LeftOut ?? [];
+        HasLeftOut = leftOut.Count > 0;
+        LeftOutTitle = leftOut.Count == 1 ? $"Der Ordner „{leftOut[0]}“ wird ausgelassen" : $"{leftOut.Count} Ordner werden ausgelassen";
+        LeftOutList = string.Join(Environment.NewLine, leftOut.Take(50)) + (leftOut.Count > 50 ? Environment.NewLine + "…" : "");
+
         // Files the server did not take (a folder to read only) stay on the PC.
         var localOnly = _pair.LocalOnly;
         HasLocalOnly = localOnly.Count > 0;
@@ -179,6 +191,7 @@ public sealed partial class SyncPairViewModel : ObservableObject
             ? $"„{System.IO.Path.GetFileName(localOnly[0])}“ bleibt nur auf diesem PC"
             : $"{localOnly.Count} Dateien bleiben nur auf diesem PC";
         LocalOnlyList = string.Join(Environment.NewLine, localOnly.Take(50)) + (localOnly.Count > 50 ? Environment.NewLine + "…" : "");
+        LocalOnlyReason = LocalOnlyExplained(localOnly);
 
         var conflicts = state?.Conflicts.Count ?? 0;
         ConflictCount = conflicts;
@@ -195,12 +208,15 @@ public sealed partial class SyncPairViewModel : ObservableObject
             IsIndeterminate = false;
             Progress = progress.TotalBytes > 0 ? 100.0 * progress.Bytes / progress.TotalBytes : 100.0 * progress.Transfers / progress.TotalTransfers;
             var speed = progress.BytesPerSecond > 0 ? $" · {Format.Speed(progress.BytesPerSecond)}" : "";
-            ProgressText = $"{Format.Number(progress.Transfers)} von {Format.Count(progress.TotalTransfers, "Datei", "Dateien")} · {Format.Bytes(progress.Bytes)} von {Format.Bytes(progress.TotalBytes)}{speed}";
+            var bytes = progress.TotalBytes > 0 ? $" · {Format.Bytes(progress.Bytes)} von {Format.Bytes(progress.TotalBytes)}" : "";
+            ProgressText = $"{Format.Number(progress.Transfers)} von {Format.Count(progress.TotalTransfers, "Datei", "Dateien")}{bytes}{speed}";
+            CurrentText = progress.Current ?? "";
         }
         else
         {
             IsIndeterminate = true;
             Progress = 0;
+            CurrentText = progress.Current ?? "";
             // A large folder takes a while to read - the count shows it is still going.
             ProgressText = progress.Checks > 0 ? $"{Format.Count(progress.Checks, "Datei", "Dateien")} verglichen"
                 : progress.Listed > 0 ? $"Liest Cloud und PC: {Format.Count(progress.Listed, "Eintrag", "Einträge")} …"
@@ -296,6 +312,17 @@ public sealed partial class SyncPairViewModel : ObservableObject
     [RelayCommand]
     private void ShowTrash() => _main.ShowTrash();
 
+    /// <summary>Why the server may have refused the files - a folder to read only, or types of files it blocks - and what helps.</summary>
+    internal static string LocalOnlyExplained(IReadOnlyList<string> files)
+    {
+        var types = files.Select(f => System.IO.Path.GetExtension(f).ToLowerInvariant()).Where(e => e.Length > 0).Distinct().Order().ToList();
+        var typeText = types.Count == 0 ? "" : $" – oder der Server sperrt diese Dateitypen: {string.Join(", ", types.Take(8))}{(types.Count > 8 ? " …" : "")}";
+        return $"Der Server hat sie nicht angenommen. Vielleicht darfst du dort nur lesen{typeText}. Sie bleiben auf diesem PC erhalten, " +
+               "werden aber nicht hochgeladen und nicht immer wieder versucht." + Environment.NewLine +
+               "Was hilft: die Administration des Servers fragen, ob diese Dateien erlaubt werden; sie in ein ZIP-Archiv packen (das nimmt " +
+               "der Server meist an); oder sie einfach nur auf diesem PC behalten. „Erneut versuchen“ versucht es noch einmal.";
+    }
+
     [RelayCommand]
     private void ShowLocalOnly()
     {
@@ -304,6 +331,26 @@ public sealed partial class SyncPairViewModel : ObservableObject
 
     [RelayCommand]
     private void RetryLocalOnly() => _main.Host.Sync.RetryLocalOnly(Id);
+
+    [RelayCommand]
+    private void IgnoreLocalOnly()
+    {
+        var answer = _main.Dialogs.Ask("Künftig ignorieren?",
+            "Diese Dateien – und alle weiteren desselben Typs – werden nicht mehr abgeglichen. Gelöscht wird nichts: Was auf diesem PC liegt, " +
+            "bleibt dort, was nur in der Cloud liegt, bleibt in der Cloud. Rückgängig machst du das in den Einstellungen der Synchronisation unter „Ignoriert“.",
+            "Ignorieren");
+        if (answer == DialogChoice.Primary) _main.Host.Sync.IgnoreLocalOnly(Id);
+    }
+
+    [RelayCommand]
+    private void IgnoreLeftOut()
+    {
+        var answer = _main.Dialogs.Ask("Künftig ignorieren?",
+            "Diese Ordner werden nicht mehr abgefragt und nicht mehr gemeldet. In der Cloud bleiben sie, wie sie sind. Rückgängig machst du " +
+            "das in den Einstellungen der Synchronisation unter „Ignoriert“.",
+            "Ignorieren");
+        if (answer == DialogChoice.Primary) _main.Host.Sync.IgnoreLeftOut(Id);
+    }
 
     [RelayCommand]
     private async Task PrimaryActionAsync()

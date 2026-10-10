@@ -57,6 +57,14 @@ internal sealed partial class Executor
     private string? _trashStamp;
     private long _transfers;
     private long _bytes;
+    // How far the run is, for its card: steps done of all, the bytes of the uploads, what is being done right now.
+    private int _total;
+    private int _done;
+    private long _totalBytes;
+    private long _currentBytes;
+    private string? _current;
+    private long _lastReport;
+    private readonly System.Diagnostics.Stopwatch _uploading = new();
     private int _deletes;
 
     /// <param name="placeholdersStopped">No new placeholders: Windows wrote some broken before (<see cref="PlaceholderAlarm"/>).</param>
@@ -83,21 +91,27 @@ internal sealed partial class Executor
     public async Task<ExecutionResult> RunAsync(SyncPlan plan)
     {
         var actions = plan.Actions;
-        foreach (var move in actions.OfType<MoveCloud>()) await StepAsync(move.NewPath, () => MoveCloudAsync(move));
-        foreach (var folder in actions.OfType<CreateCloudFolder>().OrderBy(a => Depth(a.Path))) await StepAsync(folder.Path, () => CreateCloudFolderAsync(folder));
+        _total = actions.Count;
+        _totalBytes = actions.OfType<Upload>().Sum(u => u.Local.Size);
+        foreach (var move in actions.OfType<MoveCloud>()) await StepAsync(move.NewPath, () => MoveCloudAsync(move), "Verschiebt in der Cloud");
+        foreach (var folder in actions.OfType<CreateCloudFolder>().OrderBy(a => Depth(a.Path))) await StepAsync(folder.Path, () => CreateCloudFolderAsync(folder), "Legt in der Cloud an");
         foreach (var adopt in actions.OfType<Adopt>().OrderBy(a => a.Cloud.IsDirectory ? 0 : 1).ThenBy(a => Depth(a.Path))) await StepAsync(adopt.Path, () => AdoptAsync(adopt));
-        foreach (var upload in actions.OfType<Upload>()) await StepAsync(upload.Path, () => UploadAsync(upload.Local, upload.Item));
+        foreach (var upload in actions.OfType<Upload>()) await StepAsync(upload.Path, () => UploadAsync(upload.Local, upload.Item), Uploading);
         foreach (var mark in actions.OfType<MarkInSync>()) await StepAsync(mark.Path, () => MarkAsync(mark));
-        foreach (var conflict in actions.OfType<Conflict>()) await StepAsync(conflict.Path, () => ResolveAsync(conflict));
+        foreach (var conflict in actions.OfType<Conflict>()) await StepAsync(conflict.Path, () => ResolveAsync(conflict), "Behält beide Fassungen");
         await CreatePlaceholdersAsync(actions.OfType<CreatePlaceholder>().Select(a => a.Cloud).ToList());
-        foreach (var refresh in actions.OfType<RefreshPlaceholder>()) await StepAsync(refresh.Path, () => RefreshAsync(refresh));
-        foreach (var remove in actions.OfType<RemoveLocal>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path))) await StepAsync(remove.Path, () => RemoveLocalAsync(remove));
-        foreach (var remove in actions.OfType<RemoveCloud>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path))) await StepAsync(remove.Path, () => RemoveCloudAsync(remove));
+        foreach (var refresh in actions.OfType<RefreshPlaceholder>()) await StepAsync(refresh.Path, () => RefreshAsync(refresh), "Aktualisiert");
+        foreach (var remove in actions.OfType<RemoveLocal>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path)))
+            await StepAsync(remove.Path, () => RemoveLocalAsync(remove), "Entfernt vom PC");
+        foreach (var remove in actions.OfType<RemoveCloud>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path)))
+            await StepAsync(remove.Path, () => RemoveCloudAsync(remove), "Löscht in der Cloud");
         foreach (var drop in actions.OfType<DropPlaceholder>().OrderByDescending(a => Depth(a.Path))) await StepAsync(drop.Path, () => DropAsync(drop));
         foreach (var forget in actions.OfType<Forget>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Item.Path)))
             await StepAsync(forget.Item.Path, () => ForgetAsync(forget));
         // Files that were on the PC before their new version arrived come again - after everything else.
-        foreach (var path in _toFetch) await StepAsync(path, () => FetchAsync(path));
+        _total += _toFetch.Count;
+        foreach (var path in _toFetch) await StepAsync(path, () => FetchAsync(path), Downloading);
+        Report(force: true);
         return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed, _broken, _heldBack);
     }
 
@@ -105,9 +119,16 @@ internal sealed partial class Executor
     /// One step. What only concerns this file is noted and the run goes on; trouble with the connection or the sign-in
     /// ends the run (the next one picks up from the recorded state).
     /// </summary>
-    private async Task StepAsync(string path, Func<Task> step)
+    /// <param name="doing">What the card shows meanwhile, with the file's name; null for quick steps.</param>
+    private async Task StepAsync(string path, Func<Task> step, string? doing = null)
     {
         _cancel.ThrowIfCancellationRequested();
+        if (doing is not null)
+        {
+            _current = $"{doing}: {Name(path)}";
+            // A transfer can take a while: its name shows at once. Other steps (thousands of deletions) are summed up.
+            Report(force: doing is Uploading or Downloading);
+        }
         try
         {
             await step();
@@ -134,8 +155,25 @@ internal sealed partial class Executor
         }
         finally
         {
-            _progress?.Invoke(new JobProgress(_bytes, 0, _transfers, 0, 0, 0, 0, _failed.Count));
+            _done++;
+            _current = null;
+            _currentBytes = 0;
+            Report(force: false);
         }
+    }
+
+    private const string Uploading = "Lädt hoch", Downloading = "Lädt herunter";
+
+    /// <summary>Tells the card how far the run is - at most four times a second, unless a transfer begins.</summary>
+    private void Report(bool force)
+    {
+        if (_progress is null) return;
+        var now = Environment.TickCount64;
+        if (!force && now - _lastReport < 250) return;
+        _lastReport = now;
+        var seconds = _uploading.Elapsed.TotalSeconds;
+        var speed = seconds >= 1 ? (_bytes + _currentBytes) / seconds : 0;
+        _progress(new JobProgress(_bytes + _currentBytes, _totalBytes, Math.Min(_done, _total), _total, speed, 0, 0, _failed.Count, Current: _current));
     }
 
     private async Task MoveCloudAsync(MoveCloud move)
@@ -206,16 +244,21 @@ internal sealed partial class Executor
             Log.Info("OnDemand", $"'{_pair.Id}': '{local.Path}' changed in the cloud meanwhile; the next run handles it.");
             return;
         }
-        await _rc.CallAsync("operations/copyfile", new JsonObject
+        _uploading.Start();
+        try
         {
-            ["srcFs"] = _pair.LocalPath,
-            ["srcRemote"] = local.Path,
-            ["dstFs"] = _cloudFs,
-            ["dstRemote"] = local.Path,
-            // The run knows the file changed. On servers without times of their own rclone compares sizes only and would
-            // skip a change that keeps the size.
-            ["_config"] = new JsonObject { ["IgnoreTimes"] = true },
-        }, TimeSpan.FromHours(6), _cancel);
+            await CopyUpAsync(local);
+        }
+        catch (CdException e) when (e.Code == "CD-9000" && RunSafety.IsRefusal(e.Detail ?? ""))
+        {
+            // The server does not take this file (e.g. a type it blocks, answered with an error page): like a folder to
+            // read only, it stays on the PC and is not tried again in every run.
+            throw new CdException("CD-4511", e.Detail, e);
+        }
+        finally
+        {
+            _uploading.Stop();
+        }
         var after = await _files.StatAsync(_remote, CloudFetcher.CloudPath(_pair, local.Path), _withHashes, _cancel)
             ?? throw new CdException("CD-4605", $"{local.Path}: not in the cloud after the upload");
         var id = _store.Upsert(new SyncItem(known?.Id ?? 0, local.Path, false, after.Size, after.Ticks, after.Hash, version.Size, version.LastWriteTicks));
@@ -225,6 +268,45 @@ internal sealed partial class Executor
         _bytes += version.Size;
         _changes.Add(new FileChange(ChangeKind.Uploaded, local.Path));
     }
+
+    /// <summary>A large file goes up as a job of the engine, so the card shows how far it is; a small one in one call.</summary>
+    private async Task CopyUpAsync(LocalEntry local)
+    {
+        var body = new JsonObject
+        {
+            ["srcFs"] = _pair.LocalPath,
+            ["srcRemote"] = local.Path,
+            ["dstFs"] = _cloudFs,
+            ["dstRemote"] = local.Path,
+            // The run knows the file changed. On servers without times of their own rclone compares sizes only and would
+            // skip a change that keeps the size.
+            ["_config"] = new JsonObject { ["IgnoreTimes"] = true },
+        };
+        if (local.Size < LiveProgressFrom || _progress is null)
+        {
+            await _rc.CallAsync("operations/copyfile", body, TimeSpan.FromHours(6), _cancel);
+            return;
+        }
+        // One group of statistics per synchronisation, started afresh for each file (the engine keeps every group).
+        var group = $"upload/{_pair.Id}";
+        try
+        {
+            await _rc.CallAsync("core/stats-reset", new JsonObject { ["group"] = group }, cancellationToken: _cancel);
+        }
+        catch (CdException)
+        {
+            // Without fresh statistics only the shown progress of this file is off.
+        }
+        var result = await _rc.RunJobAsync("operations/copyfile", body, group, progress =>
+        {
+            _currentBytes = progress.Bytes;
+            Report(force: false);
+        }, _cancel);
+        if (!result.Success) throw new CdException(ErrorCatalog.Classify(result.Error), $"operations/copyfile: {result.Error}");
+    }
+
+    /// <summary>From this size on, an upload shows its progress while it runs.</summary>
+    private const long LiveProgressFrom = 4L << 20;
 
     private Task MarkAsync(MarkInSync mark)
     {
@@ -241,11 +323,14 @@ internal sealed partial class Executor
         foreach (var group in entries.GroupBy(e => Parent(e.Path)).OrderBy(g => g.Key.Length == 0 ? -1 : Depth(g.Key)))
         {
             _cancel.ThrowIfCancellationRequested();
+            _done += group.Count();
             if (_placeholdersStopped)
             {
                 _heldBack += group.Count();
                 continue;
             }
+            _current = $"Legt an: {(group.Key.Length == 0 ? Path.GetFileName(_pair.LocalPath) : Name(group.Key))}";
+            Report(force: false);
             var folder = group.Key.Length == 0 ? _pair.LocalPath : LocalFull(group.Key);
             if (!Directory.Exists(folder))
             {
@@ -286,6 +371,7 @@ internal sealed partial class Executor
                 if (keep) _toFetch.Add(entry.Path);
             }
         }
+        _current = null;
         return Task.CompletedTask;
     }
 

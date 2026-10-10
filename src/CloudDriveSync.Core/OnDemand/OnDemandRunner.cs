@@ -34,9 +34,9 @@ internal sealed class OnDemandRunner
     /// <summary>
     /// How long a run may go on reading only what changed (see <see cref="CloudWalker"/>) before it reads the whole cloud
     /// folder again: Nextcloud does not pass every change on to the folder times above it - not always from shares or
-    /// external storage. Once an hour, those are in, too.
+    /// external storage. Every two hours (as the Nextcloud client does), those are in, too.
     /// </summary>
-    internal static readonly TimeSpan FullListingEvery = TimeSpan.FromHours(1);
+    internal static readonly TimeSpan FullListingEvery = TimeSpan.FromHours(2);
 
     /// <param name="mode">Resync: first run or rebuild - both sides are merged, nothing is deleted.</param>
     /// <param name="freeUpDays">Files not used for so many days give their space back; 0 = never.</param>
@@ -88,8 +88,9 @@ internal sealed class OnDemandRunner
             await File.WriteAllTextAsync(filters, rules, cancellationToken);
 
             // Nextcloud passes every change below a folder on to the folder's time: a run reads only what may have changed
-            // since the last one. Not when rebuilding or switching - and every hour everything (FullListingEvery). What
-            // was kept goes now and comes back only with a run that succeeds: after anything else, everything is read.
+            // since the last one. Not when rebuilding or switching - and every two hours everything (FullListingEvery). What
+            // was kept goes now and comes back with a run that carried its plan out (single files may have failed); after a
+            // run that broke off as a whole, everything is read.
             var nextcloud = account.Kind == WebDavKind.Nextcloud;
             var trees = new CloudTreeStore(folder);
             var saved = nextcloud && mode == BisyncMode.Normal && converting is null ? trees.Load(rules) : null;
@@ -159,23 +160,28 @@ internal sealed class OnDemandRunner
             var final = new JobProgress(result.Bytes, result.Bytes, result.Transfers, result.Transfers, 0, 0, 0, result.Failed.Count);
             var conflicts = SyncRunner.FindConflicts(pair.LocalPath);
             var localOnly = result.LocalOnlyAdded.Count > 0 ? result.LocalOnlyAdded : null;
+            // What the listing saw is kept also when single files failed: only what this run touched is read again next
+            // time. Before, one file the server refused made every following run read the whole cloud folder again - 3,649
+            // folders, four minutes - and fail on the same file. A run that broke off as a whole keeps nothing.
+            if (nextcloud && converting is null && cloud.Tree is not null)
+                trees.Save(rules, cloud.Tree, saved?.FullUtc ?? nowUtc, plan.Actions.SelectMany(a => a is MoveCloud move ? [a.Path, move.Item.Path] : new[] { a.Path }));
+            var leftOutFolders = cloud.Unreadable;
             if (result.Broken.Count > 0 || result.HeldBack > 0)
             {
                 var detail = result.Broken.Count > 0
                     ? $"Windows wrote {result.Broken.Count} new placeholder(s) broken, e.g. {result.Broken[0]}; {result.HeldBack} more held back"
                     : $"{result.HeldBack} new entr(y/ies) held back since Windows wrote placeholders broken";
                 Log.Warn("OnDemand", $"Run of '{pair.Id}': {detail}.");
-                return new SyncRunOutcome(false, "CD-4610", detail, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes, space);
+                return new SyncRunOutcome(false, "CD-4610", detail, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes, space, leftOutFolders);
             }
             if (result.Locked.Count > 0)
-                return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space);
+                return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space,
+                    leftOutFolders);
             if (result.Failed.Count > 0)
-                return new SyncRunOutcome(false, "CD-4605", string.Join(", ", result.Failed.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space);
-            // What this run changed in the cloud is read again next time, whatever the folder times say.
-            if (nextcloud && converting is null && cloud.Tree is not null)
-                trees.Save(rules, cloud.Tree, saved?.FullUtc ?? nowUtc, plan.Actions.SelectMany(a => a is MoveCloud move ? [a.Path, move.Item.Path] : new[] { a.Path }));
+                return new SyncRunOutcome(false, "CD-4605", string.Join(", ", result.Failed.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space,
+                    leftOutFolders);
             Log.Info("OnDemand", $"Run of '{pair.Id}' succeeded in {clock.Elapsed.TotalSeconds:0.0} s: {result.Transfers} transfers, {result.Deletes} deletions, {conflicts.Count} conflict copies.");
-            return new SyncRunOutcome(true, null, null, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes, space);
+            return new SyncRunOutcome(true, null, null, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes, space, leftOutFolders);
         }
         catch (CdException e) when (e.Code != "CD-9000")
         {

@@ -49,6 +49,20 @@ internal sealed class RefusingProxy : IAsyncDisposable
     /// </summary>
     public Action<string>? Changed { get; set; }
 
+    /// <summary>
+    /// Uploads (PUT) this refuses with "404 Not Found" and an error page over several lines - like a Nextcloud whose
+    /// filter blocks some types of files. Gets the path relative to the served root.
+    /// </summary>
+    public Func<string, bool>? RefuseUploads { get; set; }
+
+    /// <summary>The status refused uploads get; 404 by default, 500 for trouble that is no refusal.</summary>
+    public int RefusalStatus { get; set; } = 404;
+
+    private int _refusedUploads;
+
+    /// <summary>Uploads refused so far.</summary>
+    public int RefusedUploads => Volatile.Read(ref _refusedUploads);
+
     /// <summary>Refuses to list this folder from now on (relative to the served root, "/" separated); null refuses nothing.</summary>
     public void RefuseListing(string? folder) => _refused = folder is null ? null : $"{_basePath}/{folder.Trim('/')}";
 
@@ -83,6 +97,15 @@ internal sealed class RefusingProxy : IAsyncDisposable
                 response.StatusCode = 403;
                 response.ContentType = "text/html";
                 var page = "<!DOCTYPE html>\n<html><head><title>403 Forbidden</title></head>\n<body><h1>Forbidden</h1></body></html>\n"u8.ToArray();
+                await response.OutputStream.WriteAsync(page);
+                return;
+            }
+            if (request.HttpMethod == "PUT" && RefuseUploads is { } refuse && refuse(Relative(path)))
+            {
+                Interlocked.Increment(ref _refusedUploads);
+                response.StatusCode = RefusalStatus;
+                response.ContentType = "text/html";
+                var page = "<!DOCTYPE html>\n<html lang=\"de\">\n<head><title>Schule</title></head>\n<body>\n<h2>Seite nicht gefunden</h2>\n<p>Die Seite konnte nicht gefunden werden.</p>\n</body>\n</html>\n"u8.ToArray();
                 await response.OutputStream.WriteAsync(page);
                 return;
             }

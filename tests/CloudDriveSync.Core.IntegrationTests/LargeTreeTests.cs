@@ -74,6 +74,44 @@ public class LargeTreeTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task After_a_change_from_the_PC_the_next_run_reads_only_its_way()
+    {
+        await using var world = await LargeAsync();
+        // A deletion goes the same way as an upload (the test server cannot tell Nextcloud's checksum after an upload).
+        File.Delete(world.Pc("Ordner 3/Unterordner 61/Datei 0.txt"));
+        var deleted = await world.RunAsync();
+        Assert.True(deleted.Success, $"{deleted.ErrorCode}: {deleted.ErrorDetail}");
+        Assert.False(File.Exists(world.Cloud("Ordner 3/Unterordner 61/Datei 0.txt")));
+
+        world.Host.Sync.Time = new Later(TimeSpan.FromMinutes(4));
+        world.Proxy!.ResetCount();
+        var listings = await MeasuredRunAsync(world, "run after a change from the PC");
+        Assert.InRange(listings, 0, WayAndBeside(1));
+        AssertSameNames(world);
+    }
+
+    [Fact]
+    public async Task A_file_that_fails_again_and_again_never_makes_the_runs_read_every_folder()
+    {
+        await using var world = await LargeAsync();
+        // The server has passing trouble with one upload, every time (no refusal: it is tried again).
+        world.Proxy!.RefusalStatus = 500;
+        world.Proxy.RefuseUploads = path => path.EndsWith(".bin", StringComparison.Ordinal);
+        world.WritePc("Ordner 3/Unterordner 61/Werkzeug.bin", "x");
+        var failed = await world.RunAsync();
+        Assert.Equal("CD-4605", failed.ErrorCode);
+
+        world.Host.Sync.Time = new Later(TimeSpan.FromMinutes(4));
+        world.Proxy.ResetCount();
+        var again = await world.RunAsync();
+        Assert.Equal("CD-4605", again.ErrorCode);
+        output.WriteLine($"[measure] run after a failed file: {world.Proxy.Listings} folder listings");
+        // Read again: the way to the failed file and what lies beside it - not all 211 folders. The upload asks for its
+        // folder, too, before it fails again.
+        Assert.InRange(world.Proxy.Listings, 0, WayAndBeside(1) + 2);
+    }
+
+    [Fact]
     public async Task A_run_without_changes_does_not_read_every_folder_again()
     {
         await using var world = await LargeAsync();
@@ -110,11 +148,12 @@ public class LargeTreeTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task Once_an_hour_the_whole_cloud_folder_is_read()
+    public async Task Every_two_hours_the_whole_cloud_folder_is_read()
     {
         await using var world = await LargeAsync();
+        Assert.Equal(TimeSpan.FromHours(2), OnDemand.OnDemandRunner.FullListingEvery);
         world.Host.Sync.Time = new Later(TimeSpan.FromMinutes(3) + OnDemand.OnDemandRunner.FullListingEvery);
-        var listings = await MeasuredRunAsync(world, "run an hour later");
-        Assert.True(listings >= Folders, $"an hour later only {listings} folders were read");
+        var listings = await MeasuredRunAsync(world, "run two hours later");
+        Assert.True(listings >= Folders, $"two hours later only {listings} folders were read");
     }
 }

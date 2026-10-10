@@ -280,12 +280,29 @@ sie still endgültig zu löschen.
 - **Ein eigener Löschschutz in Dateien.** rclones Grenze zählt Ordner mit; in kleinen Ordnerbäumen schlägt sie zu spät
   oder zu früh an. `DeleteGuard` zählt Dateien, so wie Menschen „mehr als die Hälfte“ lesen.
 - **Wächterdatei auf beiden Seiten** – und wo der Server keine Datei annimmt (IServ: „Gruppen“ selbst, das ganze Konto,
-  Ordner nur zum Lesen), prüft `CloudFolderCheck` den Cloud-Ordner vor jedem Lauf selbst.
+  Ordner nur zum Lesen), prüft `CloudFolderCheck` den Cloud-Ordner vor jedem Lauf selbst. Mehrere PCs teilen sich die
+  Wächterdatei in der Cloud: Beim Einrichten bleibt eine vorhandene unangetastet, beim Beenden bleibt sie stehen (sonst
+  hielten alle anderen PCs mit `CD-4503` an), und ihre Zeit am PC übernimmt `PcListingTimes` immer – ihr Inhalt ändert
+  sich nie. Abgesichert durch `MultiDeviceTests` (zwei PCs an einem Server, beide Modi).
 - **Eigene Serverzeiten** (`QuietServerChanges`) für Server ohne verlässliche Änderungszeiten, damit gleich große
   Änderungen nicht verloren gehen.
 - **Der letzte gute Zustand** (`RunSafety`): Vorübergehende Probleme kosten keinen Neuaufbau mehr.
 - **Abgelehnte Dateien bleiben am PC** (`LocalOnly`) statt einen Neuaufbau zu erzwingen; die Prüfsumme der Filterdatei
-  wird dafür gezielt erneuert.
+  wird dafür gezielt erneuert. Als abgelehnt gilt, was der Server mit 403, 404, 405, 409, 415 oder 423 beantwortet – bei
+  einer ganzen Fehlerseite (ein Filter vor Nextcloud, der z. B. Programmdateien sperrt) zählt der Status an ihrem Ende,
+  nicht ihr Text (`RunSafety.IsRefusal`); bei „bei Bedarf“ ebenso.
+- **Ausgelassen und ignoriert.** Ordner, die der Server nicht lesen lässt, nennt die Karte (`SyncPairState.LeftOut`, in
+  `state.json`), einmal auch als Benachrichtigung. Abgelehnte Dateien erklärt sie mit ihren Dateitypen und Lösungen. Beides
+  lässt sich „Künftig ignorieren“: Dateitypen (`SyncFilters.TypeRule`, z. B. `*.[dD][lL][lL]`), einzelne Dateien oder
+  Ordner (`PathRule`) kommen als Regeln in `SyncSelection.Exclude` – ein Neuaufbau, bei dem nichts gelöscht wird; in den
+  Einstellungen der Synchronisation stehen sie unter „Ignoriert“ und lassen sich wieder abgleichen.
+- **Keine Schleifen.** Abgelehnte Dateien werden nicht in jedem Lauf wieder versucht (nur auf „Erneut versuchen“);
+  gescheiterte Läufe warten 1, 2, 4 … Minuten bis zum Intervall, eine geöffnete Datei bekommt drei schnelle Versuche
+  (`SyncService.RetryDelay`). Als abgelehnt gilt auch „400 Bad Request“ auf den Upload selbst (ein Name, den Nextcloud
+  nicht nimmt), nicht aber auf eine Frage nach einem fertigen Upload.
+- **Verwaiste bisync-Sperren** (`RunSafety.RemoveStaleLocks`): Eine Sperre nennt den Engine-Prozess, der sie setzte. Nach
+  einem Neustart von Windows mitten im Lauf stammt sie von einem früheren Prozess und wird vor dem nächsten Lauf
+  entfernt; eine Sperre der laufenden Engine bleibt.
 - **Papierkorb nur am PC.** Ein Papierkorb-Ordner in der Cloud wäre auf dem Server sichtbar – in geteilten Ordnern für
   alle. Was am PC gelöscht wird, liegt ohnehin im Papierkorb von Windows; Nextcloud hat einen eigenen.
 - **Geheimnisse nur verschlüsselt** in der rclone-Konfiguration, Schlüssel in der Windows-Anmeldeinformationsverwaltung,
@@ -442,10 +459,15 @@ einen Vergleichstest: 300 zufällige Bäume mit je acht Runden zufälliger Ände
 Zeit) – abgekürzt gelesen muss jedes Mal genau dasselbe herauskommen wie alles gelesen.
 
 Grenzen und Sicherheitsnetz: Bei manchen Freigaben und externem Speicher gibt Nextcloud Änderungen nicht immer nach
-oben weiter. Deshalb liest jeder Lauf nach einer Stunde (`OnDemandRunner.FullListingEvery`) alles, und ebenso der Lauf,
-nachdem eine Datei in der Cloud eine andere Fassung hatte als ihr Platzhalter. Was ein Lauf selbst in der Cloud geändert
-hat, wird im nächsten in jedem Fall gelesen. Die Liste gilt nur für dieselben Filterregeln, nur nach einem erfolgreichen
-Lauf und nur bei Nextcloud; Neuaufbau und Umstellen lesen alles. IServ und andere WebDAV-Server geben Änderungen nicht an
+oben weiter. Deshalb liest jeder Lauf nach zwei Stunden (`OnDemandRunner.FullListingEvery`, wie der Nextcloud-Client)
+alles, und ebenso der Lauf, nachdem eine Datei in der Cloud eine andere Fassung hatte als ihr Platzhalter. Was ein Lauf
+selbst in der Cloud geändert hat, wird im nächsten in jedem Fall gelesen: `CloudTreeStore.Save` vergisst nur die Zeit der
+Ordner auf dem Weg dorthin (im Eintrag beim Elternordner), ihre Listen bleiben – sie kennen die Zeiten der Ordner darunter,
+die unverändert nicht gelesen werden müssen (vorher fiel der Weg ganz heraus, und der nächste Lauf las nach jedem Upload
+alles unter dem obersten Ordner: im Testbaum 212 statt 32 Ordner). Die Liste bleibt auch nach einem Lauf, in dem einzelne
+Dateien scheiterten – vorher las danach jeder Lauf wieder alles und scheiterte an derselben Datei (beim Nutzer: 3.649
+Ordner, vier Minuten, im Kreis). Sie gilt nur für dieselben Filterregeln und nur bei Nextcloud; ein Lauf, der als Ganzes
+abbricht, behält nichts; Neuaufbau und Umstellen lesen alles. IServ und andere WebDAV-Server geben Änderungen nicht an
 Ordnerzeiten weiter – dort wird immer alles gelesen.
 
 **Platzhalter anlegen:** `CfCreatePlaceholders` legt viele Einträge in einem Aufruf an. Kommt in demselben Aufruf ein
@@ -492,6 +514,12 @@ unlesbar wirft weiter. Und keine einzelne Synchronisation hält den Start der an
 Verknüpfungen (symbolische Links, Junctions) folgt `FolderWalk` nie – Platzhalter sind zwar auch Analysepunkte, aber keine
 Links. Vorher konnte „In den Papierkorb“ für den Rest eines Ordners über eine Junction Dateien außerhalb erreichen; jetzt
 bleibt der Link stehen und wird genannt.
+
+**Fortschritt auf der Karte:** Der `Executor` meldet Schritte (erledigt von allen), die Bytes der Uploads mit
+Geschwindigkeit und den Schritt gerade („Lädt hoch: …“, „Lädt herunter: …“, „Löscht in der Cloud: …“) – Übertragungen
+sofort, alles andere höchstens viermal pro Sekunde. Große Uploads (ab 4 MB) laufen als Engine-Job, damit ihr Fortschritt
+schon während des Uploads zu sehen ist. Bei klassischen Läufen nennt `RcClient.Transferring` die Datei aus rclones
+Statistik.
 
 **Status im Explorer:** Windows nimmt Ordnern den Zustand „abgeglichen“ (der Hauptordner hat ihn von Anfang an nicht),
 und Explorer zeigt für solche Ordner kein Symbol („Synchronisierung ausstehend“). Nach jedem Lauf markiert

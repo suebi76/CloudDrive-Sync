@@ -104,6 +104,37 @@ public class ServiceTests
     }
 
     [Fact]
+    public async Task A_folder_without_the_right_to_read_is_named_on_the_card_and_can_be_ignored()
+    {
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        world.WriteCloud("Offen/a.txt", "a");
+        world.WriteCloud("Gesperrt/b.txt", "b");
+        // Like a share to upload only in Nextcloud.
+        world.Proxy!.RefuseListing($"{SyncWorld.CloudFolder}/Gesperrt");
+        await world.AddAccountAsync();
+        var log = new StateLog(world.Host.Sync);
+        world.Host.Sync.Start();
+        var first = log.WaitAsync(s => Finished(s) && s.LastRun is not null);
+        await world.AddPairAsync(p =>
+        {
+            p.Mode = SyncMode.OnDemand;
+            p.OnLocalChange = false;
+        });
+        var named = await first;
+        Assert.Equal(SyncStatus.Idle, named.Status);
+        Assert.Equal(["Gesperrt"], named.LeftOut);
+        Assert.Equal(["Gesperrt"], PersistedSyncState.Load(Path.Combine(world.Host.Paths.SyncPairDir(world.Pair.Id), "state.json")).LeftOut);
+
+        // "Künftig ignorieren": no longer asked for, no longer named, nothing deleted.
+        var next = log.WaitAsync(s => Finished(s) && s.LastRun > named.LastRun);
+        Assert.Equal(["/Gesperrt/**"], world.Host.Sync.IgnoreLeftOut(world.Pair.Id));
+        var ignored = await next;
+        Assert.Equal(SyncStatus.Idle, ignored.Status);
+        Assert.Empty(ignored.LeftOut!);
+        Assert.Equal("b", world.ReadCloud("Gesperrt/b.txt"));
+    }
+
+    [Fact]
     public async Task Synchronise_now_does_not_wait_for_the_pause_after_a_restart()
     {
         await using var world = await SyncWorld.CreateAsync();
@@ -205,7 +236,8 @@ public class ServiceTests
         Assert.Equal(["A.txt", "B.bak"], world.PcFiles());
         Assert.Equal(["A.txt", "B.bak"], world.CloudFiles());
         Assert.False(File.Exists(world.Pc(SyncFilters.SentinelFile)));
-        Assert.False(File.Exists(world.Cloud(SyncFilters.SentinelFile)));
+        // The one in the cloud stays: other PCs may synchronise the folder, too (see MultiDeviceTests).
+        Assert.True(File.Exists(world.Cloud(SyncFilters.SentinelFile)));
         Assert.False(Directory.Exists(world.Host.Paths.SyncPairDir(world.Pair.Id)));
     }
 }

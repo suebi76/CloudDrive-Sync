@@ -43,28 +43,34 @@ internal sealed class CloudTreeStore(string pairFolder)
     }
 
     /// <summary>
-    /// Keeps the listing for the next run. The folders on the way to everything this run changed in the cloud are left
-    /// out: they are read again, whatever their time says.
+    /// Keeps the listing for the next run. The folders on the way to everything this run changed in the cloud are read
+    /// again, whatever their time says: their own time is forgotten (in their parent's listing). Their listings stay - they
+    /// tell the times of the folders below, which need no reading where they are unchanged. (Leaving the way out entirely
+    /// lost those times, too: the next run read everything below the top folder again - after every upload.)
     /// </summary>
     public void Save(string filters, CloudTree tree, DateTime fullUtc, IEnumerable<string> changed)
     {
         var folders = new Dictionary<string, IReadOnlyList<CloudEntry>>(tree.Folders, StringComparer.Ordinal);
+        var way = new HashSet<string>(StringComparer.Ordinal);
         foreach (var path in changed)
-            for (var folder = Parent(path); ; folder = Parent(folder))
-            {
-                folders.Remove(folder);
-                if (folder.Length == 0) break;
-            }
+        {
+            // Up to the top - or to a folder whose way is noted already.
+            var folder = Parent(path);
+            while (way.Add(folder) && folder.Length > 0) folder = Parent(folder);
+        }
+        foreach (var folder in way.Where(f => f.Length > 0))
+            if (folders.TryGetValue(Parent(folder), out var entries))
+                folders[Parent(folder)] = entries.Select(e => e.IsDirectory && e.Path == folder ? e with { Ticks = 0 } : e).ToList();
         var data = new Data
         {
             Version = Version,
             Filters = Hash(filters),
             FullUtc = fullUtc,
             Newest = tree.Newest,
-            RootTicks = tree.RootTicks,
+            RootTicks = way.Contains("") ? 0 : tree.RootTicks,
             Folders = folders.ToDictionary(f => f.Key, f => f.Value.Select(e => new Item(e.Path, e.IsDirectory, e.Size, e.Ticks, e.Hash)).ToList()),
-            Since = tree.Since.Where(s => folders.ContainsKey(s.Key)).ToDictionary(),
-            Settled = tree.Settled.Where(folders.ContainsKey).ToList(),
+            Since = tree.Since.Where(s => folders.ContainsKey(s.Key) && !way.Contains(s.Key)).ToDictionary(),
+            Settled = tree.Settled.Where(f => folders.ContainsKey(f) && !way.Contains(f)).ToList(),
         };
         Directory.CreateDirectory(pairFolder);
         var temporary = File + ".tmp";

@@ -47,11 +47,13 @@ public sealed record SyncPairState(
     SyncDecision Decision,
     IReadOnlyList<string> Conflicts,
     bool FirstSyncDone,
-    SpaceUse? Space = null)
+    SpaceUse? Space = null,
+    IReadOnlyList<string>? LeftOut = null)
 {
     public static SyncPairState Initial(string id, PersistedSyncState saved, bool paused) => new(
         id, paused ? SyncStatus.Paused : saved.Decision != SyncDecision.None ? SyncStatus.NeedsAttention : SyncStatus.Idle,
-        "", JobProgress.None, saved.LastRun, saved.LastSuccess, saved.ErrorCode, saved.ErrorDetail, saved.Decision, [], saved.FirstSyncDone, saved.Space);
+        "", JobProgress.None, saved.LastRun, saved.LastSuccess, saved.ErrorCode, saved.ErrorDetail, saved.Decision, [], saved.FirstSyncDone, saved.Space,
+        saved.LeftOut);
 }
 
 /// <summary>The part of the state that survives a restart (sync\&lt;id&gt;\state.json).</summary>
@@ -67,6 +69,8 @@ public sealed class PersistedSyncState
     public bool ResyncPending { get; set; }
     /// <summary>Files on demand: what lay on the PC after the last run.</summary>
     public SpaceUse? Space { get; set; }
+    /// <summary>Folders the server did not let be read in the last run that listed the cloud: left out, nothing in them changes.</summary>
+    public List<string> LeftOut { get; set; } = [];
 
     public static PersistedSyncState Load(string file)
     {

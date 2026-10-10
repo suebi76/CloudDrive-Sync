@@ -3,6 +3,54 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.12] – 2026-10-10
+
+Twelfth test version on the way to 0.3: several PCs with one folder, files the server refuses, and a card that shows
+what a run is doing.
+
+### Fixed
+
+- Ending a synchronisation on one PC stopped every other PC with the same cloud folder ("protection file missing",
+  CD-4503): ending deleted the protection file in the cloud. It now stays there - other PCs may still use it.
+- Setting a folder up on a second PC wrote the protection file in the cloud again; on the other PCs it then looked
+  changed, and in a folder with few files a single change stopped the classic synchronisation ("Ungewöhnlich viele
+  Änderungen", CD-4509). An existing protection file is now left as it is, and its time on the PC is always taken as it
+  is (its content never changes).
+- Files the server does not take - e.g. program files a filter in front of Nextcloud blocks with an error page of its
+  own ("404 Not Found" or "403 Forbidden" at the end of a whole HTML page) - were tried again in every run, a few
+  seconds each, while the card showed nothing but "Gleicht ab". Like files in a folder to read only, they now stay on
+  the PC with a notice and a button to try again.
+- After a restart of Windows during a classic run, the synchronisation waited up to 30 minutes ("Synchronisation läuft
+  bereits", CD-4508): bisync's lock of the broken-off run stayed. A lock of an earlier engine process is now removed;
+  one of the running engine never.
+
+- A Nextcloud synchronisation with files on demand read the whole cloud folder again and again (for the user 3,649
+  folders, four minutes each) when single files failed: after a failed run it forgot which folders were unchanged, and
+  the next run failed on the same file. What the listing saw is now kept also then, and after a change from the PC the
+  next run reads only the way to it - before, everything below the top folder (212 instead of 32 folders in the test).
+- Retries never become a loop: a file open in another program gets three quick tries, then the waits grow up to the
+  interval as for any other failure.
+
+### Added
+
+- Folders the server does not let be read (e.g. a share to upload only) are named on the card, with a notification the
+  first time; nothing in them is created or deleted.
+- "Künftig ignorieren" for files the server refuses (by their type, e.g. all ".dll") and for folders it does not let be
+  read: they are no longer synchronised and no longer named; on the PC and in the cloud they stay as they are. The card
+  explains refused files with their types and what helps (ask the administration, pack them into a ZIP archive, keep
+  them on this PC). Everything ignored is listed in the synchronisation's settings under "Ignoriert" and can take part
+  again.
+- A name Nextcloud does not take ("400 Bad Request" to the upload, e.g. some files beginning with a dot) counts as
+  refused, too.
+
+### Changed
+
+- The whole cloud folder is read every two hours instead of every hour (like the Nextcloud client); in between only what
+  may have changed.
+- With files on demand the card shows what a run is doing: "12 von 73 Dateien · 3,1 MB von 40 MB · 1,2 MB/s" and on a
+  line of its own the file at hand ("Lädt hoch: Bericht.docx", "Lädt herunter: …", "Löscht in der Cloud: …"). Large
+  uploads show their progress while they run. Classic synchronisations name the file being transferred, too.
+
 ## [0.3.0-preview.11] – 2026-10-10
 
 Eleventh test version on the way to 0.3: placeholders Windows breaks can neither come about unnoticed nor cost a file.

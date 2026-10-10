@@ -72,6 +72,45 @@ public class SafetyTests
     }
 
     [Fact]
+    public async Task A_file_type_the_server_blocks_with_an_error_page_stays_on_the_PC()
+    {
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        world.WriteCloud("Plan.txt", "Plan");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        // Like a filter in front of Nextcloud that blocks program files with an error page over several lines.
+        world.Proxy!.RefuseUploads = path => path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+        world.WritePc("Programm/werkzeug.dll", "binär");
+        world.WritePc("Programm/liesmich.txt", "Text");
+        var run = await world.RunAsync();
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+        Assert.Equal(["Programm/werkzeug.dll"], run.LocalOnlyAdded);
+        Assert.Equal("Text", world.ReadCloud("Programm/liesmich.txt"));
+        Assert.Equal("binär", world.ReadPc("Programm/werkzeug.dll"));
+    }
+
+    [Fact]
+    public async Task A_lock_an_earlier_engine_left_behind_does_not_hold_the_next_run_up()
+    {
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Plan.txt", "Plan");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        // A run broken off by a restart of Windows: its lock stays, naming an engine process that is gone, valid for 30 minutes.
+        var workDir = Path.Combine(world.Host.Paths.SyncPairDir(world.Pair.Id), "bisync");
+        var listing = Directory.EnumerateFiles(workDir, "*.path1.lst").Single();
+        var lockFile = listing[..^".path1.lst".Length] + ".lck";
+        var now = DateTime.UtcNow;
+        File.WriteAllText(lockFile, $$"""{"Session":"früher","PID":"{{Environment.ProcessId + 1_000_000}}","TimeRenewed":"{{now:O}}","TimeExpires":"{{now.AddMinutes(30):O}}"}""");
+        world.WritePc("Neu.txt", "neu");
+        var run = await world.RunAsync();
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+        Assert.Equal("neu", world.ReadCloud("Neu.txt"));
+    }
+
+    [Fact]
     public async Task A_cloud_folder_without_a_protection_file_that_suddenly_looks_empty_stops_the_run()
     {
         await using var world = await FolderWithoutFilesAsync();
@@ -260,6 +299,27 @@ public class SafetyTests
 
         await Task.Delay(1100);
         world.WritePc("Plan.txt", "Mo 09:00");
+        var run = await world.RunAsync();
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+        Assert.Equal("Mo 09:00", world.ReadCloud("Plan.txt"));
+    }
+
+    [Theory]
+    [InlineData(-300)]
+    [InlineData(600)]
+    public async Task In_a_folder_with_one_file_a_change_right_after_the_first_run_goes_up(int pcAgainstServerMs)
+    {
+        // The server notes the protection file in whole seconds; the PC wrote it a little before or within that second.
+        // Either way it must count as unchanged - with one file besides it, "all files were changed" would stop the run.
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Plan.txt", "Mo 08:00");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        var serverSecond = TruncateToSecond(File.GetLastWriteTimeUtc(world.Cloud(SyncFilters.SentinelFile)));
+        File.SetLastWriteTimeUtc(world.Pc(SyncFilters.SentinelFile), serverSecond.AddMilliseconds(pcAgainstServerMs));
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+
+        world.WritePc("Plan.txt", "Mo 09:00", later: true);
         var run = await world.RunAsync();
         Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
         Assert.Equal("Mo 09:00", world.ReadCloud("Plan.txt"));

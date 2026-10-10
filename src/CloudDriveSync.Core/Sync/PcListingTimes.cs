@@ -14,7 +14,9 @@ namespace CloudDriveSync.Core.Sync;
 /// protection file, which the server receives a moment after the PC wrote it.
 /// After each successful run, such entries get the time the file really has on the PC. Only entries that carry the
 /// server's time to the digit, have the file's size and are newer than the file are corrected: a change on the PC makes
-/// a file newer, never older, so no real change is hidden. The files themselves are not touched.
+/// a file newer, never older, so no real change is hidden. The protection file is corrected either way: its content
+/// never changes, and the server notes whole seconds - a PC that wrote it within that second (a second PC setting the
+/// folder up, too) would otherwise see it "changed (newer)". The files themselves are not touched.
 /// </summary>
 /// <summary>A file as bisync noted it after its last run.</summary>
 internal readonly record struct NotedFile(long Size, DateTime Time);
@@ -47,7 +49,7 @@ internal static partial class PcListingTimes
             var file = new FileInfo(Path.Combine(localPath, relative.Replace('/', Path.DirectorySeparatorChar)));
             if (!file.Exists || file.Length.ToString(CultureInfo.InvariantCulture) != entry.Groups["size"].Value) continue;
             var real = file.LastWriteTimeUtc;
-            if (real >= noted) continue;
+            if (real >= noted && !(relative == SyncFilters.SentinelFile && real > noted)) continue;
             lines[i] = lines[i][..time.Index] + FormatTime(real) + lines[i][(time.Index + time.Length)..];
             aligned++;
         }

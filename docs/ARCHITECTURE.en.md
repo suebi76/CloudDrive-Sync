@@ -279,12 +279,29 @@ silently.
 - **A deletion guard of its own, counted in files.** rclone's limit counts folders as well; in small folder trees it
   triggers too late or too early. `DeleteGuard` counts files, the way people read "more than half".
 - **A sentinel file on both sides** - and where the server takes no file (IServ: "Gruppen" itself, the whole account,
-  read-only folders), `CloudFolderCheck` checks the cloud folder itself before every run.
+  read-only folders), `CloudFolderCheck` checks the cloud folder itself before every run. Several PCs share the sentinel
+  file in the cloud: setting up leaves an existing one as it is, ending leaves it there (otherwise every other PC would
+  stop with `CD-4503`), and `PcListingTimes` always takes its time on the PC as it is - its content never changes.
+  Covered by `MultiDeviceTests` (two PCs on one server, both modes).
 - **Server times of its own** (`QuietServerChanges`) for servers without reliable modification times, so same-size
   changes are not lost.
 - **The last good state** (`RunSafety`): passing problems no longer cost a rebuild.
 - **Refused files stay on the PC** (`LocalOnly`) instead of forcing a rebuild; the checksum of the filter file is renewed
-  deliberately for that.
+  deliberately for that. Refused is what the server answers with 403, 404, 405, 409, 415 or 423 - with a whole error page
+  (a filter in front of Nextcloud that blocks program files, for example) the status at its end counts, not its text
+  (`RunSafety.IsRefusal`); the same with files on demand.
+- **Left out and ignored.** Folders the server does not let be read are named on the card (`SyncPairState.LeftOut`, in
+  `state.json`), once also as a notification. Refused files are explained with their file types and what helps. Both can
+  be ignored from now on: file types (`SyncFilters.TypeRule`, e.g. `*.[dD][lL][lL]`), single files or folders
+  (`PathRule`) go into `SyncSelection.Exclude` as rules - a rebuild that deletes nothing; the synchronisation's settings
+  list them under "Ignoriert", where each can take part again.
+- **No loops.** Refused files are not tried again in every run (only on "Erneut versuchen"); failed runs wait 1, 2, 4 …
+  minutes up to the interval, a file open in another program gets three quick tries (`SyncService.RetryDelay`). A "400 Bad
+  Request" to the upload itself (a name Nextcloud does not take) counts as refused, too - not one to a question after a
+  finished upload.
+- **Left-over bisync locks** (`RunSafety.RemoveStaleLocks`): a lock names the engine process that set it. After a
+  restart of Windows in the middle of a run it comes from an earlier process and is removed before the next run; a lock
+  of the running engine stays.
 - **Recycle bin on the PC only.** A recycle bin folder in the cloud would be visible on the server - in shared folders to
   everybody. What is deleted on the PC is in the Windows recycle bin anyway; Nextcloud has one of its own.
 - **Secrets only encrypted** in the rclone configuration, the key in the Windows Credential Manager - never in settings,
@@ -436,9 +453,14 @@ changes each (also swapped folders of the same time) - read the short way, the r
 everything gives, every time.
 
 Limits and safety net: with some shares and external storage, Nextcloud does not always pass changes up. So a run reads
-everything after an hour (`OnDemandRunner.FullListingEvery`), and so does the run after a file in the cloud turned out to
-be another version than its placeholder. What a run changed in the cloud itself is read in the next one in any case. The
-listing counts only for the same filter rules, only after a successful run and only with Nextcloud; rebuilding and
+everything after two hours (`OnDemandRunner.FullListingEvery`, like the Nextcloud client), and so does the run after a
+file in the cloud turned out to be another version than its placeholder. What a run changed in the cloud itself is read in
+the next one in any case: `CloudTreeStore.Save` forgets only the time of the folders on the way there (in their parent's
+entry); their listings stay - they know the times of the folders below, which need no reading when unchanged (before,
+the way was left out entirely, and after every upload the next run read everything below the top folder: 212 instead of
+32 folders in the test tree). The listing stays also after a run in which single files failed - before, every following
+run read everything again and failed on the same file (for the user: 3,649 folders, four minutes, in a loop). It counts
+only for the same filter rules and only with Nextcloud; a run that breaks off as a whole keeps nothing; rebuilding and
 switching read everything. IServ and other WebDAV servers do not pass changes on to folder times - there everything is
 always read.
 
@@ -484,6 +506,11 @@ back to classic) it ends with `CD-4609` before anything changes. The folder itse
 synchronisation holds up the start of the others (`SyncService.Start`). `FolderWalk` never follows links (symbolic links,
 junctions) - placeholders are reparse points, too, but no links. Before, moving the rest of a folder into the recycle bin
 could reach files outside it through a junction; now the link stays and is named.
+
+**Progress on the card:** the `Executor` reports steps (done of all), the bytes of the uploads with their speed and
+the step at hand ("Lädt hoch: …", "Lädt herunter: …", "Löscht in der Cloud: …") - transfers at once, everything else at
+most four times a second. Large uploads (from 4 MB) run as an engine job, so their progress shows while they run. In
+classic runs `RcClient.Transferring` names the file from rclone's statistics.
 
 **Status in Explorer:** Windows takes the state "in sync" from folders (the root never has it at first), and Explorer
 shows no symbol for such folders ("sync pending"). After every run `Executor.MarkFoldersInSync` therefore marks all

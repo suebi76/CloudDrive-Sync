@@ -34,6 +34,9 @@ public sealed class RcloneEngine : IAsyncDisposable
 
     public bool IsRunning => _process is { HasExited: false } && _rc is not null;
 
+    /// <summary>The process of the running engine, or null.</summary>
+    public int? ProcessId => _process is { HasExited: false } process ? process.Id : null;
+
     /// <summary>Counts the starts of the engine; what lived inside an earlier engine (servers of <see cref="FileServer"/>) is gone.</summary>
     public int Generation { get; private set; }
 

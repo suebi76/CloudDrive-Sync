@@ -20,7 +20,8 @@ public sealed record SyncRunOutcome(
     bool Retryable,
     IReadOnlyList<string>? LocalOnlyAdded = null,
     IReadOnlyList<FileChange>? Changes = null,
-    SpaceUse? Space = null);
+    SpaceUse? Space = null,
+    IReadOnlyList<string>? LeftOut = null);
 
 /// <summary>Files on demand: what the folder takes on the PC and what the cloud folder holds, in bytes.</summary>
 public sealed record SpaceUse(long OnPcBytes, long CloudBytes);
@@ -70,6 +71,7 @@ public sealed partial class SyncRunner
         var rc = await _engine.EnsureRunningAsync(cancellationToken);
         var workDir = Path.Combine(folder, "bisync");
         Directory.CreateDirectory(workDir);
+        RunSafety.RemoveStaleLocks(workDir, _engine.ProcessId);
         var filtersFile = Path.Combine(folder, "filter.txt");
         SyncFilters.Write(folder, filtersFile, pair);
         if (!pair.CloudCheckFile && await CloudFolderCheck.ProblemAsync(rc, pair, folder, cancellationToken) is { } problem)

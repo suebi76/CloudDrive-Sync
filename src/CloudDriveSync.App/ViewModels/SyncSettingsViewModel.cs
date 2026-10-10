@@ -34,6 +34,19 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         SwitchProblem = pair.Mode == SyncMode.Classic && SyncService.OnDemandSupported ? SyncService.OnDemandProblem(pair.LocalPath) ?? "" : "";
         _defaultExplorerName = SyncService.DefaultExplorerName(pair, account);
         ExplorerName = SyncService.ExplorerNameOf(pair, account);
+        foreach (var rule in pair.Selection.Exclude) Ignored.Add(new IgnoredRule(rule, SyncFilters.Describe(rule)));
+    }
+
+    /// <summary>What is not synchronised on purpose ("Künftig ignorieren"); each can take part again.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<IgnoredRule> Ignored { get; } = [];
+
+    public bool HasIgnored => Ignored.Count > 0;
+
+    [RelayCommand]
+    private void Unignore(IgnoredRule rule)
+    {
+        Ignored.Remove(rule);
+        OnPropertyChanged(nameof(HasIgnored));
     }
 
     private readonly string _defaultExplorerName;
@@ -175,7 +188,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         {
             Mode = SelectAll ? SelectionMode.All : SelectionMode.Selected,
             Include = includes,
-            Exclude = _pair.Selection.Exclude.ToList(),
+            Exclude = Ignored.Select(i => i.Rule).ToList(),
         };
         try
         {
