@@ -12,10 +12,12 @@
 !/.gitattributes
 !/.gitignore
 !/CHANGELOG.md
+!/CLAUDE.md
 !/CloudDriveSync.slnx
 !/CONTRIBUTING.md
 !/CONTRIBUTING.en.md
 !/Directory.Build.props
+!/GLOSSARY.md
 !/dotnet-tools.json
 !/global.json
 !/LICENSE
