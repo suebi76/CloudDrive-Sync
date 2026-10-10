@@ -25,7 +25,8 @@ internal static class OnDemandVerifier
         var filters = Path.Combine(folder, "filter.txt");
         await File.WriteAllTextAsync(filters, SyncFilters.Build(pair), cancellationToken);
         var cloud = await Listings.ListCloudAsync(rc, pair, filters, account.Kind == WebDavKind.Nextcloud, cancellationToken);
-        var local = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
+        var pc = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
+        var local = pc.Entries;
 
         var inCloud = cloud.Entries.Values.Where(e => !e.IsDirectory).ToDictionary(e => e.Path, StringComparer.OrdinalIgnoreCase);
         var onlyOnPc = new List<string>();
@@ -40,7 +41,7 @@ internal static class OnDemandVerifier
             else matching++;
         }
         var onlyInCloud = inCloud.Keys.ToList();
-        var unreadable = cloud.Unreadable.Select(f => f + "/").ToList();
+        var unreadable = cloud.Unreadable.Select(f => f + "/").Concat(pc.Refused).ToList();
 
         if (onPc.Count > 0)
         {

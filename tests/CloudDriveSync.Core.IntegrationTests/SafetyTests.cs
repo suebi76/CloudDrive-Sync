@@ -92,6 +92,38 @@ public class SafetyTests
     }
 
     [Fact]
+    public async Task A_folder_on_the_PC_that_Windows_refuses_never_counts_as_deleted()
+    {
+        await using var world = await SyncWorld.CreateAsync();
+        for (var i = 1; i <= 10; i++) world.WriteCloud($"Offen/Datei {i:00}.txt", $"Inhalt {i}");
+        world.WriteCloud("Gesperrt/a.txt", "a");
+        world.WriteCloud("Gesperrt/Tiefer/b.txt", "b");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+
+        // A folder the PC suddenly does not let be opened (no right to it, or broken).
+        var folder = new DirectoryInfo(world.Pc("Gesperrt"));
+        var security = folder.GetAccessControl();
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User!,
+            System.Security.AccessControl.FileSystemRights.ListDirectory | System.Security.AccessControl.FileSystemRights.ReadAttributes,
+            System.Security.AccessControl.AccessControlType.Deny);
+        security.AddAccessRule(deny);
+        folder.SetAccessControl(security);
+        try
+        {
+            await world.RunAsync();
+        }
+        finally
+        {
+            security.RemoveAccessRule(deny);
+            folder.SetAccessControl(security);
+        }
+        Assert.Equal("a", world.ReadCloud("Gesperrt/a.txt"));
+        Assert.Equal("b", world.ReadCloud("Gesperrt/Tiefer/b.txt"));
+    }
+
+    [Fact]
     public async Task Too_many_deletions_stop_until_the_user_restores_or_confirms_them()
     {
         await using var world = await SyncWorld.CreateAsync();

@@ -94,17 +94,23 @@ internal static unsafe partial class Placeholders
         return true;
     }
 
-    /// <summary>Creates placeholders in a folder; per item null when it was created, otherwise why not.</summary>
+    /// <summary>
+    /// Creates placeholders in a folder; per item null when it was created, otherwise why not. Windows writes an entry
+    /// broken - unreadable for good, "Die Clouddatei-Metadaten sind beschädigt" - when its identity is shorter than one
+    /// made before it in the same call (measured: 17 of 23 folders of a real cloud folder). So the entries go to
+    /// Windows with identities never shorter than the one before; the results come back in the order given.
+    /// </summary>
     public static IReadOnlyList<string?> Create(string folder, IReadOnlyList<NewPlaceholder> items)
     {
         if (items.Count == 0) return [];
+        var order = Enumerable.Range(0, items.Count).OrderBy(i => items[i].Identity.Length).ToArray();
         var infos = new CF_PLACEHOLDER_CREATE_INFO[items.Count];
         var allocations = new List<nint>(items.Count * 2);
         try
         {
             for (var i = 0; i < items.Count; i++)
             {
-                var item = items[i];
+                var item = items[order[i]];
                 if (item.Identity.Length is 0 or > MaxIdentityLength) throw new ArgumentException($"identity of '{item.Name}' must be 1 to {MaxIdentityLength} bytes");
                 var name = Marshal.StringToHGlobalUni(item.Name);
                 allocations.Add(name);
@@ -126,7 +132,7 @@ internal static unsafe partial class Placeholders
                 uint processed;
                 var result = PInvoke.CfCreatePlaceholders(new PCWSTR(folderPointer), array, (uint)infos.Length, CF_CREATE_FLAGS.CF_CREATE_FLAG_NONE, &processed);
                 for (var i = 0; i < infos.Length; i++)
-                    results[i] = infos[i].Result.Failed ? $"0x{infos[i].Result.Value:X8}" : null;
+                    results[order[i]] = infos[i].Result.Failed ? $"0x{infos[i].Result.Value:X8}" : null;
                 // A failure of the call itself (not of single entries) leaves the entries without a result.
                 if (result.Failed && results.All(r => r is null)) Check(result, "CfCreatePlaceholders", folder);
             }

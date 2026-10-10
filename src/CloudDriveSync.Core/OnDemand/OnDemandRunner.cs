@@ -104,11 +104,14 @@ internal sealed class OnDemandRunner
             foreach (var clash in cloud.CaseClashes) Log.Warn("OnDemand", $"'{pair.Id}': '{clash}' left out - another name in the cloud differs only in upper and lower case.");
             clock.Restart();
             activity?.Invoke("Liest den Ordner auf diesem PC …");
-            var local = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
+            var pc = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
+            var local = pc.Entries;
             var localTime = clock.Elapsed;
+            // What the server does not let be read and what Windows refuses on the PC are left out alike: unknown, never deleted.
+            var leftOut = cloud.Unreadable.Concat(pc.Refused).Distinct(StringComparer.Ordinal).ToList();
 
             var inStep = converting is null ? null : InStep(converting, cloud.Entries, local);
-            var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync, cloud.Unreadable, inStep));
+            var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync, leftOut, inStep));
             foreach (var skipped in plan.Skipped) Log.Info("OnDemand", $"'{pair.Id}': {skipped}");
             if (mode == BisyncMode.Normal && plan.TooManyDeletions(pair.MaxDeletePercent, DeleteGuard.MinimumDeletions))
             {
@@ -118,7 +121,7 @@ internal sealed class OnDemandRunner
             }
             Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); cloud listed in {cloudTime.TotalSeconds:0.0} s "
                 + $"({cloud.Entries.Count} entries in {cloud.Folders} folders, {cloud.Read} read{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")}), "
-                + $"PC in {localTime.TotalSeconds:0.0} s ({local.Count} entries).");
+                + $"PC in {localTime.TotalSeconds:0.0} s ({local.Count} entries{(pc.Refused.Count > 0 ? $", {pc.Refused.Count} refused by Windows" : "")}).");
             if (plan.Actions.Count > 0) activity?.Invoke($"Gleicht ab: {Count(plan.Actions.Count)} Schritte …");
             clock.Restart();
 
@@ -126,7 +129,7 @@ internal sealed class OnDemandRunner
             var result = await executor.RunAsync(plan);
             if (mode == BisyncMode.Resync && live.MergeNeeded) live.Merged();
             executor.ApplyPinStates(local);
-            executor.MarkFoldersInSync(result.Failed.Concat(result.Locked), cloud.Unreadable);
+            executor.MarkFoldersInSync(result.Failed.Concat(result.Locked), leftOut);
             var freed = executor.FreeUpSpace(local, freeUpDays, nowUtc);
             var space = Executor.Measure(local, cloud.Entries.Values, freed);
             var final = new JobProgress(result.Bytes, result.Bytes, result.Transfers, result.Transfers, 0, 0, 0, result.Failed.Count);

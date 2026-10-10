@@ -442,6 +442,20 @@ listing counts only for the same filter rules, only after a successful run and o
 switching read everything. IServ and other WebDAV servers do not pass changes on to folder times - there everything is
 always read.
 
+**Making placeholders:** `CfCreatePlaceholders` makes many entries in one call. When an entry comes after one with a
+longer identity (`ItemIdentity`) in the same call, Windows writes it broken: it never opens ("Die Clouddatei-Metadaten
+sind beschädigt", 0x8007016B) - not even while the folder is registered and connected - and after unregistering it
+cannot be deleted either. Found with a real Nextcloud account (30 folders and 181 files in one place, always the same)
+and reproduced in a sync root of its own: of 23 folders of one folder, 17 broken; made one by one or sorted by the length
+of their identity, none. `Placeholders.Create` therefore hands the entries over so that no identity is shorter than the
+one before, and returns the results in the order given.
+
+What Windows refuses all the same no longer stops a run: when Windows refuses making entries in a folder as a whole, they
+wait and the rest goes on (`Executor`). And a folder or entry on the PC that Windows does not let be opened stays out like
+a cloud folder the server refuses (`Listings.LocalSide.Refused`, handed to the `Planner` as `Unreadable`): nothing in it
+counts as deleted. rclone lists such a folder as empty without a word - so `Listings.RefusedFolders` opens every folder
+itself.
+
 **Status in Explorer:** Windows takes the state "in sync" from folders (the root never has it at first), and Explorer
 shows no symbol for such folders ("sync pending"). After every run `Executor.MarkFoldersInSync` therefore marks all
 folders in sync - except the way to something left for the next run and the unreadable folders. The state of the whole
@@ -471,7 +485,9 @@ like a rebuild and deletes nothing - even when "apply deletions" was chosen befo
 not uploaded yet becomes a normal file (`CfRevertPlaceholder`), a placeholder folder likewise, or it goes when empty.
 Only then does the registration end. The reason: a placeholder left after unregistering - because a program such as
 Explorer or the search index held it open just then - belongs to a registration that no longer exists. Windows calls
-it damaged (error 363), nothing can open or delete it, and Explorer cannot even delete the folder. Therefore **a
+it damaged (error 363), nothing can open or delete it, and Explorer cannot even delete the folder. (The 211 remains of
+the practical test, though, came from placeholders Windows had written broken already when they were made - see
+"Making placeholders".) Therefore **a
 registration ends only once nothing of it is left in the folder** (`Leftovers.EndWhenClear`, for ending, switching,
 clearing up and uninstalling):
 - Dissolve first, with up to three attempts. While a program still holds something, the registration stays - named

@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
 using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.CloudFiles;
+using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
@@ -96,12 +97,38 @@ internal static class Listings
         return CloudWalker.FolderTicksAsync(rc, parent, slash < 0 ? path : path[(slash + 1)..], cancellationToken);
     }
 
+    /// <summary>The PC side (see <see cref="ListLocalAsync"/>).</summary>
+    /// <param name="Refused">
+    /// Entries Windows refuses to open - a folder it cannot list, a placeholder it calls broken. What is in or below them
+    /// is unknown: they are left out like folders the server does not let be read, never taken as deleted on the PC.
+    /// </param>
+    public sealed record LocalSide(IReadOnlyList<LocalEntry> Entries, IReadOnlyList<string> Refused);
+
     /// <summary>The PC side, with what Windows knows about each placeholder.</summary>
-    public static async Task<IReadOnlyList<LocalEntry>> ListLocalAsync(RcClient rc, string localRoot, string filtersFile, CancellationToken cancellationToken)
+    public static async Task<LocalSide> ListLocalAsync(RcClient rc, string localRoot, string filtersFile, CancellationToken cancellationToken)
     {
-        var listed = await CloudWalker.ListAsync(rc, localRoot, "", filtersFile, new JsonObject { ["recurse"] = true, ["noMimeType"] = true }, cancellationToken);
+        IReadOnlyList<CloudEntry> listed;
+        var refused = new List<string>();
+        try
+        {
+            listed = await CloudWalker.ListAsync(rc, localRoot, "", filtersFile, new JsonObject { ["recurse"] = true, ["noMimeType"] = true }, cancellationToken);
+        }
+        catch (Errors.CdException e)
+        {
+            // rclone's recursive listing stops at the first folder it cannot read. Folder by folder, such a folder is left
+            // out and everything else is read.
+            Log.Warn("OnDemand", $"Folder on this PC not completely readable ({e.Detail ?? e.Message}); it is read folder by folder.");
+            var options = new JsonObject { ["recurse"] = false, ["noMimeType"] = true };
+            var walk = await CloudWalker.WalkAsync((folder, token) => CloudWalker.ListAsync(rc, localRoot, folder, filtersFile, options, token), previous: null, progress: null,
+                "PC", cancellationToken);
+            listed = walk.Entries;
+            refused.AddRange(walk.Unreadable);
+        }
         return await Task.Run(() =>
         {
+            // rclone leaves a folder it cannot open out of its listing without a word - all in it would count as deleted
+            // on the PC. Every folder is opened here, too.
+            refused.AddRange(RefusedFolders(localRoot));
             var entries = new List<LocalEntry>(listed.Count);
             foreach (var entry in listed)
             {
@@ -118,9 +145,55 @@ internal static class Listings
                     // Gone since it was listed: the next run sees it as it is then.
                     continue;
                 }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // Windows refuses it (e.g. a placeholder it calls broken): left out, never taken as deleted.
+                    refused.Add(entry.Path);
+                    continue;
+                }
                 entries.Add(new LocalEntry(entry.Path, entry.IsDirectory, entry.Size, entry.Ticks, placeholder));
             }
-            return (IReadOnlyList<LocalEntry>)entries;
+            if (refused.Count > 0) Log.Warn("OnDemand", $"{refused.Count} entry(s) on this PC refused by Windows, left out: {string.Join(", ", refused.Take(5))}");
+            return new LocalSide(entries, refused.Distinct(StringComparer.Ordinal).ToList());
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// The folders below <paramref name="root"/> Windows refuses to open (no right to, a placeholder it calls broken), as
+    /// paths of the cloud. Links are not followed. The folder itself unreadable ends the run, as before.
+    /// </summary>
+    internal static List<string> RefusedFolders(string root)
+    {
+        var refused = new List<string>();
+        var folders = new Stack<string>([root]);
+        while (folders.Count > 0)
+        {
+            var folder = folders.Pop();
+            List<string> below;
+            try
+            {
+                below = Directory.EnumerateDirectories(folder).ToList();
+            }
+            catch (Exception e) when (folder != root && e is IOException or UnauthorizedAccessException)
+            {
+                refused.Add(NameEncoding.ToStandardPath(Path.GetRelativePath(root, folder)));
+                continue;
+            }
+            foreach (var sub in below)
+            {
+                bool link;
+                try
+                {
+                    link = new DirectoryInfo(sub).LinkTarget is not null;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    refused.Add(NameEncoding.ToStandardPath(Path.GetRelativePath(root, sub)));
+                    continue;
+                }
+                if (!link) folders.Push(sub);
+            }
+        }
+        return refused;
     }
 }

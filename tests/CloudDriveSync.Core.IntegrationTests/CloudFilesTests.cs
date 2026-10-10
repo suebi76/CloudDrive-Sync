@@ -24,6 +24,36 @@ public class CloudFilesTests
         Assert.True(SyncRoots.IsRegistered(root.Id));
     }
 
+    /// <summary>
+    /// Windows writes a placeholder broken for good ("Die Clouddatei-Metadaten sind beschädigt") when, in one call, its
+    /// identity is shorter than one made before it - found with a real cloud folder, where 17 of 23 sub-folders and
+    /// files in them came out like that. Should this test ever fail, the broken entries cannot be deleted while Windows
+    /// runs normally (only in safe mode); the test folder stays in %TEMP%\clouddrive-sync-it.
+    /// </summary>
+    [Fact]
+    public async Task Placeholders_made_in_one_go_open_whatever_the_length_of_their_identities()
+    {
+        await using var root = await TestSyncRoot.CreateAsync();
+        // Long, short, longer, shorter - as a folder listing comes.
+        var lengths = new[] { 40, 160, 90, 150, 30, 130, 60, 140, 20, 120 };
+        var items = new List<NewPlaceholder>();
+        for (var i = 0; i < lengths.Length; i++)
+        {
+            var path = $"Ordner {i} " + new string('x', lengths[i]);
+            items.Add(new NewPlaceholder($"Ordner {i}", true, 0, Monday, ItemIdentity.Encode(i + 1, path)));
+            items.Add(new NewPlaceholder($"Datei {i}.txt", false, 10, Monday, ItemIdentity.Encode(100 + i, path + "/Datei.txt")));
+        }
+
+        Assert.All(Placeholders.Create(root.Path, items), Assert.Null);
+
+        for (var i = 0; i < lengths.Length; i++)
+        {
+            Assert.Empty(Directory.GetFileSystemEntries(root.File($"Ordner {i}")));
+            Assert.NotNull(Placeholders.Read(root.File($"Ordner {i}")));
+            Assert.NotNull(Placeholders.Read(root.File($"Datei {i}.txt")));
+        }
+    }
+
     [Fact]
     public async Task Placeholders_take_no_space_until_their_data_is_fetched()
     {

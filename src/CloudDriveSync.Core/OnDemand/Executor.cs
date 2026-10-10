@@ -236,24 +236,18 @@ internal sealed partial class Executor
             }
             var items = group.OrderBy(e => e.IsDirectory ? 0 : 1).ToList();
             var created = new List<CloudEntry>();
-            _store.Batch(() =>
+            try
             {
-                var ids = items.Select(e => _store.Upsert(new SyncItem(0, e.Path, e.IsDirectory, e.Size, e.Ticks, e.Hash, e.IsDirectory ? null : e.Size, e.IsDirectory ? null : TimeOf(e.Ticks).Ticks))).ToList();
-                var results = Placeholders.Create(folder, items.Select((e, i) =>
-                    new NewPlaceholder(NameEncoding.ToLocalName(Name(e.Path)), e.IsDirectory, e.Size, TimeOf(e.Ticks), ItemIdentity.Encode(ids[i], e.Path))).ToList());
-                for (var i = 0; i < items.Count; i++)
-                {
-                    if (results[i] is null)
-                    {
-                        created.Add(items[i]);
-                        continue;
-                    }
-                    // Not created (a file of that name appeared meanwhile): not recorded either, so it is never taken as deleted.
-                    _store.Remove(ids[i]);
-                    _failed.Add(items[i].Path);
-                    Log.Warn("OnDemand", $"'{_pair.Id}': placeholder '{items[i].Path}' not created: {results[i]}");
-                }
-            });
+                CreateIn(folder, items, created);
+            }
+            catch (Exception e) when (e is CloudFileException or IOException or UnauthorizedAccessException)
+            {
+                // Windows refuses the whole folder (e.g. it is broken itself): its entries wait, the rest goes on.
+                created.Clear();
+                _failed.AddRange(items.Select(i => i.Path));
+                Log.Warn("OnDemand", $"'{_pair.Id}': {items.Count} placeholder(s) in '{group.Key}' not created: {e.Message}");
+                continue;
+            }
             // In a folder kept on this device, what is new is kept, too - also in new folders below it (outer ones come first).
             var keep = PinnedFolder(folder);
             foreach (var entry in created)
@@ -266,6 +260,29 @@ internal sealed partial class Executor
             }
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>The placeholders of one folder, recorded in one transaction - all of them or, when Windows refuses the folder, none.</summary>
+    private void CreateIn(string folder, List<CloudEntry> items, List<CloudEntry> created)
+    {
+        _store.Batch(() =>
+        {
+            var ids = items.Select(e => _store.Upsert(new SyncItem(0, e.Path, e.IsDirectory, e.Size, e.Ticks, e.Hash, e.IsDirectory ? null : e.Size, e.IsDirectory ? null : TimeOf(e.Ticks).Ticks))).ToList();
+            var results = Placeholders.Create(folder, items.Select((e, i) =>
+                new NewPlaceholder(NameEncoding.ToLocalName(Name(e.Path)), e.IsDirectory, e.Size, TimeOf(e.Ticks), ItemIdentity.Encode(ids[i], e.Path))).ToList());
+            for (var i = 0; i < items.Count; i++)
+            {
+                if (results[i] is null)
+                {
+                    created.Add(items[i]);
+                    continue;
+                }
+                // Not created (a file of that name appeared meanwhile): not recorded either, so it is never taken as deleted.
+                _store.Remove(ids[i]);
+                _failed.Add(items[i].Path);
+                Log.Warn("OnDemand", $"'{_pair.Id}': placeholder '{items[i].Path}' not created: {results[i]}");
+            }
+        });
     }
 
     private Task RefreshAsync(RefreshPlaceholder refresh)

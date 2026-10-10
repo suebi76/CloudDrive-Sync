@@ -3,6 +3,22 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.9] – 2026-10-10
+
+Ninth test version on the way to 0.3: placeholders that Windows made broken.
+
+### Fixed
+
+- With files on demand, Windows made some placeholders broken for good ("Die Clouddatei-Metadaten sind beschädigt")
+  when CloudDrive-Sync created many at once: every one that came after a longer identity in the same call. In a real
+  Nextcloud account that were 30 folders and 181 files in one place - the first run broke off there, every later one,
+  too ("Unerwarteter Fehler"), and each read the whole cloud again first. These were also the folders that could not be
+  deleted after ending a synchronisation. Placeholders are now created in an order Windows handles (identities never
+  shorter than the one before); the same folders come out readable.
+- A run no longer stops at a folder Windows refuses: its new placeholders wait, the rest goes on.
+- A folder on the PC that cannot be opened (no right to it, or broken) is left out of the run. Before, rclone listed
+  such a folder as empty without a word, and its files could be taken as deleted on the PC - and deleted in the cloud.
+
 ## [0.3.0-preview.8] – 2026-10-10
 
 Eighth test version on the way to 0.3: large Nextcloud folders.

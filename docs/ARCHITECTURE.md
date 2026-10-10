@@ -448,6 +448,20 @@ hat, wird im nächsten in jedem Fall gelesen. Die Liste gilt nur für dieselben 
 Lauf und nur bei Nextcloud; Neuaufbau und Umstellen lesen alles. IServ und andere WebDAV-Server geben Änderungen nicht an
 Ordnerzeiten weiter – dort wird immer alles gelesen.
 
+**Platzhalter anlegen:** `CfCreatePlaceholders` legt viele Einträge in einem Aufruf an. Kommt in demselben Aufruf ein
+Eintrag nach einem mit längerer Kennung (`ItemIdentity`), schreibt Windows ihn kaputt: Er lässt sich nie öffnen
+(„Die Clouddatei-Metadaten sind beschädigt“, 0x8007016B) – auch nicht, solange der Ordner angemeldet und verbunden ist –,
+und nach dem Abmelden auch nicht löschen. Gefunden mit einem echten Nextcloud-Konto (30 Ordner und 181 Dateien an einer
+Stelle, immer dieselben) und nachgestellt in einer eigenen Sync-Root: von 23 Ordnern eines Ordners 17 kaputt; einzeln
+angelegt oder nach Länge der Kennung sortiert keiner. `Placeholders.Create` übergibt die Einträge deshalb so, dass keine
+Kennung kürzer ist als die davor, und gibt die Ergebnisse in der übergebenen Reihenfolge zurück.
+
+Was Windows trotzdem verweigert, hält keinen Lauf mehr an: Lehnt Windows das Anlegen in einem Ordner ganz ab, warten
+dessen Einträge, der Rest geht weiter (`Executor`). Und ein Ordner oder Eintrag am PC, den Windows nicht öffnen lässt,
+bleibt außen vor wie ein Cloud-Ordner, den der Server verweigert (`Listings.LocalSide.Refused`, an den `Planner` als
+`Unreadable`): nichts darin gilt als gelöscht. rclone listet einen solchen Ordner nämlich ohne ein Wort als leer – deshalb
+öffnet `Listings.RefusedFolders` jeden Ordner selbst.
+
 **Status im Explorer:** Windows nimmt Ordnern den Zustand „abgeglichen“ (der Hauptordner hat ihn von Anfang an nicht),
 und Explorer zeigt für solche Ordner kein Symbol („Synchronisierung ausstehend“). Nach jedem Lauf markiert
 `Executor.MarkFoldersInSync` deshalb alle Ordner als abgeglichen – außer dem Weg zu etwas, das auf den nächsten Lauf
@@ -481,7 +495,9 @@ zusammen wie ein Neuaufbau und löscht nichts – auch dann nicht, wenn vorher �
 oder er geht, wenn er leer ist. Erst dann endet die Anmeldung. Der Grund: Ein Platzhalter, der nach dem Abmelden übrig
 bleibt – weil ein Programm wie Explorer oder der Suchindex ihn gerade offen hielt –, gehört zu einer Anmeldung, die es
 nicht mehr gibt. Windows nennt ihn beschädigt (Fehler 363), nichts kann ihn öffnen oder löschen, und Explorer kann den
-Ordner nicht einmal löschen. Deshalb gilt **eine Anmeldung endet erst, wenn nichts von ihr im Ordner übrig ist**
+Ordner nicht einmal löschen. (Die 211 Reste aus dem Praxistest stammten allerdings von Platzhaltern, die Windows schon
+beim Anlegen kaputt geschrieben hatte – siehe „Platzhalter anlegen“.) Deshalb gilt **eine Anmeldung endet erst, wenn
+nichts von ihr im Ordner übrig ist**
 (`Leftovers.EndWhenClear`, für Beenden, Umstellen, Aufräumen und Deinstallieren):
 - Erst auflösen, mit bis zu drei Versuchen. Hält ein Programm noch etwas, bleibt die Anmeldung bestehen – unter dem
   Namen „CloudDrive-Sync – wird aufgeräumt“ –, jeder Platzhalter bleibt gültig und löschbar, und `cleanup.json` merkt
