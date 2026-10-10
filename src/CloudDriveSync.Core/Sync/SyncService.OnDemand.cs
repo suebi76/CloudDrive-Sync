@@ -90,8 +90,13 @@ public sealed partial class SyncService
             if (!_live.TryGetValue(id, out var live))
             {
                 live = new OnDemandPair(_paths, id, _files, () => FindPair(id), () => FindPair(id) is { } pair ? _accounts.Find(pair.AccountId) : null,
-                    // The cloud has another version than a placeholder: a run brings it soon.
-                    () => Worker(id)?.Request(BisyncMode.Normal));
+                    // The cloud has another version than a placeholder: a run brings it soon - reading the whole cloud folder,
+                    // in case the folder times did not tell.
+                    () =>
+                    {
+                        new CloudTreeStore(_paths.SyncPairDir(id)).Forget();
+                        Worker(id)?.Request(BisyncMode.Normal);
+                    });
                 _live[id] = live;
             }
             return live;

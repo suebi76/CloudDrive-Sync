@@ -154,6 +154,7 @@ Ihr Zustand liegt in `sync\<id>\`:
 | `state.json` | Was einen Neustart überdauert: erster Abgleich erledigt, letzter Lauf, offener Fehler, offene Entscheidung. |
 | `runs.jsonl` | Die letzten Läufe mit den Dateien, die sie geändert haben (`RunHistory`, für „Aktivität“). |
 | `last-run.txt` | Der geschwärzte Bericht von bisync zum letzten Lauf, zur Fehlersuche. |
+| `cloud-tree.json.gz` | Nur bei „Dateien bei Bedarf“ mit Nextcloud: die Cloud-Liste des letzten erfolgreichen Laufs mit den Ordnerzeiten (`CloudTreeStore`), damit der nächste nur liest, was sich geändert haben kann. Fehlt sie, wird alles gelesen. |
 | `items.db` | Nur bei „Dateien bei Bedarf“: jede Datei und jeder Ordner mit der Fassung beider Seiten nach dem letzten Lauf (`ItemStore`, SQLite), dazu seit wann die Daten einer Datei auf dem PC liegen (`on_disk`, fürs automatische Freigeben). Statt `bisync\`, `last-good\`, `local-files.txt` und `server-times.json`. |
 
 ### Wer wann einen Lauf auslöst
@@ -422,6 +423,30 @@ im Remote-String; nicht 0, weil rclone sie nach „zu vielen Anfragen“ verdopp
 Ordnern am Testserver: 1,2 s statt 5,4 s. Jeder Lauf schreibt die Zeiten beider Listen ins Protokoll. Dasselbe Lesen
 (`CloudWalker`) zählt im letzten Schritt des Assistenten, was die Synchronisation umfasst, und meldet dabei laufend Ordner,
 Dateien und Größe; die Karte einer laufenden Synchronisation zeigt ebenso, wie weit das Lesen ist.
+
+**Nur lesen, was sich geändert haben kann (Nextcloud):** Bei einem ganzen Nextcloud-Konto mit 3 324 Ordnern dauerte das
+Lesen der Cloud vier Minuten – in jedem Lauf, auch ohne jede Änderung (gut 0,5 s Antwortzeit pro Ordner). Nextcloud gibt
+jede Änderung an die Zeiten aller Ordner darüber weiter. rclone reicht keine ETags durch, aber diese Ordnerzeiten.
+`CloudWalker` nimmt deshalb einen Ordner aus der Liste des letzten Laufs, statt ihn zu lesen, wenn
+- sein Elternordner übernommen wurde – unter einem unveränderten Ordner hat sich nichts geändert; oder
+- seine Zeit dieselbe ist wie damals, nicht aus der Sekunde stammen kann, in der er gelesen wurde (älter als die neueste
+  Zeit damals oder „gesetzt“: einige Sekunden später mit derselben Zeit noch einmal gelesen – Zeiten kommen in ganzen
+  Sekunden), und kein anderer Ordner diese Zeit hatte: sonst könnte ein anderer an seine Stelle verschoben worden sein.
+
+Ein Ordner, dessen Zeit mit anderen übereinstimmt (ein Ordner teilt sie mit dem Unterordner seiner neuesten Änderung, in
+derselben Sekunde angelegte Ordner untereinander), wird gelesen; ist er genau wie damals, gibt er seine Unterordner als
+übernommen weiter. Die Zeit des synchronisierten Ordners selbst kommt aus der Liste seines Elternordners (eine Anfrage);
+bei einem ganzen Konto gibt es keinen, dann werden seine Ordner der obersten Ebene gelesen. Ergebnis am Testserver mit
+211 Ordnern und 30 ms Antwortzeit: Lauf ohne Änderung 2 statt 211 Anfragen, neue Datei tief unten 32. Abgesichert durch
+einen Vergleichstest: 300 zufällige Bäume mit je acht Runden zufälliger Änderungen (auch vertauschte Ordner gleicher
+Zeit) – abgekürzt gelesen muss jedes Mal genau dasselbe herauskommen wie alles gelesen.
+
+Grenzen und Sicherheitsnetz: Bei manchen Freigaben und externem Speicher gibt Nextcloud Änderungen nicht immer nach
+oben weiter. Deshalb liest jeder Lauf nach einer Stunde (`OnDemandRunner.FullListingEvery`) alles, und ebenso der Lauf,
+nachdem eine Datei in der Cloud eine andere Fassung hatte als ihr Platzhalter. Was ein Lauf selbst in der Cloud geändert
+hat, wird im nächsten in jedem Fall gelesen. Die Liste gilt nur für dieselben Filterregeln, nur nach einem erfolgreichen
+Lauf und nur bei Nextcloud; Neuaufbau und Umstellen lesen alles. IServ und andere WebDAV-Server geben Änderungen nicht an
+Ordnerzeiten weiter – dort wird immer alles gelesen.
 
 **Status im Explorer:** Windows nimmt Ordnern den Zustand „abgeglichen“ (der Hauptordner hat ihn von Anfang an nicht),
 und Explorer zeigt für solche Ordner kein Symbol („Synchronisierung ausstehend“). Nach jedem Lauf markiert

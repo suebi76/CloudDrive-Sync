@@ -6,7 +6,7 @@ namespace CloudDriveSync.Core.IntegrationTests;
 /// <summary>
 /// Sits in front of the test server and passes everything on - except that it can refuse to list one folder with
 /// "403 Forbidden", as Nextcloud does with a share to upload only. rclone's own WebDAV server cannot do that: a folder it
-/// may not read, it serves as empty.
+/// may not read, it serves as empty. It also counts folder listings and can answer slowly, like a server far away.
 /// </summary>
 internal sealed class RefusingProxy : IAsyncDisposable
 {
@@ -32,6 +32,22 @@ internal sealed class RefusingProxy : IAsyncDisposable
 
     /// <summary>The address to give CloudDrive-Sync instead of the server's.</summary>
     public string Url { get; }
+
+    private int _listings;
+
+    /// <summary>Folder listings so far (PROPFIND with "Depth: 1").</summary>
+    public int Listings => Volatile.Read(ref _listings);
+
+    /// <summary>How long every answer takes in addition, like a server far away; none by default.</summary>
+    public TimeSpan Delay { get; set; }
+
+    public void ResetCount() => Interlocked.Exchange(ref _listings, 0);
+
+    /// <summary>
+    /// Told about every change that went through (upload, deletion, move, copy, new folder), with the path relative to the
+    /// served root - to make the test server behave like Nextcloud (see <see cref="SyncWorld"/>).
+    /// </summary>
+    public Action<string>? Changed { get; set; }
 
     /// <summary>Refuses to list this folder from now on (relative to the served root, "/" separated); null refuses nothing.</summary>
     public void RefuseListing(string? folder) => _refused = folder is null ? null : $"{_basePath}/{folder.Trim('/')}";
@@ -60,6 +76,8 @@ internal sealed class RefusingProxy : IAsyncDisposable
         try
         {
             var path = Uri.UnescapeDataString(request.Url!.AbsolutePath).TrimEnd('/');
+            if (request.HttpMethod == "PROPFIND" && request.Headers["Depth"] == "1") Interlocked.Increment(ref _listings);
+            if (Delay > TimeSpan.Zero) await Task.Delay(Delay);
             if (request.HttpMethod == "PROPFIND" && _refused is { } refused && string.Equals(path, refused, StringComparison.Ordinal))
             {
                 response.StatusCode = 403;
@@ -92,6 +110,12 @@ internal sealed class RefusingProxy : IAsyncDisposable
             }
             if (answer.Content.Headers.ContentLength is { } length) response.ContentLength64 = length;
             if (request.HttpMethod != "HEAD") await answer.Content.CopyToAsync(response.OutputStream);
+            if (answer.IsSuccessStatusCode && request.HttpMethod is "PUT" or "DELETE" or "MOVE" or "COPY" or "MKCOL" && Changed is { } changed)
+            {
+                changed(Relative(path));
+                if (request.Headers["Destination"] is { } destination && Uri.TryCreate(destination, UriKind.Absolute, out var target))
+                    changed(Relative(Uri.UnescapeDataString(target.AbsolutePath).TrimEnd('/')));
+            }
         }
         catch (Exception e) when (e is HttpRequestException or HttpListenerException or IOException)
         {
@@ -115,6 +139,8 @@ internal sealed class RefusingProxy : IAsyncDisposable
             }
         }
     }
+
+    private string Relative(string path) => path.StartsWith(_basePath, StringComparison.Ordinal) ? path[_basePath.Length..].TrimStart('/') : path.TrimStart('/');
 
     private static int FreePort()
     {

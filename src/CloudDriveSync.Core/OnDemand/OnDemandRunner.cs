@@ -31,6 +31,13 @@ internal sealed class OnDemandRunner
         _files = files;
     }
 
+    /// <summary>
+    /// How long a run may go on reading only what changed (see <see cref="CloudWalker"/>) before it reads the whole cloud
+    /// folder again: Nextcloud does not pass every change on to the folder times above it - not always from shares or
+    /// external storage. Once an hour, those are in, too.
+    /// </summary>
+    internal static readonly TimeSpan FullListingEvery = TimeSpan.FromHours(1);
+
     /// <param name="mode">Resync: first run or rebuild - both sides are merged, nothing is deleted.</param>
     /// <param name="freeUpDays">Files not used for so many days give their space back; 0 = never.</param>
     /// <param name="converting">Switching a classic synchronisation: what its last run left in step (see <see cref="InStep"/>).</param>
@@ -71,12 +78,23 @@ internal sealed class OnDemandRunner
             var folder = _paths.SyncPairDir(pair.Id);
             Directory.CreateDirectory(folder);
             var filters = Path.Combine(folder, "filter.txt");
-            await File.WriteAllTextAsync(filters, SyncFilters.Build(pair), cancellationToken);
+            var rules = SyncFilters.Build(pair);
+            await File.WriteAllTextAsync(filters, rules, cancellationToken);
+
+            // Nextcloud passes every change below a folder on to the folder's time: a run reads only what may have changed
+            // since the last one. Not when rebuilding or switching - and every hour everything (FullListingEvery). What
+            // was kept goes now and comes back only with a run that succeeds: after anything else, everything is read.
+            var nextcloud = account.Kind == WebDavKind.Nextcloud;
+            var trees = new CloudTreeStore(folder);
+            var saved = nextcloud && mode == BisyncMode.Normal && converting is null ? trees.Load(rules) : null;
+            if (saved is not null && nowUtc - saved.FullUtc >= FullListingEvery) saved = null;
+            trees.Forget();
 
             var clock = Stopwatch.StartNew();
             activity?.Invoke("Liest die Cloud …");
-            var cloud = await Listings.ListCloudAsync(rc, pair, filters, account.Kind == WebDavKind.Nextcloud, cancellationToken,
-                p => activity?.Invoke($"Liest die Cloud: {Count(p.Folders)} Ordner, {Count(p.Files)} Dateien …"));
+            var rootTicks = nextcloud && converting is null ? await Listings.RootTicksAsync(rc, pair, cancellationToken) : 0;
+            var cloud = await Listings.ListCloudAsync(rc, pair, filters, nextcloud, cancellationToken,
+                p => activity?.Invoke($"Liest die Cloud: {Count(p.Folders)} Ordner, {Count(p.Files)} Dateien …"), saved?.Tree, rootTicks, () => nowUtc);
             var cloudTime = clock.Elapsed;
             if (pair.CloudCheckFile && !cloud.SentinelFound)
                 return Failed("CD-4503", "check file check failed: the protection file is missing in the cloud folder", SyncDecision.Folder, retryable: false);
@@ -99,7 +117,7 @@ internal sealed class OnDemandRunner
                     SyncDecision.Deletions, retryable: false);
             }
             Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); cloud listed in {cloudTime.TotalSeconds:0.0} s "
-                + $"({cloud.Entries.Count} entries in {cloud.Folders} folders{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")}), "
+                + $"({cloud.Entries.Count} entries in {cloud.Folders} folders, {cloud.Read} read{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")}), "
                 + $"PC in {localTime.TotalSeconds:0.0} s ({local.Count} entries).");
             if (plan.Actions.Count > 0) activity?.Invoke($"Gleicht ab: {Count(plan.Actions.Count)} Schritte …");
             clock.Restart();
@@ -118,6 +136,9 @@ internal sealed class OnDemandRunner
                 return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space);
             if (result.Failed.Count > 0)
                 return new SyncRunOutcome(false, "CD-4605", string.Join(", ", result.Failed.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space);
+            // What this run changed in the cloud is read again next time, whatever the folder times say.
+            if (nextcloud && converting is null && cloud.Tree is not null)
+                trees.Save(rules, cloud.Tree, saved?.FullUtc ?? nowUtc, plan.Actions.SelectMany(a => a is MoveCloud move ? [a.Path, move.Item.Path] : new[] { a.Path }));
             Log.Info("OnDemand", $"Run of '{pair.Id}' succeeded in {clock.Elapsed.TotalSeconds:0.0} s: {result.Transfers} transfers, {result.Deletes} deletions, {conflicts.Count} conflict copies.");
             return new SyncRunOutcome(true, null, null, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes, space);
         }

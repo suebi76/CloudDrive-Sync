@@ -74,7 +74,10 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # Integrationstests
   Synchronisationen in beide Richtungen um. Einen Ordner, den der Server mit „403 Forbidden“ verweigert (wie Nextcloud
   bei einer Freigabe nur zum Hochladen), bildet `RefusingProxy` nach: `SyncWorld.CreateAsync(refusingProxy: true)`, dann
   `world.Proxy.RefuseListing(…)`. rclones eigener WebDAV-Server kann das nicht – einen Ordner, den er nicht lesen darf,
-  zeigt er leer. Explorers Spalten und Befehle (Status, „Speicherplatz freigeben“) lassen sich ohne Bildschirm über
+  zeigt er leer. Eine Welt mit `WebDavKind.Nextcloud` stellt den Proxy immer davor und gibt wie Nextcloud jede Änderung
+  an die Zeiten der Ordner darüber weiter – Änderungen in der Cloud dafür über `WriteCloud`/`DeleteCloud`. Der Proxy
+  zählt Ordnerabfragen (`Listings`) und antwortet auf Wunsch langsam (`Delay`); `LargeTreeTests` messen damit, wie viel
+  ein Lauf liest. Explorers Spalten und Befehle (Status, „Speicherplatz freigeben“) lassen sich ohne Bildschirm über
   `Shell.Application` prüfen und auslösen.
 - **Nextcloud** lässt sich lokal nicht nachbilden. Änderungen an der Nextcloud-Anmeldung oder an Nextcloud-Besonderheiten
   brauchen einen Test mit einem echten Zugang.

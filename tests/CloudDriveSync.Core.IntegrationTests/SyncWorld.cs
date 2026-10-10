@@ -64,7 +64,12 @@ internal sealed class SyncWorld : IAsyncDisposable
         var basePath = kind == WebDavKind.Nextcloud ? $"/remote.php/dav/files/{User}" : "";
         var server = await WebDavServer.StartAsync(await TestRclone.ExeAsync(), cloudRoot, User, Password, serverConfig, basePath, readOnlyServer);
         var host = new CloudDriveSyncHost(paths);
-        var world = new SyncWorld(root, cloudRoot, caseSensitive, local, kind, server, host) { Proxy = refusingProxy ? new RefusingProxy(server.Url) : null };
+        // Nextcloud passes every change on to the times of the folders above it; the test server does that through the proxy.
+        var world = new SyncWorld(root, cloudRoot, caseSensitive, local, kind, server, host)
+        {
+            Proxy = refusingProxy || kind == WebDavKind.Nextcloud ? new RefusingProxy(server.Url) : null,
+        };
+        if (kind == WebDavKind.Nextcloud) world.Proxy!.Changed = world.PassOn;
         try
         {
             await host.Engine.StartAsync();
@@ -147,7 +152,35 @@ internal sealed class SyncWorld : IAsyncDisposable
     public string Pc(string relative) => Path.Combine(Local, relative.Replace('/', '\\'));
 
     /// <summary>Writes a file directly on the server. <paramref name="later"/> gives it a clearly newer time.</summary>
-    public void WriteCloud(string relative, string text, bool later = false) => Write(Cloud(relative), text, later);
+    public void WriteCloud(string relative, string text, bool later = false)
+    {
+        Write(Cloud(relative), text, later);
+        if (Kind == WebDavKind.Nextcloud) PassOn($"{CloudFolder}/{relative}");
+    }
+
+    /// <summary>Deletes a file or folder directly on the server.</summary>
+    public void DeleteCloud(string relative)
+    {
+        var path = Cloud(relative);
+        if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        else File.Delete(path);
+        if (Kind == WebDavKind.Nextcloud) PassOn($"{CloudFolder}/{relative}");
+    }
+
+    /// <summary>
+    /// Like Nextcloud: every folder above a change (path relative to the served root, "/" separated) gets the time of the
+    /// change - so a folder's time tells whether anything below it changed.
+    /// </summary>
+    private void PassOn(string changed)
+    {
+        var now = DateTime.UtcNow;
+        var parts = changed.Trim('/').Split('/');
+        for (var depth = parts.Length - 1; depth >= 1; depth--)
+        {
+            var folder = Path.Combine([CloudRoot, .. parts[..depth]]);
+            if (Directory.Exists(folder)) Directory.SetLastWriteTimeUtc(folder, now);
+        }
+    }
 
     public void WritePc(string relative, string text, bool later = false) => Write(Pc(relative), text, later);
 

@@ -155,6 +155,7 @@ Its state lives in `sync\<id>\`:
 | `state.json` | What survives a restart: first sync done, last run, open error, open decision. |
 | `runs.jsonl` | The latest runs with the files they changed (`RunHistory`, for "Aktivität"). |
 | `last-run.txt` | bisync's redacted report of the last run, for troubleshooting. |
+| `cloud-tree.json.gz` | Files on demand with Nextcloud only: the cloud listing of the last successful run with the folder times (`CloudTreeStore`), so the next one reads only what may have changed. Without it, everything is read. |
 | `items.db` | Files on demand only: every file and folder with the version of both sides after the last run (`ItemStore`, SQLite), plus since when the data of a file is on the PC (`on_disk`, for freeing space automatically). Instead of `bisync\`, `last-good\`, `local-files.txt` and `server-times.json`. |
 
 ### Who starts a run, and when
@@ -416,6 +417,30 @@ requests"). Measured with 10,525 entries in 526 folders on the test server: 1.2 
 times of both listings to the log. The same reading (`CloudWalker`) counts in the assistant's last step what the
 synchronisation covers and reports folders, files and size as it goes; the card of a running synchronisation shows as
 well how far the reading got.
+
+**Reading only what may have changed (Nextcloud):** For a whole Nextcloud account with 3,324 folders, reading the cloud
+took four minutes - in every run, even without any change (a little over 0.5 s answer time per folder). Nextcloud passes
+every change on to the times of all folders above it. rclone passes no ETags on, but these folder times. `CloudWalker`
+therefore takes a folder from the last run's listing instead of reading it when
+- its parent was taken over - nothing below an unchanged folder changed; or
+- its time is the same as then, cannot stem from the second it was read in (older than the newest time then, or
+  "settled": read again a few seconds later with the same time - times come in whole seconds), and no other folder had
+  that time: otherwise another one could have been moved to its place.
+
+A folder whose time matches others (a folder shares it with the sub-folder of its newest change, folders made in the same
+second among each other) is read; when it is exactly as then, it passes its sub-folders on as taken over. The time of the
+synchronised folder itself comes from its parent's listing (one request); a whole account has none, then its top-level
+folders are read. Result on the test server with 211 folders and 30 ms answer time: a run without changes 2 requests
+instead of 211, a new file deep down 32. Secured by a differential test: 300 random trees with eight rounds of random
+changes each (also swapped folders of the same time) - read the short way, the result must be exactly what reading
+everything gives, every time.
+
+Limits and safety net: with some shares and external storage, Nextcloud does not always pass changes up. So a run reads
+everything after an hour (`OnDemandRunner.FullListingEvery`), and so does the run after a file in the cloud turned out to
+be another version than its placeholder. What a run changed in the cloud itself is read in the next one in any case. The
+listing counts only for the same filter rules, only after a successful run and only with Nextcloud; rebuilding and
+switching read everything. IServ and other WebDAV servers do not pass changes on to folder times - there everything is
+always read.
 
 **Status in Explorer:** Windows takes the state "in sync" from folders (the root never has it at first), and Explorer
 shows no symbol for such folders ("sync pending"). After every run `Executor.MarkFoldersInSync` therefore marks all

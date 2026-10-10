@@ -71,7 +71,10 @@ dotnet test tests/CloudDriveSync.Core.IntegrationTests       # integration tests
   into `SyncWorld.RestartAsync(whileStopped: …)`. `ConversionTests` switch synchronisations both ways. A folder the
   server refuses with "403 Forbidden" (as Nextcloud does with a share to upload only) is played by `RefusingProxy`:
   `SyncWorld.CreateAsync(refusingProxy: true)`, then `world.Proxy.RefuseListing(…)`. rclone's own WebDAV server cannot
-  do that - a folder it may not read, it shows as empty. Explorer's columns and commands (status, "Free up space") can
+  do that - a folder it may not read, it shows as empty. A world with `WebDavKind.Nextcloud` always puts the proxy in
+  front and, like Nextcloud, passes every change on to the times of the folders above it - change the cloud through
+  `WriteCloud`/`DeleteCloud` there. The proxy counts folder listings (`Listings`) and answers slowly on request
+  (`Delay`); `LargeTreeTests` measure with it how much a run reads. Explorer's columns and commands (status, "Free up space") can
   be checked and carried out without a screen through `Shell.Application`.
 - **Nextcloud** cannot be emulated locally. Changes to the Nextcloud sign-in or to Nextcloud specifics need a test with a
   real account.

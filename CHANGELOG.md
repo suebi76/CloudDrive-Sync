@@ -3,6 +3,20 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.8] – 2026-10-10
+
+Eighth test version on the way to 0.3: large Nextcloud folders.
+
+### Changed
+
+- A synchronisation with files on demand on Nextcloud no longer reads the whole cloud folder in every run. Nextcloud
+  passes every change on to the times of the folders above it, so a run reads only folders that may have changed: a run
+  without changes needs one or two requests instead of one per folder (a whole account with 3,324 folders: about
+  4 minutes before, seconds now). A change deep down reads its way and the folders beside it once, nothing below them.
+  Once an hour - and right after a file in the cloud turned out to be another version than its placeholder - the whole
+  folder is read, for changes Nextcloud does not pass on (some shares, external storage). IServ and other WebDAV
+  servers are read completely, as before.
+
 ## [0.3.0-preview.7] – 2026-10-10
 
 Seventh test version on the way to 0.3: setting up is checked before anything is written, and clearing up never stops.
