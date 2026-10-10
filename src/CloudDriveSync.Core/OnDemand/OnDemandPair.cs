@@ -25,6 +25,8 @@ internal sealed class OnDemandPair : IDisposable
     private readonly CloudFetcher _fetcher;
     private readonly Lock _gate = new();
     private SyncRootConnection? _connection;
+    // Windows refused a status report: the connection may be gone although Windows still answers questions about it.
+    private bool _connectionDoubtful;
     private PinWatcher? _pins;
 
     public OnDemandPair(AppPaths paths, string pairId, FileServer files, Func<SyncPairSettings?> pair, Func<AccountSettings?> account, Action changedInCloud)
@@ -62,7 +64,14 @@ internal sealed class OnDemandPair : IDisposable
         lock (_gate)
         {
             var registered = SyncRoots.ContextOf(pair.LocalPath) == Id && SyncRoots.IsRegistered(SyncRootId);
-            if (registered && _connection is not null) return;
+            if (registered && _connection is not null)
+            {
+                if (!_connectionDoubtful && _connection.IsAlive) return;
+                // Seen: Windows refuses the connection's status reports and then every online-only file ("Der
+                // Clouddateianbieter wird nicht ausgeführt") until the folder is connected again.
+                Log.Warn("OnDemand", $"'{Id}': Windows no longer takes the connection to the folder; it is connected again.");
+            }
+            _connectionDoubtful = false;
             _pins?.Dispose();
             _pins = null;
             _connection?.Dispose();
@@ -106,9 +115,16 @@ internal sealed class OnDemandPair : IDisposable
     }
 
     /// <summary>What Explorer shows at the folder itself; nothing while it is not connected.</summary>
-    public void Report(ProviderStatus status)
+    /// <returns>Whether Windows took it; if not, the next <see cref="EnsureConnected"/> connects the folder again.</returns>
+    public bool Report(ProviderStatus status)
     {
-        lock (_gate) _connection?.Report(status);
+        lock (_gate)
+        {
+            if (_connection is null) return false;
+            if (_connection.Report(status)) return true;
+            _connectionDoubtful = true;
+            return false;
+        }
     }
 
     public void Disconnect()

@@ -12,6 +12,7 @@ CfGetPlaceholderInfo
 CfGetSyncRootInfoByPath
 CfExecute
 CfUpdateSyncProviderStatus
+CfQuerySyncProviderStatus
 CF_PLACEHOLDER_STANDARD_INFO
 CF_SYNC_ROOT_STANDARD_INFO
 CF_SYNC_STATUS

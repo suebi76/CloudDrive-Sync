@@ -447,14 +447,32 @@ longer identity (`ItemIdentity`) in the same call, Windows writes it broken: it 
 sind beschädigt", 0x8007016B) - not even while the folder is registered and connected - and after unregistering it
 cannot be deleted either. Found with a real Nextcloud account (30 folders and 181 files in one place, always the same)
 and reproduced in a sync root of its own: of 23 folders of one folder, 17 broken; made one by one or sorted by the length
-of their identity, none. `Placeholders.Create` therefore hands the entries over so that no identity is shorter than the
-one before, and returns the results in the order given.
+of their identity, none. `Placeholders.Create` therefore hands over only entries with identities of the same length in
+one call (shorter ones first) - however Windows goes through them, none follows a longer one - and returns the results in
+the order given. Afterwards the `Executor` opens every new placeholder once (`Placeholders.IsBrokenAt`). Should one be
+broken all the same, this synchronisation makes no more (`PlaceholderAlarm`, `sync\<id>\placeholders-stopped.txt`,
+`CD-4610`): everything else goes on, nothing is deleted, and only a newer version tries again - otherwise hundreds of
+remains could come about that only go in Safe Mode.
 
 What Windows refuses all the same no longer stops a run: when Windows refuses making entries in a folder as a whole, they
 wait and the rest goes on (`Executor`). And a folder or entry on the PC that Windows does not let be opened stays out like
 a cloud folder the server refuses (`Listings.LocalSide.Refused`, handed to the `Planner` as `Unreadable`): nothing in it
 counts as deleted. rclone lists such a folder as empty without a word - so `Listings.RefusedFolders` opens every folder
-itself.
+itself. Single files rclone passes over just as silently: it takes a placeholder Windows calls broken for a link ("Can't
+follow symlink"), a junction as well. So `Listings.WithUnlisted` asks the PC itself about every entry the last run knew
+and the cloud still has but the listing does not show: what is still there stays out. Deleted on the PC is only what the
+PC no longer has.
+
+What Windows refuses, each synchronisation notes (`RefusedOnPc`, `sync\<id>\refused-on-pc.txt`, per line "broken" or
+"refused" and the path on the PC). When such an entry is gone at the next run, the user did not delete it - nobody can
+while Windows refuses it -, the clean-up in Safe Mode did: it is made again from the cloud, never deleted there. The
+clean-up script removes in a folder that is still synchronised only the cloud placeholders noted as "broken", nothing else.
+
+**Connection:** Windows can drop the connection to a folder without a word - seen in tests (about 3 of 25 runs of one
+scenario): it refuses the status reports (0x8007017C), still answers `CfQuerySyncProviderStatus`, and every online-only
+file fails with "Der Clouddateianbieter wird nicht ausgeführt". When Windows refuses a report, the connection counts as
+doubtful; the report at the start of every run checks it, and `OnDemandPair.EnsureConnected` connects the folder again at
+once.
 
 Every other walk through a folder on the PC does not stop at such an entry either (`FolderWalk`). .NET's own recursive
 enumeration ends with an exception at the first folder Windows refuses for anything but missing rights -

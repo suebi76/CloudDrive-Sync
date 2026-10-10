@@ -81,6 +81,31 @@ internal static unsafe partial class Placeholders
     }
 
     /// <summary>
+    /// Windows calls the entry broken ("Die Clouddatei-Metadaten sind beschädigt", ERROR_CLOUD_FILE_METADATA_CORRUPT):
+    /// nothing opens it, and only without Windows' cloud filter - in Safe Mode - can it be removed.
+    /// </summary>
+    public static bool IsBroken(Exception e) => e is IOException { HResult: unchecked((int)0x8007016B) };
+
+    /// <summary>Whether Windows calls the entry at <paramref name="path"/> broken (see <see cref="IsBroken"/>); it is opened once to find out.</summary>
+    public static bool IsBrokenAt(string path)
+    {
+        try
+        {
+            _ = Read(path);
+            return false;
+        }
+        catch (Exception e) when (IsBroken(e))
+        {
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Something else (held, gone): not broken.
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Marks a folder in sync. Windows takes that from a folder whenever something in it is created, renamed or deleted -
     /// also by CloudDrive-Sync itself - and Explorer shows no status for such a folder. False for a folder that is no
     /// placeholder.
@@ -97,21 +122,43 @@ internal static unsafe partial class Placeholders
     /// <summary>
     /// Creates placeholders in a folder; per item null when it was created, otherwise why not. Windows writes an entry
     /// broken - unreadable for good, "Die Clouddatei-Metadaten sind beschädigt" - when its identity is shorter than one
-    /// made before it in the same call (measured: 17 of 23 folders of a real cloud folder). So the entries go to
-    /// Windows with identities never shorter than the one before; the results come back in the order given.
+    /// made before it in the same call (measured: 17 of 23 folders of a real cloud folder). So one call to Windows holds
+    /// only identities of the same length - however Windows goes through them, none follows a longer one -, shorter ones
+    /// first; the results come back in the order given.
     /// </summary>
     public static IReadOnlyList<string?> Create(string folder, IReadOnlyList<NewPlaceholder> items)
     {
-        if (items.Count == 0) return [];
-        var order = Enumerable.Range(0, items.Count).OrderBy(i => items[i].Identity.Length).ToArray();
-        var infos = new CF_PLACEHOLDER_CREATE_INFO[items.Count];
-        var allocations = new List<nint>(items.Count * 2);
+        foreach (var item in items)
+            if (item.Identity.Length is 0 or > MaxIdentityLength) throw new ArgumentException($"identity of '{item.Name}' must be 1 to {MaxIdentityLength} bytes");
+        var results = new string?[items.Count];
+        var madeAny = false;
+        foreach (var group in Enumerable.Range(0, items.Count).GroupBy(i => items[i].Identity.Length).OrderBy(g => g.Key))
+        {
+            var indices = group.ToArray();
+            var call = CreateAlike(folder, items, indices, results);
+            if (!call.Failed || indices.Any(i => results[i] is not null))
+            {
+                madeAny |= indices.Any(i => results[i] is null);
+                continue;
+            }
+            // The call failed as a whole (Windows refuses the folder): an exception, as long as nothing was made - once
+            // some were, they are recorded, and only these items count as not created.
+            if (!madeAny) Check(call, "CfCreatePlaceholders", folder);
+            foreach (var i in indices) results[i] = $"0x{call.Value:X8}";
+        }
+        return results;
+    }
+
+    /// <summary>One call to Windows: the items at <paramref name="indices"/>, all with identities of the same length.</summary>
+    private static HRESULT CreateAlike(string folder, IReadOnlyList<NewPlaceholder> items, int[] indices, string?[] results)
+    {
+        var infos = new CF_PLACEHOLDER_CREATE_INFO[indices.Length];
+        var allocations = new List<nint>(indices.Length * 2);
         try
         {
-            for (var i = 0; i < items.Count; i++)
+            for (var i = 0; i < indices.Length; i++)
             {
-                var item = items[order[i]];
-                if (item.Identity.Length is 0 or > MaxIdentityLength) throw new ArgumentException($"identity of '{item.Name}' must be 1 to {MaxIdentityLength} bytes");
+                var item = items[indices[i]];
                 var name = Marshal.StringToHGlobalUni(item.Name);
                 allocations.Add(name);
                 var identity = Marshal.AllocHGlobal(item.Identity.Length);
@@ -125,18 +172,16 @@ internal static unsafe partial class Placeholders
                 infos[i].Flags = CF_PLACEHOLDER_CREATE_FLAGS.CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC |
                     (item.IsDirectory ? CF_PLACEHOLDER_CREATE_FLAGS.CF_PLACEHOLDER_CREATE_FLAG_DISABLE_ON_DEMAND_POPULATION : 0);
             }
-            var results = new string?[items.Count];
             fixed (char* folderPointer = Path.GetFullPath(folder))
             fixed (CF_PLACEHOLDER_CREATE_INFO* array = infos)
             {
                 uint processed;
                 var result = PInvoke.CfCreatePlaceholders(new PCWSTR(folderPointer), array, (uint)infos.Length, CF_CREATE_FLAGS.CF_CREATE_FLAG_NONE, &processed);
                 for (var i = 0; i < infos.Length; i++)
-                    results[order[i]] = infos[i].Result.Failed ? $"0x{infos[i].Result.Value:X8}" : null;
-                // A failure of the call itself (not of single entries) leaves the entries without a result.
-                if (result.Failed && results.All(r => r is null)) Check(result, "CfCreatePlaceholders", folder);
+                    results[indices[i]] = infos[i].Result.Failed ? $"0x{infos[i].Result.Value:X8}" : null;
+                // A failure of the call itself (not of single entries) leaves the entries without a result: see Create.
+                return result;
             }
-            return results;
         }
         finally
         {

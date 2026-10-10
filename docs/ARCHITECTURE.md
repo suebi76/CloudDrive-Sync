@@ -453,14 +453,33 @@ Eintrag nach einem mit längerer Kennung (`ItemIdentity`), schreibt Windows ihn 
 („Die Clouddatei-Metadaten sind beschädigt“, 0x8007016B) – auch nicht, solange der Ordner angemeldet und verbunden ist –,
 und nach dem Abmelden auch nicht löschen. Gefunden mit einem echten Nextcloud-Konto (30 Ordner und 181 Dateien an einer
 Stelle, immer dieselben) und nachgestellt in einer eigenen Sync-Root: von 23 Ordnern eines Ordners 17 kaputt; einzeln
-angelegt oder nach Länge der Kennung sortiert keiner. `Placeholders.Create` übergibt die Einträge deshalb so, dass keine
-Kennung kürzer ist als die davor, und gibt die Ergebnisse in der übergebenen Reihenfolge zurück.
+angelegt oder nach Länge der Kennung sortiert keiner. `Placeholders.Create` übergibt deshalb in einem Aufruf nur Einträge
+mit gleich langer Kennung (kürzere zuerst) – wie Windows sie auch durchgeht, keiner folgt einem längeren – und gibt die
+Ergebnisse in der übergebenen Reihenfolge zurück. Danach öffnet der `Executor` jeden neuen Platzhalter einmal
+(`Placeholders.IsBrokenAt`). Ist trotzdem einer kaputt, legt diese Synchronisation keine weiteren an (`PlaceholderAlarm`,
+`sync\<id>\placeholders-stopped.txt`, `CD-4610`): Alles andere läuft weiter, nichts wird gelöscht, und erst eine neuere
+Version versucht es wieder – sonst entstünden womöglich Hunderte Reste, die nur im abgesicherten Modus weggehen.
 
 Was Windows trotzdem verweigert, hält keinen Lauf mehr an: Lehnt Windows das Anlegen in einem Ordner ganz ab, warten
 dessen Einträge, der Rest geht weiter (`Executor`). Und ein Ordner oder Eintrag am PC, den Windows nicht öffnen lässt,
 bleibt außen vor wie ein Cloud-Ordner, den der Server verweigert (`Listings.LocalSide.Refused`, an den `Planner` als
 `Unreadable`): nichts darin gilt als gelöscht. rclone listet einen solchen Ordner nämlich ohne ein Wort als leer – deshalb
-öffnet `Listings.RefusedFolders` jeden Ordner selbst.
+öffnet `Listings.RefusedFolders` jeden Ordner selbst. Einzelne Dateien überspringt rclone genauso stumm: Einen von Windows
+beschädigten Platzhalter hält es für einen Link („Can't follow symlink“), eine Junction ebenso. Deshalb fragt
+`Listings.WithUnlisted` für jeden Eintrag, den der letzte Lauf kannte und die Cloud noch hat, aber die Liste nicht zeigt, den
+PC selbst: Ist er noch da, bleibt er außen vor. Gelöscht am PC ist nur, was der PC nicht mehr hat.
+
+Was Windows verweigert, merkt sich jede Synchronisation (`RefusedOnPc`, `sync\<id>\refused-on-pc.txt`, je Zeile
+„broken“ oder „refused“ und der Pfad am PC). Ist ein solcher Eintrag beim nächsten Lauf verschwunden, hat ihn niemand am
+PC gelöscht – solange Windows ihn verweigert, kann das niemand –, sondern das Aufräumen im abgesicherten Modus: Er
+wird aus der Cloud neu angelegt, nie dort gelöscht. Das Aufräum-Skript entfernt in einem noch synchronisierten Ordner nur
+die als „broken“ notierten Cloud-Platzhalter, sonst nichts.
+
+**Verbindung:** Windows kann die Verbindung zu einem Ordner ohne ein Wort fallen lassen – beobachtet in Tests (etwa 3 von
+25 Läufen eines Szenarios): Es lehnt die Statusmeldungen ab (0x8007017C), beantwortet `CfQuerySyncProviderStatus` aber
+weiter, und jede Online-Datei scheitert mit „Der Clouddateianbieter wird nicht ausgeführt“. Lehnt Windows eine Meldung
+ab, gilt die Verbindung als zweifelhaft; die Meldung zu Beginn jedes Laufs prüft das, und `OnDemandPair.EnsureConnected`
+verbindet den Ordner sofort neu.
 
 Auch jeder andere Gang durch einen Ordner am PC hält an einem solchen Eintrag nicht an (`FolderWalk`). .NETs eigenes
 rekursives Auflisten bricht beim ersten Ordner mit einer Ausnahme ab, den Windows aus einem anderen Grund als fehlenden

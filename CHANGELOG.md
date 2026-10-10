@@ -3,6 +3,31 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.11] – 2026-10-10
+
+Eleventh test version on the way to 0.3: placeholders Windows breaks can neither come about unnoticed nor cost a file.
+
+### Fixed
+
+- With files on demand, a file on the PC that rclone passes over without a word - a placeholder Windows calls broken
+  looks like a link to it, and links are skipped - could be taken as deleted on the PC and deleted in the cloud. The
+  deletion guard did not stop it (181 of 17,000 files are far below its limit). Now nothing counts as deleted on the PC
+  unless the PC says it is gone: everything the last run knew is checked once more, and what is still there is left out.
+  (A real account was not affected: its runs had broken off earlier.)
+- Windows can stop taking a folder's connection without a word: it refuses the status reports, and every online-only
+  file then fails with "Der Clouddateianbieter wird nicht ausgeführt" until CloudDrive-Sync is restarted. Now the next
+  run connects the folder again.
+
+### Added
+
+- Placeholders are handed to Windows only in calls whose identities have the same length - the cause of the broken
+  placeholders cannot occur, however Windows goes through them.
+- Every new placeholder is checked right after it was made. Should Windows write one broken all the same, no more are
+  made in that synchronisation (CD-4610): everything else goes on, nothing is deleted, and a later version tries again.
+- What Windows refused on the PC is noted per synchronisation (refused-on-pc.txt). An entry refused before and gone
+  afterwards - removed in Safe Mode - comes again from the cloud and is never deleted there. The clean-up script for
+  Safe Mode can therefore remove exactly the broken entries of a folder that is still synchronised, without ending it.
+
 ## [0.3.0-preview.10] – 2026-10-10
 
 Tenth test version on the way to 0.3: nothing in a folder stops the program any more.

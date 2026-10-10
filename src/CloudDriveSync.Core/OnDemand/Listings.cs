@@ -102,13 +102,18 @@ internal static class Listings
     /// Entries Windows refuses to open - a folder it cannot list, a placeholder it calls broken. What is in or below them
     /// is unknown: they are left out like folders the server does not let be read, never taken as deleted on the PC.
     /// </param>
-    public sealed record LocalSide(IReadOnlyList<LocalEntry> Entries, IReadOnlyList<string> Refused);
+    /// <param name="Broken">
+    /// Those of them Windows calls broken itself (<see cref="Placeholders.IsBroken"/>) - not just a folder rclone could
+    /// not list: only these may be removed in Safe Mode (see <see cref="RefusedOnPc"/>).
+    /// </param>
+    public sealed record LocalSide(IReadOnlyList<LocalEntry> Entries, IReadOnlyList<string> Refused, IReadOnlyList<string> Broken);
 
     /// <summary>The PC side, with what Windows knows about each placeholder.</summary>
     public static async Task<LocalSide> ListLocalAsync(RcClient rc, string localRoot, string filtersFile, CancellationToken cancellationToken)
     {
         IReadOnlyList<CloudEntry> listed;
         var refused = new List<string>();
+        var broken = new List<string>();
         try
         {
             listed = await CloudWalker.ListAsync(rc, localRoot, "", filtersFile, new JsonObject { ["recurse"] = true, ["noMimeType"] = true }, cancellationToken);
@@ -128,7 +133,7 @@ internal static class Listings
         {
             // rclone leaves a folder it cannot open out of its listing without a word - all in it would count as deleted
             // on the PC. Every folder is opened here, too.
-            refused.AddRange(RefusedFolders(localRoot));
+            refused.AddRange(RefusedFolders(localRoot, broken));
             var entries = new List<LocalEntry>(listed.Count);
             foreach (var entry in listed)
             {
@@ -149,20 +154,67 @@ internal static class Listings
                 {
                     // Windows refuses it (e.g. a placeholder it calls broken): left out, never taken as deleted.
                     refused.Add(entry.Path);
+                    if (Placeholders.IsBroken(e)) broken.Add(entry.Path);
                     continue;
                 }
                 entries.Add(new LocalEntry(entry.Path, entry.IsDirectory, entry.Size, entry.Ticks, placeholder));
             }
             if (refused.Count > 0) Log.Warn("OnDemand", $"{refused.Count} entry(s) on this PC refused by Windows, left out: {string.Join(", ", refused.Take(5))}");
-            return new LocalSide(entries, refused.Distinct(StringComparer.Ordinal).ToList());
+            return new LocalSide(entries, refused.Distinct(StringComparer.Ordinal).ToList(), broken.Distinct(StringComparer.Ordinal).ToList());
         }, cancellationToken);
     }
 
     /// <summary>
-    /// The folders below <paramref name="root"/> Windows refuses to open (no right to, a placeholder it calls broken), as
-    /// paths of the cloud. Links are not followed. The folder itself unreadable ends the run, as before.
+    /// What the listing does not show although it is still on the PC - checked for every entry the last run knew and the
+    /// cloud still has, the ones a run would otherwise delete in the cloud. rclone passes over what it cannot take without
+    /// a word: a placeholder Windows calls broken looks like a link to it, and links are not followed. So nothing counts as
+    /// deleted on the PC unless the PC says it is gone; what is still there is left out like a refused entry.
     /// </summary>
-    internal static List<string> RefusedFolders(string root)
+    internal static LocalSide WithUnlisted(LocalSide pc, string localRoot, IEnumerable<string> knownInCloud)
+    {
+        var listed = new HashSet<string>(pc.Entries.Select(e => e.Path), StringComparer.OrdinalIgnoreCase);
+        var refused = pc.Refused.ToList();
+        var broken = pc.Broken.ToList();
+        var added = 0;
+        foreach (var path in knownInCloud)
+        {
+            if (listed.Contains(path) || refused.Any(r => path.Equals(r, StringComparison.OrdinalIgnoreCase) || path.StartsWith(r + "/", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            var full = Path.Combine(localRoot, NameEncoding.ToLocalPath(path));
+            if (!StillThere(full)) continue;
+            refused.Add(path);
+            if (Placeholders.IsBrokenAt(full)) broken.Add(path);
+            added++;
+        }
+        if (added == 0) return pc;
+        Log.Warn("OnDemand", $"{added} entry(s) on this PC not listed although still there, left out: {string.Join(", ", refused.Skip(pc.Refused.Count).Take(5))}");
+        return pc with { Refused = refused, Broken = broken };
+    }
+
+    /// <summary>Whether something of that name is still on the PC - asked twice, the second time by listing its folder.</summary>
+    private static bool StillThere(string full)
+    {
+        if (Path.Exists(full)) return true;
+        var parent = Path.GetDirectoryName(full);
+        if (parent is null || !Directory.Exists(parent)) return false;
+        try
+        {
+            var name = Path.GetFileName(full);
+            return Directory.EnumerateFileSystemEntries(parent).Any(entry => string.Equals(Path.GetFileName(entry), name, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Not known: rather there than deleted.
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The folders below <paramref name="root"/> Windows refuses to open (no right to, a placeholder it calls broken), as
+    /// paths of the cloud; those it calls broken also go into <paramref name="broken"/>. Links are not followed. The
+    /// folder itself unreadable ends the run, as before.
+    /// </summary>
+    internal static List<string> RefusedFolders(string root, List<string>? broken = null)
     {
         var refused = new List<string>();
         var folders = new Stack<string>([root]);
@@ -177,6 +229,7 @@ internal static class Listings
             catch (Exception e) when (folder != root && e is IOException or UnauthorizedAccessException)
             {
                 refused.Add(NameEncoding.ToStandardPath(Path.GetRelativePath(root, folder)));
+                if (Placeholders.IsBroken(e)) broken?.Add(refused[^1]);
                 continue;
             }
             foreach (var sub in below)
@@ -189,6 +242,7 @@ internal static class Listings
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
                     refused.Add(NameEncoding.ToStandardPath(Path.GetRelativePath(root, sub)));
+                    if (Placeholders.IsBroken(e)) broken?.Add(refused[^1]);
                     continue;
                 }
                 if (!link) folders.Push(sub);

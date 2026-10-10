@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using CloudDriveSync.Core.CloudFiles;
+using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
 
@@ -310,6 +311,87 @@ public class OnDemandTests
         var again = await RunAsync(world);
         Assert.True(again.Success, $"{again.ErrorCode}: {again.ErrorDetail}");
         Assert.Equal(world.CloudFiles(), world.PcFiles());
+    }
+
+    [Fact]
+    public async Task What_the_listing_passes_over_while_it_is_still_on_the_PC_is_never_deleted_in_the_cloud()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("Ordner/a.txt", "a"); w.WriteCloud("Offen/b.txt", "b"); });
+        // The folder turned into something rclone passes over without a word - here a junction, as with a placeholder
+        // Windows calls broken.
+        var elsewhere = Path.Combine(world.Root, "Woanders");
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllText(Path.Combine(elsewhere, "a.txt"), "anders");
+        Directory.Delete(world.Pc("Ordner"), recursive: true);
+        await Junctions.CreateAsync(world.Pc("Ordner"), elsewhere);
+
+        var run = await RunAsync(world);
+        Assert.Equal(0L, run.Deletes);
+        Assert.Equal("a", world.ReadCloud("Ordner/a.txt"));
+        Assert.Equal("b", world.ReadCloud("Offen/b.txt"));
+        Assert.Equal("anders", File.ReadAllText(Path.Combine(elsewhere, "a.txt")));
+    }
+
+    [Fact]
+    public async Task What_Windows_refused_and_is_gone_afterwards_comes_again_from_the_cloud()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("Gesperrt/a.txt", "a"); w.WriteCloud("Gesperrt/Tiefer/b.txt", "b"); w.WriteCloud("Offen/c.txt", "c"); });
+        using (RefusedFolder.Hold(world.Pc("Gesperrt")))
+            await RunAsync(world);
+        var noted = File.ReadAllLines(RefusedOnPc.FileOf(world.Host.Paths.SyncPairDir(world.Pair.Id)));
+        Assert.Contains("refused	Gesperrt", noted);
+
+        // Removed while CloudDrive-Sync was not looking - like a broken placeholder cleaned up in Safe Mode. Nothing can
+        // delete such an entry while Windows refuses it, so it is no deletion by the user.
+        Directory.Delete(world.Pc("Gesperrt"), recursive: true);
+        var run = await RunAsync(world);
+        Assert.Equal(0L, run.Deletes);
+        Assert.Equal("a", world.ReadCloud("Gesperrt/a.txt"));
+        Assert.Equal("b", world.ReadCloud("Gesperrt/Tiefer/b.txt"));
+        Assert.Equal("b", Fetch(world, "Gesperrt/Tiefer/b.txt"));
+        AssertInStep(world);
+        Assert.False(File.Exists(RefusedOnPc.FileOf(world.Host.Paths.SyncPairDir(world.Pair.Id))));
+
+        // A folder deleted on the PC that was never refused is deleted in the cloud, as always.
+        Directory.Delete(world.Pc("Offen"), recursive: true);
+        Assert.True((await RunAsync(world)).Deletes > 0);
+        Assert.False(File.Exists(world.Cloud("Offen/c.txt")));
+    }
+
+    [Fact]
+    public async Task Should_Windows_write_a_placeholder_broken_no_more_are_made_and_nothing_is_deleted()
+    {
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("Alt.txt", "alt"));
+        world.WriteCloud("A/1.txt", "1");
+        world.WriteCloud("B/2.txt", "2");
+        world.WriteCloud("C/3.txt", "3");
+        // Windows stands in: the new folder "A" comes out broken.
+        world.Host.Sync.PlaceholderCheck = path => Path.GetFileName(path) == "A";
+        var stopped = await world.RunAsync();
+        Assert.False(stopped.Success);
+        Assert.Equal("CD-4610", stopped.ErrorCode);
+        Assert.False(stopped.Retryable);
+        // The folders of the same call are there; nothing below them was made.
+        Assert.True(Directory.Exists(world.Pc("B")));
+        Assert.False(File.Exists(world.Pc("B/2.txt")));
+        Assert.False(File.Exists(world.Pc("C/3.txt")));
+
+        // The next run - Windows fine again - still makes nothing new in this version, and deletes nothing.
+        world.Host.Sync.PlaceholderCheck = null;
+        world.WriteCloud("D/4.txt", "4");
+        var still = await world.RunAsync();
+        Assert.Equal("CD-4610", still.ErrorCode);
+        Assert.Equal(0L, still.Deletes);
+        Assert.False(Directory.Exists(world.Pc("D")));
+        Assert.Equal(["A/1.txt", "Alt.txt", "B/2.txt", "C/3.txt", "D/4.txt"], world.CloudFiles().Where(f => !f.StartsWith(".clouddrive", StringComparison.Ordinal)));
+
+        // A later version tries again.
+        var alarm = PlaceholderAlarm.FileOf(world.Host.Paths.SyncPairDir(world.Pair.Id));
+        File.WriteAllLines(alarm, ["0.0.0-earlier", .. File.ReadAllLines(alarm).Skip(1)]);
+        await RunAsync(world);
+        Assert.Equal("4", Fetch(world, "D/4.txt"));
+        Assert.Equal("1", Fetch(world, "A/1.txt"));
+        AssertInStep(world);
     }
 
     [Fact]

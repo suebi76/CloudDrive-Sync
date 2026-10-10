@@ -19,6 +19,9 @@ public sealed partial class SyncService
     /// <summary>The clock for freeing space after some days; tests move it forward.</summary>
     internal TimeProvider Time { get; set; } = TimeProvider.System;
 
+    /// <summary>Whether Windows wrote a new placeholder broken; null asks Windows, tests stand in for it.</summary>
+    internal Func<string, bool>? PlaceholderCheck { get; set; }
+
     /// <summary>The name of a synchronisation's entry in Explorer: the one chosen, or <see cref="DefaultExplorerName"/>.</summary>
     public static string ExplorerNameOf(SyncPairSettings pair, AccountSettings? account) =>
         !string.IsNullOrWhiteSpace(pair.ExplorerName) ? pair.ExplorerName.Trim() : DefaultExplorerName(pair, account);
@@ -78,7 +81,8 @@ public sealed partial class SyncService
             return Task.FromResult(new SyncRunOutcome(false, "CD-4601", "Windows 10 1809 or later is needed", SyncDecision.None, JobProgress.None, 0, [], false));
         var runner = _onDemandRunner ??= new OnDemandRunner(_paths, _engine, _files);
         var freeUpDays = _settings.Current.Preferences.FreeUpAfterDays;
-        return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, freeUpDays, Time.GetUtcNow().UtcDateTime, cancellationToken, converting, activity);
+        return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, freeUpDays, Time.GetUtcNow().UtcDateTime, cancellationToken, converting, activity,
+            PlaceholderCheck);
     }
 
     [SupportedOSPlatform("windows10.0.17763")]

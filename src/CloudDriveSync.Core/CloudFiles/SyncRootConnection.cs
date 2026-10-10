@@ -81,9 +81,10 @@ public sealed unsafe class SyncRootConnection : IDisposable
     /// Tells Windows how the synchronisation is doing. Explorer shows it at the folder itself - in the folder above it and
     /// in the navigation pane; without it the folder stays "sync pending" without a status icon.
     /// </summary>
-    public void Report(ProviderStatus status)
+    /// <returns>Whether Windows took it.</returns>
+    public bool Report(ProviderStatus status)
     {
-        if (!_connected) return;
+        if (!_connected) return false;
         var value = status switch
         {
             ProviderStatus.Syncing => CF_SYNC_PROVIDER_STATUS.CF_PROVIDER_STATUS_SYNC_INCREMENTAL,
@@ -93,6 +94,22 @@ public sealed unsafe class SyncRootConnection : IDisposable
         };
         var result = PInvoke.CfUpdateSyncProviderStatus(_key, value);
         if (result.Failed) Log.Debug("CloudFiles", $"Status of {Path} not reported: 0x{result.Value:X8}");
+        return result.Succeeded;
+    }
+
+    /// <summary>
+    /// Whether Windows still keeps this connection. It can end one without a word - afterwards every online-only file
+    /// fails with "Der Clouddateianbieter wird nicht ausgeführt" -; then the folder is connected again
+    /// (<c>OnDemandPair.EnsureConnected</c>).
+    /// </summary>
+    public bool IsAlive
+    {
+        get
+        {
+            if (!_connected) return false;
+            CF_SYNC_PROVIDER_STATUS status;
+            return PInvoke.CfQuerySyncProviderStatus(_key, &status).Succeeded;
+        }
     }
 
     public void Dispose()

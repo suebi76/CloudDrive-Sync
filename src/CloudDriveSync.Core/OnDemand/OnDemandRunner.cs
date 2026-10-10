@@ -42,12 +42,13 @@ internal sealed class OnDemandRunner
     /// <param name="freeUpDays">Files not used for so many days give their space back; 0 = never.</param>
     /// <param name="converting">Switching a classic synchronisation: what its last run left in step (see <see cref="InStep"/>).</param>
     /// <param name="activity">What the run is doing, for its card - large trees take a while to read.</param>
+    /// <param name="placeholderCheck">Whether Windows wrote a new placeholder broken; tests stand in for Windows.</param>
     public async Task<SyncRunOutcome> RunAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null, Action<string>? activity = null)
+        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null, Action<string>? activity = null, Func<string, bool>? placeholderCheck = null)
     {
         try
         {
-            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, activity, cancellationToken);
+            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, activity, placeholderCheck, cancellationToken);
             // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
             live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4605" ? ProviderStatus.Idle
                 : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
@@ -61,7 +62,7 @@ internal sealed class OnDemandRunner
     }
 
     private async Task<SyncRunOutcome> RunCoreAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, Action<string>? activity, CancellationToken cancellationToken)
+        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, Action<string>? activity, Func<string, bool>? placeholderCheck, CancellationToken cancellationToken)
     {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath)) return Failed("CD-4501", pair.LocalPath, SyncDecision.Folder, retryable: true);
@@ -70,7 +71,12 @@ internal sealed class OnDemandRunner
         try
         {
             live.EnsureConnected();
-            live.Report(ProviderStatus.Syncing);
+            // A connection Windows no longer takes shows in the first report: the folder is connected again at once.
+            if (!live.Report(ProviderStatus.Syncing))
+            {
+                live.EnsureConnected();
+                live.Report(ProviderStatus.Syncing);
+            }
             // Online-only files that went with a lost registration are never taken as deleted - not even when deletions
             // were confirmed before.
             if (live.MergeNeeded) mode = BisyncMode.Resync;
@@ -105,8 +111,24 @@ internal sealed class OnDemandRunner
             clock.Restart();
             activity?.Invoke("Liest den Ordner auf diesem PC …");
             var pc = await Listings.ListLocalAsync(rc, pair.LocalPath, filters, cancellationToken);
+            pc = Listings.WithUnlisted(pc, pair.LocalPath, known.Where(item => cloud.Entries.ContainsKey(item.Path)).Select(item => item.Path));
             var local = pc.Entries;
             var localTime = clock.Elapsed;
+            // Refused by Windows in the last run and gone now: cleaned up (a broken placeholder removed in Safe Mode), not
+            // deleted by the user - nothing deletes such an entry. It is made again from the cloud, never deleted there.
+            var vanished = RefusedOnPc.Vanished(RefusedOnPc.Load(folder), local, pc.Refused);
+            if (vanished.Count > 0)
+            {
+                var gone = known.Where(item => vanished.Any(v => item.Path.Equals(v, StringComparison.OrdinalIgnoreCase)
+                    || item.Path.StartsWith(v + "/", StringComparison.OrdinalIgnoreCase))).ToList();
+                live.Store.Batch(() =>
+                {
+                    foreach (var item in gone) live.Store.Remove(item.Id);
+                });
+                known = live.Store.All();
+                Log.Info("OnDemand", $"'{pair.Id}': {vanished.Count} entry(s) Windows refused before are gone now; {gone.Count} item(s) come again from the cloud.");
+            }
+            RefusedOnPc.Save(folder, pc.Refused, pc.Broken);
             // What the server does not let be read and what Windows refuses on the PC are left out alike: unknown, never deleted.
             var leftOut = cloud.Unreadable.Concat(pc.Refused).Distinct(StringComparer.Ordinal).ToList();
 
@@ -125,8 +147,10 @@ internal sealed class OnDemandRunner
             if (plan.Actions.Count > 0) activity?.Invoke($"Gleicht ab: {Count(plan.Actions.Count)} Schritte …");
             clock.Restart();
 
-            var executor = new Executor(rc, _files, live.Store, pair, account, keepTrash, cloud.Entries.Keys, progress, cancellationToken);
+            var executor = new Executor(rc, _files, live.Store, pair, account, keepTrash, cloud.Entries.Keys, progress, cancellationToken,
+                PlaceholderAlarm.IsRaised(folder), placeholderCheck);
             var result = await executor.RunAsync(plan);
+            if (result.Broken.Count > 0) PlaceholderAlarm.Raise(folder, result.Broken.Count);
             if (mode == BisyncMode.Resync && live.MergeNeeded) live.Merged();
             executor.ApplyPinStates(local);
             executor.MarkFoldersInSync(result.Failed.Concat(result.Locked), leftOut);
@@ -135,6 +159,14 @@ internal sealed class OnDemandRunner
             var final = new JobProgress(result.Bytes, result.Bytes, result.Transfers, result.Transfers, 0, 0, 0, result.Failed.Count);
             var conflicts = SyncRunner.FindConflicts(pair.LocalPath);
             var localOnly = result.LocalOnlyAdded.Count > 0 ? result.LocalOnlyAdded : null;
+            if (result.Broken.Count > 0 || result.HeldBack > 0)
+            {
+                var detail = result.Broken.Count > 0
+                    ? $"Windows wrote {result.Broken.Count} new placeholder(s) broken, e.g. {result.Broken[0]}; {result.HeldBack} more held back"
+                    : $"{result.HeldBack} new entr(y/ies) held back since Windows wrote placeholders broken";
+                Log.Warn("OnDemand", $"Run of '{pair.Id}': {detail}.");
+                return new SyncRunOutcome(false, "CD-4610", detail, SyncDecision.None, final, result.Deletes, conflicts, false, localOnly, result.Changes, space);
+            }
             if (result.Locked.Count > 0)
                 return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space);
             if (result.Failed.Count > 0)

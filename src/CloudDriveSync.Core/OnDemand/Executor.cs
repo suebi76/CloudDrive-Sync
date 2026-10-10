@@ -18,7 +18,9 @@ internal sealed record ExecutionResult(
     int Deletes,
     IReadOnlyList<string> LocalOnlyAdded,
     IReadOnlyList<string> Locked,
-    IReadOnlyList<string> Failed);
+    IReadOnlyList<string> Failed,
+    IReadOnlyList<string> Broken,
+    int HeldBack);
 
 /// <summary>
 /// Carries out a <see cref="SyncPlan"/>, step by step, each step recorded in the <see cref="ItemStore"/> as soon as it
@@ -48,14 +50,22 @@ internal sealed partial class Executor
     private readonly List<string> _locked = [];
     private readonly List<string> _failed = [];
     private readonly List<string> _toFetch = [];
+    private readonly List<string> _broken = [];
+    private readonly Func<string, bool> _isBroken;
+    private bool _placeholdersStopped;
+    private int _heldBack;
     private string? _trashStamp;
     private long _transfers;
     private long _bytes;
     private int _deletes;
 
+    /// <param name="placeholdersStopped">No new placeholders: Windows wrote some broken before (<see cref="PlaceholderAlarm"/>).</param>
+    /// <param name="isBroken">Whether Windows wrote a new placeholder broken; tests stand in for Windows.</param>
     public Executor(RcClient rc, FileServer files, ItemStore store, SyncPairSettings pair, AccountSettings account, bool keepTrash,
-        IEnumerable<string> cloudPaths, Action<JobProgress>? progress, CancellationToken cancel)
+        IEnumerable<string> cloudPaths, Action<JobProgress>? progress, CancellationToken cancel, bool placeholdersStopped = false, Func<string, bool>? isBroken = null)
     {
+        _placeholdersStopped = placeholdersStopped;
+        _isBroken = isBroken ?? Placeholders.IsBrokenAt;
         _rc = rc;
         _files = files;
         _store = store;
@@ -88,7 +98,7 @@ internal sealed partial class Executor
             await StepAsync(forget.Item.Path, () => ForgetAsync(forget));
         // Files that were on the PC before their new version arrived come again - after everything else.
         foreach (var path in _toFetch) await StepAsync(path, () => FetchAsync(path));
-        return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed);
+        return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed, _broken, _heldBack);
     }
 
     /// <summary>
@@ -222,12 +232,20 @@ internal sealed partial class Executor
         return Task.CompletedTask;
     }
 
-    /// <summary>New placeholders, folder by folder (outer folders first), recorded in one transaction per folder.</summary>
+    /// <summary>
+    /// New placeholders, folder by folder (outer folders first), recorded in one transaction per folder. Each is opened
+    /// once right after: should Windows have written one broken, no more are made (<see cref="PlaceholderAlarm"/>).
+    /// </summary>
     private Task CreatePlaceholdersAsync(IReadOnlyList<CloudEntry> entries)
     {
         foreach (var group in entries.GroupBy(e => Parent(e.Path)).OrderBy(g => g.Key.Length == 0 ? -1 : Depth(g.Key)))
         {
             _cancel.ThrowIfCancellationRequested();
+            if (_placeholdersStopped)
+            {
+                _heldBack += group.Count();
+                continue;
+            }
             var folder = group.Key.Length == 0 ? _pair.LocalPath : LocalFull(group.Key);
             if (!Directory.Exists(folder))
             {
@@ -247,6 +265,15 @@ internal sealed partial class Executor
                 _failed.AddRange(items.Select(i => i.Path));
                 Log.Warn("OnDemand", $"'{_pair.Id}': {items.Count} placeholder(s) in '{group.Key}' not created: {e.Message}");
                 continue;
+            }
+            // Broken ones stay recorded: they are there, refused by Windows, and never taken as deleted.
+            var broken = created.Where(entry => _isBroken(LocalFull(entry.Path))).ToList();
+            if (broken.Count > 0)
+            {
+                _broken.AddRange(broken.Select(entry => entry.Path));
+                created.RemoveAll(broken.Contains);
+                _placeholdersStopped = true;
+                Log.Error("OnDemand", $"'{_pair.Id}': Windows wrote {broken.Count} new placeholder(s) broken, e.g. '{broken[0].Path}'; no more are made.");
             }
             // In a folder kept on this device, what is new is kept, too - also in new folders below it (outer ones come first).
             var keep = PinnedFolder(folder);

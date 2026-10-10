@@ -107,11 +107,7 @@ public class EndingTests
         var elsewhere = Path.Combine(world.Root, "Woanders");
         Directory.CreateDirectory(elsewhere);
         File.WriteAllText(Path.Combine(elsewhere, "wichtig.txt"), "bleibt");
-        using (var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{world.Pc("Verknüpfung")}\" \"{elsewhere}\"") { CreateNoWindow = true, UseShellExecute = false })!)
-        {
-            await mklink.WaitForExitAsync();
-            Assert.Equal(0, mklink.ExitCode);
-        }
+        await Junctions.CreateAsync(world.Pc("Verknüpfung"), elsewhere);
 
         var rest = await world.Host.Sync.RecycleRestAsync(world.Local);
         Assert.Equal("bleibt", File.ReadAllText(Path.Combine(elsewhere, "wichtig.txt")));
