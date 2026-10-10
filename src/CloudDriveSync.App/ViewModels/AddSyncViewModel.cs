@@ -160,6 +160,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
     partial void OnLocalPathChanged(string value)
     {
         if (!_settingLocal) _localTyped = true;
+        AcceptWarnings = false;
         CheckLocal(showErrors: false);
     }
 
@@ -222,17 +223,18 @@ public sealed partial class AddSyncViewModel : ObservableObject
 
     private string DefaultLocalPath()
     {
-        static string Clean(string name) =>
-            string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim().TrimEnd('.');
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "CloudDrive-Sync", Clean(Account?.Label ?? "Cloud"));
-        return ChosenFolder is null || ChosenFolder.Path.Length == 0 ? root : Path.Combine(root, Clean(ChosenFolder.Name));
+        return LocalFolderCheck.SuggestDefaultPath(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Account?.Label ?? "Cloud",
+            ChosenFolder is { Path.Length: > 0 } ? ChosenFolder.Name : null,
+            _host.Sync.Pairs) ?? "";
     }
 
     /// <summary>Checks the local folder; warnings appear at once, errors only when going on.</summary>
     private bool CheckLocal(bool showErrors)
     {
+        var previousWarnings = Warnings.Select(w => (w.Kind, w.Text)).ToArray();
         Warnings.Clear();
-        AcceptWarnings = false;
         try
         {
             foreach (var warning in _host.Sync.CheckFolder(LocalPath.Trim(), null)) Warnings.Add(warning);
@@ -240,15 +242,19 @@ public sealed partial class AddSyncViewModel : ObservableObject
             OnDemandProblem = SyncService.OnDemandProblem(LocalPath.Trim()) ?? "";
             return true;
         }
-        catch (CdException)
+        catch (CdException e)
         {
-            LocalError = showErrors || LocalPath.Trim().Length > 0
-                ? "Bitte gib einen vollständigen Ordnerpfad auf einem verfügbaren Laufwerk an, z. B. C:\\Users\\Name\\CloudDrive-Sync."
-                : "";
+            LocalError = e.Code is "CD-4506" or "CD-4513"
+                ? ErrorCatalog.Get(e.Code).Fix
+                : showErrors || LocalPath.Trim().Length > 0
+                    ? "Bitte gib einen vollständigen Ordnerpfad auf einem verfügbaren Laufwerk an, z. B. C:\\Users\\Name\\CloudDrive-Sync."
+                    : "";
+            OnDemandProblem = "";
             return false;
         }
         finally
         {
+            if (!previousWarnings.SequenceEqual(Warnings.Select(w => (w.Kind, w.Text)))) AcceptWarnings = false;
             OnPropertyChanged(nameof(HasWarnings));
         }
     }

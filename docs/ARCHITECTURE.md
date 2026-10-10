@@ -292,6 +292,10 @@ sie still endgültig zu löschen.
 - **Eine Engine** auf `127.0.0.1` mit Zufallsport und Zufallszugang, an CloudDrive-Sync gebunden (Job-Objekt).
 - **Velopack** für Installation und Updates: pro Benutzer ohne Administratorrechte, .NET enthalten, Updates nur aus dem
   GitHub-Projekt und mit Prüfsumme.
+- **Ein Ordner gehört einer Synchronisation.** Zwei Synchronisationen im selben Ordner, ineinander oder umeinander
+  lehnt `LocalFolderCheck` ab (`CD-4506`); Ordner anderer Programme, Netz- und Wechsellaufwerke bleiben Hinweise. Ein
+  vorhandener Ordner wird vor dem Einrichten durchgesehen (`EnsureExistingTreeSafe`, nur Namen und Merkmale): verwaiste
+  Platzhalter oder unlesbare Ordner verhindern das Einrichten, bevor etwas geschrieben wird (`CD-4513`).
 - **Getrennt von CloudDrives:** eigener Datenordner, eigene Schlüssel, eigenes Programm. Beide öffnen einander über
   ihr Symbol im Infobereich, hängen aber nicht voneinander ab.
 
@@ -460,8 +464,14 @@ Ordner nicht einmal löschen. Deshalb gilt **eine Anmeldung endet erst, wenn nic
 - Nach dem Abmelden wird nachgesehen. Hat Windows doch Platzhalter liegen lassen, kommt dieselbe Anmeldung sofort
   zurück (nur sie macht sie wieder lesbar), sie werden aufgelöst, dann endet die Anmeldung erneut.
 - `FinishCleanUps` versucht es beim Start und danach alle zwei Minuten, solange `cleanup.json` etwas nennt; ist der
-  Ordner frei, endet die Anmeldung. Eine Anmeldung, die eine Synchronisation nutzt oder die inzwischen auf einen
-  anderen Ordner zeigt, bleibt unberührt; der Eintrag wartet, bis diese Synchronisation endet.
+  Ordner frei, endet die Anmeldung. Dazu nimmt es jede Anmeldung des Programms bei Windows, die keine Synchronisation
+  mehr nutzt – so bleibt nichts zurück, selbst wenn die Liste verloren ging. Windows wird vor den Einstellungen gelesen:
+  Eine Synchronisation wird gespeichert, bevor sie sich anmeldet. Eine Anmeldung, die eine Synchronisation nutzt oder
+  die inzwischen auf einen anderen Ordner zeigt, bleibt unberührt; der Eintrag wartet, bis diese Synchronisation endet.
+- Eine beschädigte `cleanup.json` wird beiseitegelegt (`cleanup.json.damaged-<Zeit>`) statt Beenden, Einrichten oder
+  Deinstallieren aufzuhalten; geschrieben wird sie über eine temporäre Datei, nie halb.
+- Ist ein Ordner nach dem Abmelden nicht lesbar, gilt er als nicht frei: Die Anmeldung kommt zurück. `Leftovers.Count`
+  meldet einen unlesbaren Ordner als Fehler statt als leer.
 - Jede neue Synchronisation „bei Bedarf“ und jedes Umstellen bekommt eine eigene Anmeldung (`RegistrationKey`,
   „&lt;Synchronisation&gt;-&lt;8 Zeichen&gt;“). So passen Reste einer früheren nie zu einer neuen. Einen Ordner mit Resten
   meldet `ConnectNew` gar nicht erst an (`CD-4602`).

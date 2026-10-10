@@ -3,6 +3,31 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.7] – 2026-10-10
+
+Seventh test version on the way to 0.3: setting up is checked before anything is written, and clearing up never stops.
+
+### Changed
+
+- Two synchronisations can no longer share a folder on this PC - the same folder, one inside the other, or one around
+  the other (`CD-4506`). Two synchronisations writing the same files could undo each other's work.
+- Before a synchronisation is set up in a folder that exists already, CloudDrive-Sync looks through it (names and marks
+  only, no content): damaged or orphaned cloud placeholders or an unreadable folder in it stop the setup before
+  anything is written (`CD-4513`).
+- The suggested folder for a new synchronisation sits next to the others ("<Konto> - <Ordner>") and never takes a
+  folder that exists already.
+- A setup that is cancelled or fails leaves nothing behind: no sentinel file, no folders it created, no entry in the
+  settings.
+
+### Fixed
+
+- Every registration of CloudDrive-Sync with Windows that no synchronisation uses any more is cleared, too - not only
+  those on the list of folders to clear up. A damaged list is set aside (never thrown away) instead of stopping ending,
+  setting up or uninstalling.
+- After a registration ended, a folder Windows cannot read counts as not clear: the registration comes back and the
+  folder is cleared, instead of being left behind.
+- The list of folders to clear up is written so that a crash can never leave half of it.
+
 ## [0.3.0-preview.6] – 2026-10-10
 
 Sixth test version on the way to 0.3: nothing of a synchronisation or of CloudDrive-Sync itself is left behind.

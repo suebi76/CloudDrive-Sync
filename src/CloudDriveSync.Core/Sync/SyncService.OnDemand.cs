@@ -112,14 +112,20 @@ public sealed partial class SyncService
         }
     }
 
-    /// <summary>A new registration: left-overs of an earlier synchronisation in the folder are cleared first.</summary>
+    /// <summary>A new registration: AddAsync has already cleared left-overs before saving the pair.</summary>
     [SupportedOSPlatform("windows10.0.17763")]
     private void ConnectNew(string id)
     {
         if (FindPair(id)?.LocalPath is { } folder)
         {
-            FinishCleanUps(folder);
-            if (Leftovers.Count(folder) > 0) throw new Errors.CdException("CD-4602", "placeholders of an earlier synchronisation are still in the folder");
+            try
+            {
+                if (Leftovers.Count(folder) > 0) throw new Errors.CdException("CD-4602", "placeholders of an earlier synchronisation are still in the folder");
+            }
+            catch (IOException e)
+            {
+                throw new Errors.CdException("CD-4602", $"cannot verify that the folder is clear: {e.Message}", e);
+            }
         }
         LiveFor(id).EnsureConnected();
     }
@@ -167,10 +173,12 @@ public sealed partial class SyncService
         }
         // The registration that ended may be the one older left-overs belong to: they can be cleared now.
         FinishCleanUps(ending: id);
-        if (!ended && folder is not null)
+        // A failed attempt to add a new synchronisation may never have registered this ID. In that case an older
+        // clean-up note for the same folder must keep its original ID, which alone can repair its placeholders.
+        if (!ended && folder is not null && SyncRoots.IsRegistered(registration))
         {
             RememberCleanUp(new PendingCleanUp(registration, folder, id));
-            Log.Warn("OnDemand", $"'{id}': {Leftovers.Count(folder)} placeholder(s) held by a program - the folder is cleared as soon as they are free.");
+            Log.Warn("OnDemand", $"'{id}': the folder could not be fully cleared; its registration stays until clean-up succeeds.");
         }
         return ended || folder is null;
     }

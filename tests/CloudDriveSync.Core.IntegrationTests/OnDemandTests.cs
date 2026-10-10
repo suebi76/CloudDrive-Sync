@@ -563,6 +563,23 @@ public class OnDemandTests
     }
 
     [Fact]
+    public async Task A_registration_no_synchronisation_uses_is_cleared_even_without_a_note()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("nur online.txt", "eins"); w.WriteCloud("geladen.txt", "zwei"); });
+        Fetch(world, "geladen.txt");
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
+        // As if the list of folders to clear up had been lost: the synchronisation is gone, its registration is not.
+        await world.RestartAsync(whileStopped: () => new SettingsStore(world.Host.Paths.SettingsFile).Update(s => s.Syncs.Clear()));
+        Assert.True(SyncRoots.IsRegistered(id));
+        world.Host.Sync.FinishCleanUps();
+        Assert.False(SyncRoots.IsRegistered(id));
+        Assert.Equal(0, Leftovers.Count(world.Local));
+        Assert.False(File.Exists(world.Pc("nur online.txt")));
+        Assert.Equal("zwei", world.ReadPc("geladen.txt"));
+        Assert.Equal("eins", world.ReadCloud("nur online.txt"));
+    }
+
+    [Fact]
     public async Task Uninstalling_ends_registrations_only_with_their_folders_clear()
     {
         await using var world = await WorldAsync(cloud: w => { w.WriteCloud("nur online.txt", "eins"); w.WriteCloud("geladen.txt", "zwei"); });

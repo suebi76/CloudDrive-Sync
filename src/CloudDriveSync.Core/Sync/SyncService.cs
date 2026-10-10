@@ -96,21 +96,31 @@ public sealed partial class SyncService : IAsyncDisposable
     public async Task<SyncPairSettings> AddAsync(SyncPairSettings draft, CancellationToken cancellationToken = default)
     {
         var account = _accounts.Find(draft.AccountId) ?? throw new CdException("CD-9000", $"unknown account '{draft.AccountId}'");
+        if (string.IsNullOrWhiteSpace(draft.LocalPath) || !Path.IsPathFullyQualified(draft.LocalPath))
+            throw new CdException("CD-4501", $"not a complete path: '{draft.LocalPath}'");
         var local = Path.TrimEndingDirectorySeparator(Path.GetFullPath(draft.LocalPath));
+        LocalFolderCheck.EnsureNoPairOverlap(local, Pairs);
         if (draft.Mode == SyncMode.OnDemand && OnDemandProblem(local) is { } problem) throw new CdException("CD-4601", problem);
+        // An existing folder may contain placeholders from an ended registration. Read its metadata before writing
+        // anything, unless a classic sync deliberately targets an active root of another provider.
+        if (Directory.Exists(local) && !(draft.Mode == SyncMode.Classic && IsInsideActiveForeignRoot(local)))
+            await Task.Run(() => LocalFolderCheck.EnsureExistingTreeSafe(local, cancellationToken), cancellationToken);
+        // Clear an older registration before saving this pair. A damaged cleanup list can fail here without leaving
+        // a pair behind in settings or a newly written sentinel in the local folder.
+        if (draft.Mode == SyncMode.OnDemand && OnDemandSupported) FinishCleanUps(local);
         var remotePath = draft.RemotePath.Trim('/');
         var createdFrom = FirstMissingFolder(local);
         var sentinel = Path.Combine(local, SyncFilters.SentinelFile);
         var newSentinel = !File.Exists(sentinel);
-        Directory.CreateDirectory(local);
         bool cloudCheckFile;
         try
         {
+            Directory.CreateDirectory(local);
             cloudCheckFile = await PlaceSentinelsAsync(account, remotePath, local, tryCloud: true, cancellationToken);
         }
-        catch (CdException)
+        catch
         {
-            // A setup that did not come about leaves nothing behind on the PC.
+            // A failed or cancelled setup removes only the sentinel and empty folders it created.
             if (createdFrom is not null) RemoveCreatedFolders(local, createdFrom);
             else if (newSentinel) TryDelete(sentinel);
             throw;
@@ -148,7 +158,8 @@ public sealed partial class SyncService : IAsyncDisposable
             catch (CdException)
             {
                 // Windows did not take the folder: the synchronisation does not come about.
-                await RemoveAsync(pair.Id, cancellationToken: cancellationToken);
+                await RemoveAsync(pair.Id, cancellationToken: CancellationToken.None);
+                if (createdFrom is not null) RemoveCreatedFolders(local, createdFrom);
                 throw;
             }
         }
@@ -192,9 +203,10 @@ public sealed partial class SyncService : IAsyncDisposable
                 ["remote"] = Join(pair.RemotePath, SyncFilters.SentinelFile),
             }, cancellationToken: cancellationToken);
         }
-        catch (CdException e)
+        catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException or OperationCanceledException)
         {
-            Log.Warn("Sync", $"Sentinel file of '{id}' in the cloud stays: {e.Detail}");
+            // Local removal is already underway. A failed remote cleanup must not leave the pair half-removed.
+            Log.Warn("Sync", $"Sentinel file of '{id}' in the cloud stays: {e.Message}");
         }
         _settings.Update(s => s.Syncs.RemoveAll(p => p.Id == id));
         try
@@ -403,6 +415,27 @@ public sealed partial class SyncService : IAsyncDisposable
     }
 
     private static string Join(params string[] parts) => string.Join('/', parts.Select(p => p.Trim('/')).Where(p => p.Length > 0));
+
+    private bool IsInsideActiveForeignRoot(string path)
+    {
+        if (!OnDemandSupported) return false;
+        try
+        {
+            for (var current = path; current is not null; current = Path.GetDirectoryName(current))
+            {
+                if (!Directory.Exists(current)) continue;
+                if (SyncRoots.ContextOf(current) is null) return false;
+                return !SyncRoots.RegisteredIds(_paths.SyncRootProvider)
+                    .Select(SyncRoots.FolderOf)
+                    .Any(own => own is not null && LocalFolderCheck.IsSameOrInside(current, own));
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or System.Runtime.InteropServices.COMException)
+        {
+            Log.Warn("Sync", $"Could not inspect an existing sync root at '{path}': {e.Message}");
+        }
+        return false;
+    }
 
     /// <summary>The topmost folder on the way to <paramref name="folder"/> that does not exist yet; null when it exists.</summary>
     private static string? FirstMissingFolder(string folder)

@@ -12,8 +12,10 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
 - **Konten verbinden:** Nextcloud (Anmeldung im Browser, auch mit Zwei-Faktor-Anmeldung, oder mit App-Passwort),
   IServ (Adresse der Schule genügt, CloudDrive-Sync nutzt `webdav.<schule>`) und andere WebDAV-Speicher.
 - **Ordner synchronisieren:** einen Cloud-Ordner, bei IServ auch alle Gruppen auf einmal, oder das ganze Konto – alles oder nur ausgewählte Ordner und Dateien –
-  in einen frei wählbaren Ordner auf diesem PC. Nichts ist verboten: Bei ungewöhnlichen Speicherorten (Netzlaufwerk,
-  USB-Stick, Ordner eines anderen Sync-Programms …) gibt es Hinweise, die Entscheidung triffst du.
+  in einen frei wählbaren Ordner auf diesem PC. Bei ungewöhnlichen Speicherorten (Netzlaufwerk, USB-Stick, Ordner eines
+  anderen Sync-Programms …) gibt es Hinweise, die Entscheidung triffst du. Ordner dürfen sich nicht mit einer anderen
+  CloudDrive-Sync-Synchronisation überschneiden. Beschädigte oder verwaiste Cloud-Platzhalter im Zielordner verhindern
+  den Start, bis der Ordner aufgeräumt ist.
 - **Dateien bei Bedarf (ab 0.3):** Alle Dateien erscheinen sofort im Explorer, belegen aber erst Platz, wenn du sie
   öffnest – wie bei OneDrive.
   - Symbole im Explorer zeigen, was nur online liegt. Im Kontextmenü stehen „Immer auf diesem Gerät beibehalten“ und

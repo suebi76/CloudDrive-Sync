@@ -1,6 +1,7 @@
 using System.Text;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.OnDemand;
+using CloudDriveSync.Core.Sync;
 using System.Runtime.Versioning;
 
 namespace CloudDriveSync.Core.IntegrationTests;
@@ -10,6 +11,18 @@ namespace CloudDriveSync.Core.IntegrationTests;
 public class CloudFilesTests
 {
     private static readonly DateTime Monday = new(2026, 10, 5, 8, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public async Task Uninstall_keeps_a_registration_when_its_folder_cannot_be_determined()
+    {
+        await using var root = await TestSyncRoot.CreateAsync();
+        var paths = new AppPaths(Path.Combine(root.Root, "home"));
+
+        Assert.Empty(SyncService.EndAllForUninstall(paths, TimeSpan.FromSeconds(1), _ => null));
+        Assert.True(SyncRoots.IsRegistered(root.Id));
+        Assert.Empty(SyncService.EndAllForUninstall(paths, TimeSpan.FromSeconds(1), _ => throw new UnauthorizedAccessException()));
+        Assert.True(SyncRoots.IsRegistered(root.Id));
+    }
 
     [Fact]
     public async Task Placeholders_take_no_space_until_their_data_is_fetched()

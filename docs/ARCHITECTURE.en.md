@@ -291,6 +291,10 @@ silently.
 - **One engine** on `127.0.0.1` with a random port and random credentials, bound to CloudDrive-Sync (job object).
 - **Velopack** for installation and updates: per user without administrator rights, .NET included, updates only from the
   GitHub project and checked against their checksum.
+- **One folder belongs to one synchronisation.** `LocalFolderCheck` refuses two synchronisations in the same folder,
+  one inside or around the other (`CD-4506`); folders of other programs, network and removable drives stay hints. An
+  existing folder is looked through before setting up (`EnsureExistingTreeSafe`, names and marks only): orphaned
+  placeholders or unreadable folders stop the setup before anything is written (`CD-4513`).
 - **Separate from CloudDrives:** own data folder, own keys, own program. Each opens the other from its notification area
   symbol, but neither depends on the other.
 
@@ -451,8 +455,14 @@ clearing up and uninstalling):
 - After unregistering, the folder is checked. Should Windows have left placeholders after all, the same registration
   comes back at once (only it makes them readable), they are dissolved, and the registration ends again.
 - `FinishCleanUps` tries at the start and then every two minutes while `cleanup.json` names something; once the folder
-  is free, the registration ends. A registration a synchronisation uses, or one pointing to another folder by now, is
-  never touched; the entry waits until that synchronisation ends.
+  is free, the registration ends. It also takes every registration of the program with Windows that no synchronisation
+  uses any more - so nothing stays behind even when the list was lost. Windows is read before the settings: a
+  synchronisation is saved before it registers. A registration a synchronisation uses, or one pointing to another
+  folder by now, is never touched; the entry waits until that synchronisation ends.
+- A damaged `cleanup.json` is set aside (`cleanup.json.damaged-<time>`) instead of holding up ending, setting up or
+  uninstalling; it is written through a temporary file, never half.
+- A folder Windows cannot read after the end counts as not clear: the registration comes back. `Leftovers.Count`
+  reports an unreadable folder as an error instead of as empty.
 - Every new synchronisation with files on demand and every switch gets a registration of its own (`RegistrationKey`,
   "&lt;synchronisation&gt;-&lt;8 characters&gt;"), so remains of an earlier one never fit a new one. `ConnectNew` does not
   register a folder with remains at all (`CD-4602`).

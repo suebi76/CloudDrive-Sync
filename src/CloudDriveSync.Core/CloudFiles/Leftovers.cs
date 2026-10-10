@@ -18,29 +18,41 @@ public static class Leftovers
     private const FileAttributes CloudMarks = (FileAttributes)0x00040000 | (FileAttributes)0x00400000;
 
     /// <summary>
-    /// Entries below the folder that still carry a placeholder's marks - read from their attributes, nothing is opened. A
-    /// folder Windows cannot read (a left-over it calls corrupt) counts by its own marks.
+    /// Entries below the folder that still carry a placeholder's marks - read from their attributes, nothing is opened.
+    /// An unreadable folder is not proof that it contains no placeholders: fail rather than end its registration.
     /// </summary>
-    public static int Count(string folder)
+    public static int Count(string folder) => Count(folder, directory => directory.EnumerateFileSystemInfos().ToList());
+
+    /// <summary>The enumeration seam also lets tests reproduce an unreadable subtree without changing ACLs.</summary>
+    internal static int Count(string folder, Func<DirectoryInfo, IReadOnlyList<FileSystemInfo>> enumerate)
     {
-        if (!Directory.Exists(folder)) return 0;
+        try
+        {
+            if ((File.GetAttributes(folder) & FileAttributes.Directory) == 0)
+                throw new IOException($"Not a folder: {folder}");
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return 0;
+        }
         var count = 0;
         var folders = new Stack<DirectoryInfo>([new DirectoryInfo(folder)]);
         while (folders.Count > 0)
         {
-            List<FileSystemInfo> entries;
+            var current = folders.Pop();
             try
             {
-                entries = folders.Pop().EnumerateFileSystemInfos().ToList();
+                foreach (var entry in enumerate(current))
+                {
+                    var attributes = entry.Attributes;
+                    var link = entry is DirectoryInfo && IsLink(entry);
+                    if ((attributes & CloudMarks) != 0 || ((attributes & FileAttributes.ReparsePoint) != 0 && !link)) count++;
+                    if (entry is DirectoryInfo directory && !link) folders.Push(directory);
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                continue;
-            }
-            foreach (var entry in entries)
-            {
-                if ((entry.Attributes & CloudMarks) != 0 || ((entry.Attributes & FileAttributes.ReparsePoint) != 0 && !IsLink(entry))) count++;
-                if (entry is DirectoryInfo directory && !IsLink(directory)) folders.Push(directory);
+                throw new IOException($"Cannot verify that '{current.FullName}' has no cloud placeholders.", e);
             }
         }
         return count;
@@ -49,14 +61,7 @@ public static class Leftovers
     /// <summary>A link to another place (junction, symbolic link) is never followed.</summary>
     private static bool IsLink(FileSystemInfo entry)
     {
-        try
-        {
-            return entry.LinkTarget is not null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
+        return entry.LinkTarget is not null;
     }
 
     /// <summary>
@@ -139,7 +144,8 @@ public static class Leftovers
     public static bool EndWhenClear(string id, string? folder, SyncRootSpec again, TimeSpan wait, out CleanUpResult result)
     {
         result = new CleanUpResult(0, 0, []);
-        var exists = folder is not null && Directory.Exists(folder);
+        // Directory.Exists also returns false for an unreadable directory; its registration must not end on that basis.
+        var exists = folder is not null;
         for (var round = 0; round < 3; round++)
         {
             if (exists)
@@ -159,10 +165,26 @@ public static class Leftovers
                 }
             }
             if (SyncRoots.IsRegistered(id)) SyncRoots.Unregister(id);
-            if (!exists || WaitUntilClear(folder!, wait)) return true;
+            if (!exists || ClearAfterEnd(folder!, wait)) return true;
             SyncRoots.Register(again);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Whether the folder is clear once the registration ended. A folder Windows cannot read then is exactly what must
+    /// never stay behind: it counts as not clear, so the registration comes back.
+    /// </summary>
+    private static bool ClearAfterEnd(string folder, TimeSpan wait)
+    {
+        try
+        {
+            return WaitUntilClear(folder, wait);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
