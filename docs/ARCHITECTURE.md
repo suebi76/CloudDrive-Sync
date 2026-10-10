@@ -452,18 +452,26 @@ zusammen wie ein Neuaufbau und löscht nichts – auch dann nicht, wenn vorher �
 oder er geht, wenn er leer ist. Erst dann endet die Anmeldung. Der Grund: Ein Platzhalter, der nach dem Abmelden übrig
 bleibt – weil ein Programm wie Explorer oder der Suchindex ihn gerade offen hielt –, gehört zu einer Anmeldung, die es
 nicht mehr gibt. Windows nennt ihn beschädigt (Fehler 363), nichts kann ihn öffnen oder löschen, und Explorer kann den
-Ordner nicht einmal löschen. Deshalb:
-- Nach dem Abmelden wartet `EndOnDemand` bis zu 60 s, bis der Ordner frei ist (`Leftovers.WaitUntilClear`).
-- Bleibt doch etwas, merkt sich `cleanup.json` Ordner und Anmeldung. Beim nächsten Start (und beim nächsten Beenden)
-  meldet `FinishCleanUps` genau diese Anmeldung kurz wieder an diesem Ordner an – nur damit kann Windows die Platzhalter
-  wieder lesen –, löst sie auf und meldet wieder ab. Eine Anmeldung, die eine Synchronisation nutzt oder die inzwischen
-  auf einen anderen Ordner zeigt, bleibt unberührt; der Eintrag wartet, bis diese Synchronisation endet.
+Ordner nicht einmal löschen. Deshalb gilt **eine Anmeldung endet erst, wenn nichts von ihr im Ordner übrig ist**
+(`Leftovers.EndWhenClear`, für Beenden, Umstellen, Aufräumen und Deinstallieren):
+- Erst auflösen, mit bis zu drei Versuchen. Hält ein Programm noch etwas, bleibt die Anmeldung bestehen – unter dem
+  Namen „CloudDrive-Sync – wird aufgeräumt“ –, jeder Platzhalter bleibt gültig und löschbar, und `cleanup.json` merkt
+  sich Ordner und Anmeldung. Das Fenster „Synchronisation beenden“ sagt das (`EndResult.StillHeld`).
+- Nach dem Abmelden wird nachgesehen. Hat Windows doch Platzhalter liegen lassen, kommt dieselbe Anmeldung sofort
+  zurück (nur sie macht sie wieder lesbar), sie werden aufgelöst, dann endet die Anmeldung erneut.
+- `FinishCleanUps` versucht es beim Start und danach alle zwei Minuten, solange `cleanup.json` etwas nennt; ist der
+  Ordner frei, endet die Anmeldung. Eine Anmeldung, die eine Synchronisation nutzt oder die inzwischen auf einen
+  anderen Ordner zeigt, bleibt unberührt; der Eintrag wartet, bis diese Synchronisation endet.
 - Jede neue Synchronisation „bei Bedarf“ und jedes Umstellen bekommt eine eigene Anmeldung (`RegistrationKey`,
   „&lt;Synchronisation&gt;-&lt;8 Zeichen&gt;“). So passen Reste einer früheren nie zu einer neuen. Einen Ordner mit Resten
   meldet `ConnectNew` gar nicht erst an (`CD-4602`).
 
-Beim Deinstallieren meldet der Velopack-Hook alle Ordner des Programms ab (`SyncRoots.UnregisterAll`, 12 000 Einträge in
-unter 4 s); kommt CloudDrive-Sync wieder, greift die Regel „Anmeldung verloren“.
+**Deinstallieren** (Velopack-Hook, höchstens 30 s, ohne Oberfläche): `SyncService.EndAllForUninstall` beendet jede
+Anmeldung des Programms nach derselben Regel; ein Ordner, den ein Programm hält (oder für den die Zeit nicht reicht),
+bleibt angemeldet und steht in `cleanup.json`. Danach entfernt `Uninstall.RemoveData` die Wächterdateien in den Ordnern
+am PC (nie die in der Cloud – andere PCs nutzen sie), den Schlüssel in der Anmeldeinformationsverwaltung und den
+Datenordner bis auf `cleanup.json` – nur den eigenen (Standardordner oder einer mit `settings.json`), nie ein Laufwerk,
+den Benutzerordner oder `%LOCALAPPDATA%` selbst. Kommt CloudDrive-Sync wieder, räumt es auf, was noch notiert ist.
 
 **Umstellen** (`SyncService.Conversion.cs`, im Fenster „Einstellungen der Synchronisation“):
 - **Klassisch → bei Bedarf:**

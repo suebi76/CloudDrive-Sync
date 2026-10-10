@@ -309,6 +309,34 @@ public class OnDemandTests
         AssertInStep(world);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Ending_with_folders_the_server_refuses_leaves_nothing_behind(bool refusedFromTheStart)
+    {
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        world.WriteCloud("Ablage/a.txt", "a");
+        world.WriteCloud("Ablage/Gesperrt/b.txt", "b");
+        world.WriteCloud("Ablage/Gesperrt/Tiefer/c.txt", "c");
+        world.WriteCloud("Offen/d.txt", "d");
+        await world.AddAccountAsync();
+        // Like a share to upload only in Nextcloud: the server refuses to list the folder.
+        if (refusedFromTheStart) world.Proxy!.RefuseListing($"{SyncWorld.CloudFolder}/Ablage/Gesperrt");
+        await world.AddPairAsync(p => p.Mode = SyncMode.OnDemand);
+        var first = await world.RunAsync(BisyncMode.Resync);
+        Assert.True(first.Success, $"{first.ErrorCode}: {first.ErrorDetail}");
+        world.Proxy!.RefuseListing($"{SyncWorld.CloudFolder}/Ablage/Gesperrt");
+        var run = await RunAsync(world);
+        Assert.True(run.Success, $"{run.ErrorCode}: {run.ErrorDetail}");
+
+        await world.Host.Sync.RemoveAsync(world.Pair.Id);
+        Assert.Equal(0, Leftovers.Count(world.Local));
+        Assert.False(File.Exists(Path.Combine(world.Host.Paths.Home, "cleanup.json")));
+        // The folder lets itself be deleted like any other.
+        Directory.Delete(world.Local, recursive: true);
+        Assert.False(Directory.Exists(world.Local));
+    }
+
     /// <summary>The clock of a later day.</summary>
     private sealed class LaterTime(TimeSpan ahead) : TimeProvider
     {
@@ -506,23 +534,59 @@ public class OnDemandTests
     }
 
     [Fact]
-    public async Task What_a_program_held_while_ending_is_cleared_at_the_next_start()
+    public async Task What_a_program_holds_while_ending_keeps_its_registration_until_it_is_free()
     {
         await using var world = await WorldAsync(cloud: w => { w.WriteCloud("a.txt", "a"); w.WriteCloud("gehalten.txt", "nur online"); });
         world.Host.Sync.CleanUpWait = TimeSpan.FromSeconds(2);
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
         var noted = Path.Combine(world.Host.Paths.Home, "cleanup.json");
         // A program holds an online-only file while the synchronisation ends (nothing is fetched by that).
+        EndResult result;
         using (new FileStream(world.Pc("gehalten.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            await world.Host.Sync.RemoveAsync(world.Pair.Id);
+            result = await world.Host.Sync.RemoveAsync(world.Pair.Id);
+            // The registration stays: the held placeholder stays valid - never one that Windows calls damaged.
+            Assert.True(result.StillHeld);
+            Assert.True(SyncRoots.IsRegistered(id));
+            Assert.True(File.Exists(noted));
+            Assert.False(File.Exists(world.Pc("a.txt")));
         }
-        Assert.True(File.Exists(noted));
-        // The next start clears it, with the registration it belongs to.
+        Assert.NotNull(Placeholders.Read(world.Pc("gehalten.txt")));
+        // Once the program lets go, the next attempt clears the folder and ends the registration.
         world.Host.Sync.FinishCleanUps();
         Assert.Equal(0, Leftovers.Count(world.Local));
+        Assert.False(SyncRoots.IsRegistered(id));
         Assert.False(File.Exists(noted));
         Assert.False(File.Exists(world.Pc("gehalten.txt")));
         Assert.Equal("nur online", world.ReadCloud("gehalten.txt"));
+        Directory.Delete(world.Local, recursive: true);
+    }
+
+    [Fact]
+    public async Task Uninstalling_ends_registrations_only_with_their_folders_clear()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("nur online.txt", "eins"); w.WriteCloud("geladen.txt", "zwei"); });
+        Fetch(world, "geladen.txt");
+        var id = SyncRoots.IdFor(world.Host.Paths, world.Pair);
+        var noted = Path.Combine(world.Host.Paths.Home, "cleanup.json");
+        await world.RestartAsync(whileStopped: () =>
+        {
+            // First a program holds a file: that folder stays registered and is noted.
+            using (new FileStream(world.Pc("nur online.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.Empty(SyncService.EndAllForUninstall(world.Host.Paths, TimeSpan.FromSeconds(20)));
+            }
+            Assert.True(SyncRoots.IsRegistered(id));
+            Assert.True(File.Exists(noted));
+            Assert.NotNull(Placeholders.Read(world.Pc("nur online.txt")));
+            // Free again: it ends, and nothing is left that could not be deleted.
+            Assert.Equal([id], SyncService.EndAllForUninstall(world.Host.Paths, TimeSpan.FromSeconds(20)));
+            Assert.False(SyncRoots.IsRegistered(id));
+            Assert.Equal(0, Leftovers.Count(world.Local));
+            Assert.False(File.Exists(world.Pc("nur online.txt")));
+            Assert.Equal("zwei", world.ReadPc("geladen.txt"));
+            Assert.Null(Placeholders.Read(world.Pc("geladen.txt")));
+        });
     }
 
     [Fact]

@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using System.Text.Json;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
+using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Sync;
@@ -17,15 +18,73 @@ public sealed partial class SyncService
     private readonly Lock _cleanUpGate = new();
 
     /// <summary>How long Windows gets to clear up after a registration ended; tests make it short.</summary>
-    internal TimeSpan CleanUpWait { get; set; } = TimeSpan.FromSeconds(60);
+    internal TimeSpan CleanUpWait { get; set; } = TimeSpan.FromSeconds(15);
 
-    private string CleanUpFile => Path.Combine(_paths.Home, "cleanup.json");
+    /// <summary>How often a folder that a program held is tried again while CloudDrive-Sync runs.</summary>
+    internal TimeSpan CleanUpInterval { get; set; } = TimeSpan.FromMinutes(2);
 
-    private List<PendingCleanUp> LoadCleanUps()
+    /// <summary>
+    /// What ended synchronisations left is cleared at the start, and then again and again while a program still holds
+    /// something of it - once it lets go, the folder is cleared and its registration ends.
+    /// </summary>
+    private async Task CleanUpLoopAsync(CancellationToken cancellationToken)
     {
         try
         {
-            if (File.Exists(CleanUpFile)) return JsonSerializer.Deserialize<List<PendingCleanUp>>(File.ReadAllText(CleanUpFile), SettingsStore.JsonOptions) ?? [];
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Run(() =>
+                    {
+                        if (OnDemandSupported) FinishCleanUps();
+                    }, cancellationToken);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    Log.Warn("Sync", $"Clearing up left-overs failed, tried again later: {e.Message}");
+                }
+                lock (_cleanUpGate)
+                {
+                    // Nothing left to clear: the loop ends - a folder noted from now on starts a new one.
+                    if (!File.Exists(CleanUpFile))
+                    {
+                        _cleanUpLoop = null;
+                        return;
+                    }
+                }
+                await Task.Delay(CleanUpInterval, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // CloudDrive-Sync ends; the next start goes on.
+        }
+    }
+
+    /// <summary>Starts trying again when a folder was noted while no loop runs.</summary>
+    private void KeepCleaningUp()
+    {
+        lock (_cleanUpGate)
+        {
+            if (_cleanUpLoop is not null) return;
+            _cleanUpLoop = CleanUpLoopAsync(_shutdown.Token);
+        }
+    }
+
+    private Task? _cleanUpLoop;
+
+    private string CleanUpFile => CleanUpFileOf(_paths);
+
+    private static string CleanUpFileOf(AppPaths paths) => Path.Combine(paths.Home, "cleanup.json");
+
+    private List<PendingCleanUp> LoadCleanUps() => LoadCleanUps(CleanUpFile);
+
+    private static List<PendingCleanUp> LoadCleanUps(string file)
+    {
+        try
+        {
+            if (File.Exists(file)) return JsonSerializer.Deserialize<List<PendingCleanUp>>(File.ReadAllText(file), SettingsStore.JsonOptions) ?? [];
         }
         catch (Exception e) when (e is JsonException or IOException)
         {
@@ -34,10 +93,58 @@ public sealed partial class SyncService
         return [];
     }
 
-    private void SaveCleanUps(List<PendingCleanUp> pending)
+    private void SaveCleanUps(List<PendingCleanUp> pending) => SaveCleanUps(CleanUpFile, pending);
+
+    private static void SaveCleanUps(string file, List<PendingCleanUp> pending)
     {
-        if (pending.Count == 0) File.Delete(CleanUpFile);
-        else File.WriteAllText(CleanUpFile, JsonSerializer.Serialize(pending, SettingsStore.JsonOptions));
+        if (pending.Count == 0) File.Delete(file);
+        else File.WriteAllText(file, JsonSerializer.Serialize(pending, SettingsStore.JsonOptions));
+    }
+
+    /// <summary>
+    /// Before CloudDrive-Sync is uninstalled: ends this user's registrations of the installed program (never those of
+    /// the tests) the same way as ending a synchronisation - dissolved first, ended only when nothing of it is left
+    /// (<see cref="Leftovers.EndWhenClear"/>). A folder a program holds stays registered - its placeholders stay
+    /// valid and can be deleted - and is noted; should CloudDrive-Sync come back, it clears the folder at its start.
+    /// The same happens to a folder the time is not enough for. Returns the IDs that ended.
+    /// </summary>
+    [SupportedOSPlatform("windows10.0.17763")]
+    public static IReadOnlyList<string> EndAllForUninstall(AppPaths paths, TimeSpan budget)
+    {
+        var deadline = DateTime.UtcNow + budget;
+        var pairs = File.Exists(paths.SettingsFile) ? new SettingsStore(paths.SettingsFile).Current.Syncs : [];
+        var ended = new List<string>();
+        var noted = LoadCleanUps(CleanUpFileOf(paths));
+        foreach (var id in SyncRoots.RegisteredIds(paths.SyncRootProvider))
+        {
+            var folder = SyncRoots.FolderOf(id);
+            // The registration's context is its synchronisation's ID; a registration of its own carries a key after it.
+            var context = pairs.FirstOrDefault(p => SyncRoots.IdFor(paths, p) == id)?.Id ?? id.Split('!')[^1];
+            try
+            {
+                if (folder is null)
+                {
+                    SyncRoots.Unregister(id);
+                    ended.Add(id);
+                }
+                else if (DateTime.UtcNow < deadline && Leftovers.EndWhenClear(id, folder, OnDemandPair.CleanUpSpec(id, folder, context), TimeSpan.FromSeconds(3), out _))
+                {
+                    ended.Add(id);
+                }
+                else
+                {
+                    noted.RemoveAll(p => string.Equals(p.Folder, folder, StringComparison.OrdinalIgnoreCase));
+                    noted.Add(new PendingCleanUp(id, folder, context));
+                }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or COMException)
+            {
+                Log.Warn("Sync", $"Uninstalling: '{context}' not ended: {e.Message}");
+                if (folder is not null) noted.Add(new PendingCleanUp(id, folder, context));
+            }
+        }
+        SaveCleanUps(CleanUpFileOf(paths), noted);
+        return ended;
     }
 
     private void RememberCleanUp(PendingCleanUp item)
@@ -49,6 +156,7 @@ public sealed partial class SyncService
             pending.Add(item);
             SaveCleanUps(pending);
         }
+        KeepCleaningUp();
     }
 
     /// <summary>
@@ -78,24 +186,26 @@ public sealed partial class SyncService
                 }
                 try
                 {
-                    if (!Directory.Exists(item.Folder) || Leftovers.Count(item.Folder) == 0) continue;
-                    if (SyncRoots.FolderOf(item.Registration) is { } registered)
+                    var registered = SyncRoots.FolderOf(item.Registration);
+                    if (registered is not null && !string.Equals(Path.TrimEndingDirectorySeparator(registered), Path.TrimEndingDirectorySeparator(item.Folder), StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!string.Equals(Path.TrimEndingDirectorySeparator(registered), Path.TrimEndingDirectorySeparator(item.Folder), StringComparison.OrdinalIgnoreCase))
-                        {
-                            left.Add(item);
-                            continue;
-                        }
+                        left.Add(item);
+                        continue;
                     }
-                    else
+                    if (!Directory.Exists(item.Folder) || Leftovers.Count(item.Folder) == 0)
                     {
-                        SyncRoots.Register(new SyncRootSpec(item.Registration, item.Folder, "CloudDrive-Sync – Aufräumen", $"{Environment.ProcessPath},0", "0", item.Context));
+                        // Nothing left (the program let go, or the folder is gone): the registration that waited for it ends.
+                        if (registered is not null) SyncRoots.Unregister(item.Registration);
+                        continue;
                     }
-                    var result = Leftovers.Dissolve(item.Folder);
-                    SyncRoots.Unregister(item.Registration);
-                    var clear = Leftovers.WaitUntilClear(item.Folder, CleanUpWait);
-                    Log.Info("Sync", $"Left-overs of '{item.Context}' cleared: {result.Removed} removed, {result.Kept} kept as normal files{(clear ? "" : ", some still left")}.");
-                    if (!clear) left.Add(item);
+                    var again = OnDemandPair.CleanUpSpec(item.Registration, item.Folder, item.Context);
+                    // Only its own registration makes a placeholder readable again.
+                    if (registered is null) SyncRoots.Register(again);
+                    var ended = Leftovers.EndWhenClear(item.Registration, item.Folder, again, CleanUpWait, out var result);
+                    Log.Info("Sync", ended
+                        ? $"Left-overs of '{item.Context}' cleared: {result.Removed} removed, {result.Kept} kept as normal files."
+                        : $"Left-overs of '{item.Context}': {result.Failed.Count} still held by a program; the folder stays registered until they are free.");
+                    if (!ended) left.Add(item);
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or COMException)
                 {

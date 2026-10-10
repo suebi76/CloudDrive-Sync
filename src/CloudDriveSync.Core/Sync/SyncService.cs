@@ -79,10 +79,7 @@ public sealed partial class SyncService : IAsyncDisposable
         if (OnDemandSupported)
         {
             foreach (var pair in Pairs.Where(p => p.Mode == SyncMode.OnDemand)) ConnectEarly(pair.Id);
-            _ = Task.Run(() =>
-            {
-                if (OnDemandSupported) FinishCleanUps();
-            });
+            KeepCleaningUp();
         }
     }
 
@@ -178,13 +175,11 @@ public sealed partial class SyncService : IAsyncDisposable
         if (worker is not null) await worker.StopAsync();
         var pair = FindPair(id);
         if (pair is null) return new EndResult(0, []);
+        var ended = true;
         if (pair.Mode == SyncMode.OnDemand && OnDemandSupported)
         {
             progress?.Report("Räumt den Ordner auf …");
-            await Task.Run(() =>
-            {
-                if (OnDemandSupported) EndOnDemand(id);
-            }, CancellationToken.None);
+            ended = await Task.Run(() => !OnDemandSupported || EndOnDemand(id), CancellationToken.None);
         }
         RemoveExplorerEntry(id);
         TryDelete(Path.Combine(pair.LocalPath, SyncFilters.SentinelFile));
@@ -212,6 +207,7 @@ public sealed partial class SyncService : IAsyncDisposable
             Log.Warn("Sync", $"State of '{id}' could not be removed: {e.Message}");
         }
         var result = keep == KeepOnPc.Nothing ? await Task.Run(() => RecycleAndTidy(pair.LocalPath, leave, progress), CancellationToken.None) : new EndResult(0, []);
+        result = result with { StillHeld = !ended };
         Log.Info("Sync", $"Synchronisation '{id}' removed (on the PC: {keep}; in the cloud everything stays).");
         return result;
     }

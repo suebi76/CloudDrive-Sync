@@ -141,19 +141,21 @@ public sealed partial class SyncService
     /// <summary>
     /// Ends a synchronisation with files on demand: the placeholders are cleared (files with their data on the PC stay
     /// as normal files, online-only ones leave the PC - their data stays in the cloud), then the registration with
-    /// Windows ends. What a program held meanwhile is noted and cleared at the next start, with the same registration.
+    /// Windows ends. Should a program hold a placeholder, the registration stays - so nothing is left that Windows calls
+    /// damaged - and the folder is noted and cleared as soon as it is free (<see cref="FinishCleanUps"/>). False then.
     /// </summary>
     [SupportedOSPlatform("windows10.0.17763")]
-    private void EndOnDemand(string id)
+    private bool EndOnDemand(string id)
     {
         OnDemandPair? live = null;
         lock (_gate) _live?.Remove(id, out live);
         live ??= new OnDemandPair(_paths, id, _files, () => FindPair(id), () => null, () => { });
         var folder = FindPair(id)?.LocalPath;
-        var registration = live.SyncRootId.Split('!')[^1];
+        var registration = live.SyncRootId;
+        var ended = false;
         try
         {
-            live.Unregister();
+            ended = live.Unregister(CleanUpWait);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {
@@ -163,14 +165,14 @@ public sealed partial class SyncService
         {
             live.Dispose();
         }
-        var clear = folder is null || !Directory.Exists(folder) || Leftovers.WaitUntilClear(folder, CleanUpWait);
         // The registration that ended may be the one older left-overs belong to: they can be cleared now.
         FinishCleanUps(ending: id);
-        if (!clear)
+        if (!ended && folder is not null)
         {
-            RememberCleanUp(new PendingCleanUp(SyncRoots.IdFor(_paths, registration), folder!, id));
-            Log.Warn("OnDemand", $"'{id}': {Leftovers.Count(folder!)} placeholder(s) left in the folder - a program held them; they are cleared at the next start.");
+            RememberCleanUp(new PendingCleanUp(registration, folder, id));
+            Log.Warn("OnDemand", $"'{id}': {Leftovers.Count(folder)} placeholder(s) held by a program - the folder is cleared as soon as they are free.");
         }
+        return ended || folder is null;
     }
 
     [SupportedOSPlatform("windows10.0.17763")]

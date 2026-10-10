@@ -442,18 +442,27 @@ like a rebuild and deletes nothing - even when "apply deletions" was chosen befo
 not uploaded yet becomes a normal file (`CfRevertPlaceholder`), a placeholder folder likewise, or it goes when empty.
 Only then does the registration end. The reason: a placeholder left after unregistering - because a program such as
 Explorer or the search index held it open just then - belongs to a registration that no longer exists. Windows calls
-it damaged (error 363), nothing can open or delete it, and Explorer cannot even delete the folder. Therefore:
-- After unregistering, `EndOnDemand` waits up to 60 s until the folder is clear (`Leftovers.WaitUntilClear`).
-- Should something stay, `cleanup.json` notes folder and registration. At the next start (and the next ending)
-  `FinishCleanUps` registers exactly that registration at that folder again for a moment - only then can Windows read
-  the placeholders again -, dissolves them and unregisters. A registration a synchronisation uses, or one pointing to
-  another folder by now, is never touched; the entry waits until that synchronisation ends.
+it damaged (error 363), nothing can open or delete it, and Explorer cannot even delete the folder. Therefore **a
+registration ends only once nothing of it is left in the folder** (`Leftovers.EndWhenClear`, for ending, switching,
+clearing up and uninstalling):
+- Dissolve first, with up to three attempts. While a program still holds something, the registration stays - named
+  "CloudDrive-Sync – wird aufgeräumt" -, every placeholder stays valid and deletable, and `cleanup.json` notes folder
+  and registration. The window for ending says so (`EndResult.StillHeld`).
+- After unregistering, the folder is checked. Should Windows have left placeholders after all, the same registration
+  comes back at once (only it makes them readable), they are dissolved, and the registration ends again.
+- `FinishCleanUps` tries at the start and then every two minutes while `cleanup.json` names something; once the folder
+  is free, the registration ends. A registration a synchronisation uses, or one pointing to another folder by now, is
+  never touched; the entry waits until that synchronisation ends.
 - Every new synchronisation with files on demand and every switch gets a registration of its own (`RegistrationKey`,
   "&lt;synchronisation&gt;-&lt;8 characters&gt;"), so remains of an earlier one never fit a new one. `ConnectNew` does not
   register a folder with remains at all (`CD-4602`).
 
-When uninstalling, the Velopack hook unregisters all of the program's folders (`SyncRoots.UnregisterAll`, 12 000 entries
-in less than 4 s); should CloudDrive-Sync come back, the rule "registration lost" applies.
+**Uninstalling** (Velopack hook, at most 30 s, no user interface): `SyncService.EndAllForUninstall` ends every
+registration of the program by the same rule; a folder a program holds (or the time is not enough for) stays registered
+and is noted in `cleanup.json`. Then `Uninstall.RemoveData` removes the sentinel files in the folders on the PC (never
+the one in the cloud - other PCs use it), the key in the credential manager and the data folder except `cleanup.json` -
+only its own (the default one or one with `settings.json`), never a drive, the user folder or `%LOCALAPPDATA%` itself.
+Should CloudDrive-Sync come back, it clears what is still noted.
 
 **Switching** (`SyncService.Conversion.cs`, in the window "Einstellungen der Synchronisation"):
 - **Classic → files on demand:**

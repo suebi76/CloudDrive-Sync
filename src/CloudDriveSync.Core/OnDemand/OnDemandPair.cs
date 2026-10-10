@@ -123,23 +123,32 @@ internal sealed class OnDemandPair : IDisposable
     }
 
     /// <summary>
-    /// Ends the registration. The placeholders are cleared first, here and now (<see cref="Leftovers.Dissolve"/>): files
-    /// whose data is on the PC become normal files, online-only ones leave the PC (their data stays in the cloud) -
-    /// Windows' own clear-up afterwards then has nothing left that a program could hold.
+    /// Ends the registration once nothing of it is left (<see cref="Leftovers.EndWhenClear"/>): files whose data is on
+    /// the PC become normal files, online-only ones leave the PC (their data stays in the cloud). While a program holds a
+    /// placeholder, the registration stays and false is returned - the folder is cleared later, never left with
+    /// placeholders nothing can read.
     /// </summary>
-    public CleanUpResult Unregister()
+    public bool Unregister(TimeSpan wait)
     {
         Disconnect();
-        var result = new CleanUpResult(0, 0, []);
         var id = SyncRootId;
-        if (SyncRoots.IsRegistered(id))
+        var folder = _pair()?.LocalPath ?? SyncRoots.FolderOf(id);
+        if (!SyncRoots.IsRegistered(id)) return folder is null || Leftovers.Count(folder) == 0;
+        if (folder is null)
         {
-            if (_pair()?.LocalPath is { } folder && Directory.Exists(folder)) result = Leftovers.Dissolve(folder);
             SyncRoots.Unregister(id);
+            return true;
         }
-        Log.Info("OnDemand", $"'{Id}': registration with Windows ended ({result.Removed} online-only file(s) removed, {result.Kept} kept as normal files, {result.Failed.Count} held by a program).");
-        return result;
+        var ended = Leftovers.EndWhenClear(id, folder, CleanUpSpec(id, folder, Id), wait, out var result);
+        Log.Info("OnDemand", ended
+            ? $"'{Id}': registration with Windows ended ({result.Removed} online-only file(s) removed, {result.Kept} kept as normal files)."
+            : $"'{Id}': {result.Failed.Count} placeholder(s) held by a program; the registration stays until the folder is cleared.");
+        return ended;
     }
+
+    /// <summary>How a folder stays registered (or comes back) while what is left of a synchronisation is cleared.</summary>
+    public static SyncRootSpec CleanUpSpec(string id, string folder, string context) =>
+        new(id, folder, "CloudDrive-Sync – wird aufgeräumt", $"{Environment.ProcessPath},0", "0", context);
 
     /// <summary>
     /// Gives the folder's entry in Explorer the name from the settings - Windows takes a registration with the same ID as

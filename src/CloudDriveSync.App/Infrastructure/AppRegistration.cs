@@ -41,10 +41,27 @@ internal static class AppRegistration
         }
     }
 
+    /// <summary>Before uninstalling, last: settings, sign-ins, logs and rclone (<see cref="Core.Uninstall.RemoveData"/>).</summary>
+    public static void RemoveData()
+    {
+        try
+        {
+            var paths = Core.AppPaths.FromEnvironment();
+            var stayed = Core.Uninstall.RemoveData(paths);
+            // The log went with the data folder; what stayed is written only when something did.
+            if (stayed.Count > 0 && Directory.Exists(paths.LogDir)) Core.Diagnostics.Log.Warn("App", $"Uninstalling: {stayed.Count} thing(s) stayed: {string.Join("; ", stayed)}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // Uninstalling goes on.
+        }
+    }
+
     /// <summary>
-    /// Before uninstalling: ends the registrations of synchronisations with files on demand. Windows keeps the fetched
-    /// files as normal files and removes the online-only ones from the PC; their data stays in the cloud. Velopack allows
-    /// 30 seconds - ending 12 000 entries took less than 4.
+    /// Before uninstalling: ends the registrations of synchronisations with files on demand, each only once its folder
+    /// is clear: fetched files stay as normal files, online-only ones leave the PC (their data stays in the cloud). A
+    /// folder a program holds stays registered - nothing in it becomes unreadable - and is cleared should CloudDrive-Sync
+    /// come back. Velopack allows 30 seconds.
     /// </summary>
     public static void EndFilesOnDemand()
     {
@@ -54,7 +71,7 @@ internal static class AppRegistration
             // The log stays with the settings; it tells later what happened here.
             if (Directory.Exists(paths.LogDir)) Core.Diagnostics.Log.Initialize(paths.LogDir);
             // On a thread of its own: the registration is a Windows Runtime call, the uninstall step runs on the UI thread.
-            var ending = Task.Run(() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763) ? Core.CloudFiles.SyncRoots.UnregisterAll(paths) : []);
+            var ending = Task.Run(() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763) ? Core.Sync.SyncService.EndAllForUninstall(paths, TimeSpan.FromSeconds(20)) : []);
             if (ending.Wait(TimeSpan.FromSeconds(25))) Core.Diagnostics.Log.Info("App", $"Uninstalling: {ending.Result.Count} folder(s) with files on demand unregistered.");
             // The entries of classic synchronisations in Explorer's navigation pane go, too.
             Core.Diagnostics.Log.Info("App", $"Uninstalling: {Core.CloudFiles.ExplorerEntries.RemoveAll(paths)} Explorer entry(s) removed.");

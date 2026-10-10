@@ -3,6 +3,27 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.6] – 2026-10-10
+
+Sixth test version on the way to 0.3: nothing of a synchronisation or of CloudDrive-Sync itself is left behind.
+
+### Fixed
+
+- A synchronisation with files on demand could still leave a folder behind that could not be deleted, when Windows did
+  not clear every placeholder as its registration ended. The registration with Windows now ends only once nothing of it
+  is left in the folder: while a program holds a file there, the registration stays - every placeholder stays valid and
+  deletable - and CloudDrive-Sync clears the folder as soon as the program lets go (every two minutes, and at every
+  start). Should Windows still leave placeholders after the end, the same registration comes back at once, clears them,
+  and ends again. The window for ending says when a program still holds something.
+
+### Changed
+
+- Uninstalling removes everything of CloudDrive-Sync from the PC: its entries in Windows, the registrations of files on
+  demand (each ended only with its folder clear, as above), the settings, the encrypted sign-ins and their key in
+  Windows' credential manager, the logs, rclone and the sentinel files in the synchronised folders. The synchronised
+  folders and every file in them stay; in the cloud nothing changes. Only when a program held files in a folder with
+  files on demand does a note of it stay, so a new installation can finish clearing it.
+
 ## [0.3.0-preview.5] – 2026-10-07
 
 Fifth test version on the way to 0.3, with what the fourth showed.

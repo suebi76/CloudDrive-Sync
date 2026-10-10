@@ -98,7 +98,7 @@ public sealed partial class SyncService
                 throw new CdException("CD-4604", $"{left.Count} file(s) did not arrive, e.g. {Path.GetFileName(left[0].Path)}");
 
             progress?.Report("Stellt auf „Alle Dateien auf diesem PC“ um …");
-            EndOnDemand(id);
+            _ = EndOnDemand(id);
             DeleteOnDemandState(id);
             SetMode(id, SyncMode.Classic);
             UpdateExplorerEntry(id);
@@ -132,7 +132,7 @@ public sealed partial class SyncService
     [SupportedOSPlatform("windows10.0.17763")]
     private void BackToClassic(string id)
     {
-        EndOnDemand(id);
+        _ = EndOnDemand(id);
         DeleteOnDemandState(id);
         SetMode(id, SyncMode.Classic);
         UpdateExplorerEntry(id);

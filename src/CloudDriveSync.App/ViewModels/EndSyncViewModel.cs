@@ -96,10 +96,12 @@ public sealed partial class EndSyncViewModel : ObservableObject
         var progress = new Progress<string>(text => Progress = text);
         try
         {
+            var held = false;
             foreach (var pair in _pairs)
             {
                 var result = await _host.Sync.RemoveAsync(pair.Id, keep, progress);
                 Changed = true;
+                held |= result.StillHeld;
                 if (result.Stayed.Count > 0) _rest.Add((pair.LocalPath, result.Stayed));
             }
             if (_accountId is not null)
@@ -108,20 +110,28 @@ public sealed partial class EndSyncViewModel : ObservableObject
                 await _host.Accounts.RemoveAsync(_accountId);
                 Changed = true;
             }
-            if (_rest.Count == 0)
+            if (_rest.Count == 0 && !held)
             {
                 // Done: the window closes - it may now, the work is over.
                 IsWorking = false;
                 CloseRequested?.Invoke(this, EventArgs.Empty);
                 return;
             }
-            var stayed = _rest.SelectMany(r => r.Stayed).ToList();
-            var one = stayed.Count == 1;
-            Result = (one
-                    ? "Eine Datei gibt es nur auf diesem PC (z. B. eine Sperrdatei von Office), oder sie wurde gerade geändert: "
-                    : $"{Format.Count(stayed.Count, "Datei", "Dateien")} gibt es nur auf diesem PC (z. B. Sperrdateien von Office), oder sie wurden gerade geändert: ") +
-                Names(stayed) + (one ? ". Soll sie auch in den Papierkorb?" : ". Sollen sie auch in den Papierkorb?") + " Dann ist der Ordner ganz weg.";
-            HasRest = true;
+            var text = held
+                ? "Ein Programm hält gerade noch Dateien im Ordner geöffnet (z. B. ein Explorer-Fenster oder Office). Sobald es sie freigibt, " +
+                  "räumt CloudDrive-Sync den Ordner von selbst fertig auf – auch nach einem Neustart. "
+                : "";
+            if (_rest.Count > 0)
+            {
+                var stayed = _rest.SelectMany(r => r.Stayed).ToList();
+                var one = stayed.Count == 1;
+                text += (one
+                        ? "Eine Datei gibt es nur auf diesem PC (z. B. eine Sperrdatei von Office), oder sie wurde gerade geändert: "
+                        : $"{Format.Count(stayed.Count, "Datei", "Dateien")} gibt es nur auf diesem PC (z. B. Sperrdateien von Office), oder sie wurden gerade geändert: ") +
+                    Names(stayed) + (one ? ". Soll sie auch in den Papierkorb?" : ". Sollen sie auch in den Papierkorb?") + " Dann ist der Ordner ganz weg.";
+                HasRest = true;
+            }
+            Result = text.TrimEnd();
         }
         catch (CdException e)
         {

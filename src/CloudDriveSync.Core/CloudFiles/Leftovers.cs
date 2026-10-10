@@ -126,6 +126,46 @@ public static class Leftovers
     }
 
     /// <summary>
+    /// Ends a registration - but only once nothing of it is left in its folder. A placeholder is valid only while its
+    /// registration exists; one left behind after the end is unreadable for good, and Explorer cannot even delete the
+    /// folder. So: the placeholders are dissolved first (<see cref="Dissolve"/>, a few attempts); while a program holds
+    /// one, the registration stays (named <paramref name="again"/>) and false is returned - the caller clears the folder
+    /// later. After the end the folder is checked once more: should Windows have left placeholders after all, the same
+    /// registration comes back (only it makes them readable), they are dissolved, and the end follows again.
+    /// </summary>
+    /// <param name="again">The registration to come back with: same ID and folder, a name that says what goes on.</param>
+    /// <param name="wait">How long Windows gets to clear the folder after the end.</param>
+    /// <returns>True when the registration ended and the folder holds no placeholder.</returns>
+    public static bool EndWhenClear(string id, string? folder, SyncRootSpec again, TimeSpan wait, out CleanUpResult result)
+    {
+        result = new CleanUpResult(0, 0, []);
+        var exists = folder is not null && Directory.Exists(folder);
+        for (var round = 0; round < 3; round++)
+        {
+            if (exists)
+            {
+                for (var attempt = 0; ; attempt++)
+                {
+                    var step = Dissolve(folder!);
+                    result = new CleanUpResult(result.Removed + step.Removed, result.Kept + step.Kept, step.Failed);
+                    if (Count(folder!) == 0) break;
+                    if (attempt == 2)
+                    {
+                        // Held by a program: the registration stays, so every placeholder stays valid and can go later.
+                        SyncRoots.Register(again);
+                        return false;
+                    }
+                    Thread.Sleep(1000);
+                }
+            }
+            if (SyncRoots.IsRegistered(id)) SyncRoots.Unregister(id);
+            if (!exists || WaitUntilClear(folder!, wait)) return true;
+            SyncRoots.Register(again);
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Waits until nothing is left below the folder - Windows clears what it still finds a moment after a registration
     /// ended. False when something stays.
     /// </summary>

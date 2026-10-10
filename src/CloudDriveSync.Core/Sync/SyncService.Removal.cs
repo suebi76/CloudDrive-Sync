@@ -26,7 +26,11 @@ public enum KeepOnPc
 /// <summary>What ending a synchronisation did on the PC.</summary>
 /// <param name="Recycled">Files moved into Windows' recycle bin.</param>
 /// <param name="Stayed">Files that stayed although nothing was to stay - only on the PC, changed meanwhile, or held by a program.</param>
-public sealed record EndResult(int Recycled, IReadOnlyList<string> Stayed);
+/// <param name="StillHeld">
+/// Files on demand: a program held placeholders, so the folder stays registered with Windows until it is free - then
+/// CloudDrive-Sync clears it by itself (also after a restart).
+/// </param>
+public sealed record EndResult(int Recycled, IReadOnlyList<string> Stayed, bool StillHeld = false);
 
 public sealed partial class SyncService
 {

@@ -79,9 +79,11 @@ bekommst du Vorabversionen zum Ausprobieren. Updates kommen nur aus diesem GitHu
 Installation anhand seiner Prüfsumme kontrolliert. Installation und Updates erledigt
 [Velopack](https://velopack.io) (MIT-Lizenz), das Teil des Programms ist.
 
-**Deinstallieren:** *Windows-Einstellungen › Apps › Installierte Apps › CloudDrive-Sync*. Einstellungen und Anmeldungen
-(`%LOCALAPPDATA%\CloudDrive-Sync`) sowie deine synchronisierten Ordner bleiben erhalten. Bei „Dateien bei Bedarf“
-bleiben heruntergeladene Dateien als normale Dateien; was nur online lag, verschwindet vom PC und bleibt in der Cloud.
+**Deinstallieren:** *Windows-Einstellungen › Apps › Installierte Apps › CloudDrive-Sync*. Dabei verschwindet alles von
+CloudDrive-Sync vom PC: Einstellungen, Anmeldungen (samt Schlüssel in der Windows-Anmeldeinformationsverwaltung),
+Protokolle, rclone und die Einträge im Explorer. Deine synchronisierten Ordner und alle Dateien darin bleiben erhalten,
+in der Cloud ändert sich nichts. Bei „Dateien bei Bedarf“ bleiben heruntergeladene Dateien als normale Dateien; was nur
+online lag, verschwindet vom PC und bleibt in der Cloud.
 
 ## Code signing policy
 
