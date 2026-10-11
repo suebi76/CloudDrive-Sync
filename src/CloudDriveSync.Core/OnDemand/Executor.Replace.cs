@@ -53,7 +53,16 @@ internal sealed partial class Executor
             await SettleAsync(_rc, _files, _store, _pair, local.Path, backup, _cancel);
             throw;
         }
-        await SettleAsync(_rc, _files, _store, _pair, local.Path, backup, _cancel);
+        // Uploaded: the file is there, the copy just goes (one request instead of looking first).
+        try
+        {
+            await _rc.CallAsync("operations/deletefile", new JsonObject { ["fs"] = _cloudFs, ["remote"] = backup }, TimeSpan.FromMinutes(2), _cancel);
+            _store.SetMeta(BackupKey, "");
+        }
+        catch (CdException e)
+        {
+            Log.Warn("OnDemand", $"'{_pair.Id}': the copy beside '{local.Path}' goes with the next run: {e.Code} {e.Detail}");
+        }
     }
 
     /// <summary>
