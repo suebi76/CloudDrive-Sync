@@ -3,6 +3,25 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.21] – 2026-10-11
+
+Twenty-first test version on the way to 0.3: names from the server stay names.
+
+### Security
+
+- Classic synchronisations: a name from the server with "\\" in it ("..\\Fremd.txt" - some servers allow that) was taken
+  for a path by CloudDrive-Sync's own check for same-size changes. The first run could rename a file beside the
+  synchronised folder, a later same-size change in the cloud replace it. rclone itself was never affected (it writes such
+  a name as "..＼Fremd.txt", a file in the folder). Every path of the cloud now becomes a path on the PC in one place only
+  (`NameEncoding.ToLocalFullPath`, in both modes), and that place keeps it inside the folder.
+
+### Fixed
+
+- Classic synchronisations: a same-size change of a file whose name Windows does not allow ("Frage?.txt", on the PC
+  "Frage？.txt") never arrived - the check looked for the file under the server's name.
+- Classic synchronisations: renaming such a file only in upper and lower case ("frage?.txt" to "Frage?.txt") was not
+  carried over, on either side.
+
 ## [0.3.0-preview.20] – 2026-10-11
 
 Twentieth test version on the way to 0.3: servers that take no names with a dot.

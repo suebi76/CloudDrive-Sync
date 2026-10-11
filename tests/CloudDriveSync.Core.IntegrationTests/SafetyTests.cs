@@ -41,6 +41,37 @@ public class SafetyTests
     }
 
     /// <summary>
+    /// Some servers allow "\" in a name: "..\Fremd.txt" is a file in the cloud folder, and rclone writes it on the PC as
+    /// "..＼Fremd.txt". CloudDrive-Sync's own checks took such a name for a path - the file beside the synchronised folder was
+    /// renamed by the first run and replaced by a same-size change in the cloud. No name of a server may reach a file there.
+    /// </summary>
+    [Theory]
+    [InlineData(SyncMode.Classic)]
+    [InlineData(SyncMode.OnDemand)]
+    public async Task A_name_from_the_server_never_reaches_a_file_outside_the_folder(SyncMode mode)
+    {
+        await using var world = await SyncWorld.CreateAsync();
+        var outside = Path.Combine(Path.GetDirectoryName(world.Local)!, "Fremd.txt");
+        Directory.CreateDirectory(world.Local);
+        File.WriteAllText(outside, "nicht anfassen");
+        // The test server keeps its files on Windows, too: on its disk "..＼Fremd.txt", over WebDAV "..\Fremd.txt".
+        world.WriteCloud("..\uFF3CFremd.txt", "erste Fassung!");
+        world.WriteCloud("Anderes.txt", "bleibt");
+        await world.AddAccountAsync();
+        await world.AddPairAsync(p => p.Mode = mode);
+        var first = await world.RunAsync(BisyncMode.Resync);
+        Assert.True(first.Success, first.ErrorDetail);
+        Assert.True((await world.RunAsync()).Success);
+
+        world.WriteCloud("..\uFF3CFremd.txt", "neue Fassung!!", later: true);
+        var outcome = await world.RunAsync();
+        Assert.True(outcome.Success, outcome.ErrorDetail);
+        Assert.Equal("nicht anfassen", File.ReadAllText(outside));
+        Assert.Equal(["Fremd.txt", "Schule Übungen"], Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(world.Local)!).Select(Path.GetFileName).Order());
+        if (mode == SyncMode.Classic) Assert.Equal("neue Fassung!!", world.ReadPc("..\uFF3CFremd.txt"));
+    }
+
+    /// <summary>
     /// A server that takes no file whose name begins with a dot (an admin's rule in Nextcloud, answered with an error page):
     /// the protection file stays on the PC only, the refused file stays on the PC without being tried again, and "Künftig
     /// ignorieren" leaves out names with a dot - never every file of its type (".notizen.txt" is no reason to leave out .txt).

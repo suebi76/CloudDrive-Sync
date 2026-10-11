@@ -439,6 +439,10 @@ Rules for the core that follow from this:
 - **A pinned folder** passes its state on to everything in it (`CfSetPinState` with `RECURSE`), and the core fetches it.
 - **Placeholders are named like rclone names files:** `NameEncoding` translates names the way rclone's local backend
   writes them on Windows ("Was?.docx" becomes "Was？.docx"). So a folder bisync filled matches after switching over.
+- **A path of the cloud stays in the folder:** every path of the cloud becomes a path on the PC in exactly one place
+  (`NameEncoding.ToLocalFullPath`, in both modes). A name with "\" or ".." from the server stays a name in the folder
+  ("..＼Fremd.txt"); that place checks it once more. Before, the classic check for same-size changes
+  (`QuietServerChanges`) took such names for a path and reached a file beside the folder.
 
 ### How the core works
 

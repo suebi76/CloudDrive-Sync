@@ -152,6 +152,29 @@ public class OperationTests
     }
 
     [Fact]
+    public async Task Changing_only_upper_and_lower_case_of_a_name_Windows_does_not_allow_on_the_PC()
+    {
+        // "frage?.txt" on the server is "frage？.txt" on the PC: the rename was looked for on the server under that name.
+        await using var world = await ReadyAsync(("frage\uFF1F.txt", "f"), ("x.txt", "x"), ("y.txt", "y"));
+        File.Move(world.Pc("frage\uFF1F.txt"), world.Pc("Frage\uFF1F.txt"));
+        await world.SyncAndAssertInStepAsync();
+        Assert.Equal(["Frage\uFF1F.txt", "x.txt", "y.txt"], world.CloudFiles());
+        Assert.Equal("f", world.ReadCloud("Frage\uFF1F.txt"));
+    }
+
+    [Fact]
+    public async Task Changing_only_upper_and_lower_case_of_a_name_Windows_does_not_allow_on_the_server()
+    {
+        // The other way round: the PC's "frage？.txt" was not found for the server's "Frage?.txt".
+        await using var world = await ReadyAsync(("frage\uFF1F.txt", "f"), ("x.txt", "x"), ("y.txt", "y"));
+        File.Move(world.Cloud("frage\uFF1F.txt"), world.Cloud("Frage\uFF1F.txt"));
+        File.SetLastWriteTimeUtc(world.Cloud("Frage\uFF1F.txt"), DateTime.UtcNow.AddMinutes(2));
+        await world.SyncAndAssertInStepAsync();
+        Assert.Equal(["Frage\uFF1F.txt", "x.txt", "y.txt"], world.PcFiles());
+        Assert.Equal("f", world.ReadPc("Frage\uFF1F.txt"));
+    }
+
+    [Fact]
     public async Task Two_server_files_differing_only_in_case_are_both_kept()
     {
         await using var world = await ReadyAsync(("x.txt", "x"), ("y.txt", "y"), ("z.txt", "z"));

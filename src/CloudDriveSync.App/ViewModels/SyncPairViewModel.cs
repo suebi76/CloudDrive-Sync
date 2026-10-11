@@ -343,7 +343,7 @@ public sealed partial class SyncPairViewModel : ObservableObject
     [RelayCommand]
     private void ShowLocalOnly()
     {
-        if (_pair.LocalOnly.FirstOrDefault() is { } first) Shell.ShowInFolder(System.IO.Path.Combine(_pair.LocalPath, first.Replace('/', '\\')));
+        if (_pair.LocalOnly.FirstOrDefault() is { } first) Shell.ShowInFolder(Core.OnDemand.NameEncoding.ToLocalFullPath(_pair.LocalPath, first));
     }
 
     [RelayCommand]

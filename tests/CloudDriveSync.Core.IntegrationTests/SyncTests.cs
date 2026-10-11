@@ -125,6 +125,27 @@ public class SyncTests
     }
 
     [Fact]
+    public async Task A_same_size_change_of_a_name_Windows_does_not_allow_arrives_too()
+    {
+        // "Frage?.txt" is fine on the server; on the PC rclone names it "Frage？.txt" (no "?" in Windows). The same-size
+        // check looked for "Frage?.txt" on the PC, found nothing - and the change never arrived.
+        await using var world = await SyncWorld.CreateAsync();
+        // The test server keeps its files on Windows, too: on its disk the name is the look-alike, over WebDAV "Frage?.txt".
+        world.WriteCloud("Frage\uFF1F.txt", "Version 1");
+        world.WriteCloud("Anderes.txt", "bleibt");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        Assert.True((await world.RunAsync()).Success);
+        Assert.Equal("Version 1", world.ReadPc("Frage\uFF1F.txt"));
+
+        world.WriteCloud("Frage\uFF1F.txt", "Version 2", later: true);
+        var outcome = await world.RunAsync();
+        Assert.True(outcome.Success, outcome.ErrorDetail);
+        Assert.Equal("Version 2", world.ReadPc("Frage\uFF1F.txt"));
+    }
+
+    [Fact]
     public async Task A_change_on_the_server_with_the_same_size_arrives_also_with_a_rebuild()
     {
         // A rebuild (after "Auswahl ändern", or as the answer to a question) compares by size, too: a same-size change on

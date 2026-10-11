@@ -320,7 +320,7 @@ public sealed partial class SyncService : IAsyncDisposable
                 // that left out every text file); anything else by its type.
                 var name = path[(path.LastIndexOf('/') + 1)..];
                 var extension = Path.GetExtension(name);
-                var rule = Directory.Exists(Path.Combine(pair.LocalPath, OnDemand.NameEncoding.ToLocalPath(path))) ? SyncFilters.PathRule(path, folder: true)
+                var rule = Directory.Exists(OnDemand.NameEncoding.ToLocalFullPath(pair.LocalPath, path)) ? SyncFilters.PathRule(path, folder: true)
                     // The server refused even the protection file: it takes no name with a dot at all.
                     : name.StartsWith('.') ? (pair.CloudCheckFile ? SyncFilters.NameRule(name) : SyncFilters.DotRule)
                     : extension.Length > 1 ? SyncFilters.TypeRule(extension) : SyncFilters.PathRule(path, folder: false);

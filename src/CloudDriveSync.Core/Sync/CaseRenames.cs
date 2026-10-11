@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.Errors;
+using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Sync;
@@ -35,10 +36,11 @@ internal static partial class CaseRenames
             for (var level = 0; level < now.Length; level++)
             {
                 if (was[level] == now[level]) continue;
-                // Folders above are renamed first, so the old name sits under their new spelling.
+                // Folders above are renamed first, so the old name sits under their new spelling. Names on the PC are
+                // rclone's ("Frage？.txt"), the server knows them as "Frage?.txt".
                 var parent = string.Join('/', now[..level]);
-                var from = Join(parent, was[level]);
-                var to = Join(parent, now[level]);
+                var from = NameEncoding.ToStandardPath(Join(parent, was[level]));
+                var to = NameEncoding.ToStandardPath(Join(parent, now[level]));
                 if (seen.Add(from + "\n" + to)) renames.Add((from, to, level < now.Length - 1, level));
             }
         }
@@ -106,20 +108,23 @@ internal static partial class CaseRenames
                 if (!listings.TryGetValue(server, out var entries))
                     listings[server] = entries = await ListAsync(rc, cloud, server, cancellationToken);
                 var onServer = entries.Where(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
+                // On the PC the name is rclone's ("Frage？.txt" for "Frage?.txt") - a name, never a path.
                 var onPc = Directory.Exists(local)
-                    ? Directory.EnumerateFileSystemEntries(local).Select(Path.GetFileName).Where(n => name.Equals(n, StringComparison.OrdinalIgnoreCase)).ToList()
+                    ? Directory.EnumerateFileSystemEntries(local).Select(Path.GetFileName)
+                        .Where(n => NameEncoding.ToLocalName(name).Equals(n, StringComparison.OrdinalIgnoreCase)).ToList()
                     : [];
                 // Missing on one side, or two spellings on the server: a real difference, not a matter of spelling.
                 if (onServer.Count != 1 || onPc.Count != 1) return false;
-                if (onPc[0] != onServer[0])
+                var spelling = NameEncoding.ToLocalName(onServer[0]);
+                if (onPc[0] != spelling)
                 {
                     var from = Path.Combine(local, onPc[0]!);
-                    var to = Path.Combine(local, onServer[0]);
+                    var to = Path.Combine(local, spelling);
                     if (Directory.Exists(from)) Directory.Move(from, to);
                     else File.Move(from, to);
                     Log.Info("Sync", $"'{pair.Id}': a rename of upper and lower case on the server carried over to the PC.");
                 }
-                local = Path.Combine(local, onServer[0]);
+                local = Path.Combine(local, spelling);
                 server = Join(server, onServer[0]);
             }
         }

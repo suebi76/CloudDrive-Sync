@@ -611,7 +611,7 @@ internal sealed partial class Executor
         {
             // Its data goes into the recycle bin as a normal file, so freeing space can never touch it.
             Placeholders.Revert(full);
-            var target = Path.Combine(SyncTrash.FolderOf(_pair.LocalPath), _trashStamp ??= SyncTrash.NewStamp(), NameEncoding.ToLocalPath(remove.Path));
+            var target = NameEncoding.ToLocalFullPath(Path.Combine(SyncTrash.FolderOf(_pair.LocalPath), _trashStamp ??= SyncTrash.NewStamp()), remove.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Move(full, target, overwrite: true);
         }
@@ -991,7 +991,7 @@ internal sealed partial class Executor
 
     private static bool PinnedFolder(string folder) => ((uint)File.GetAttributes(folder) & 0x00080000) != 0;
 
-    private string LocalFull(string path) => Path.Combine(_pair.LocalPath, NameEncoding.ToLocalPath(path));
+    private string LocalFull(string path) => NameEncoding.ToLocalFullPath(_pair.LocalPath, path);
 
     private static string Parent(string path) => path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
 

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
+using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.Sync;
@@ -69,7 +70,7 @@ internal sealed class QuietServerChanges
                 await CopyToPcAsync(path, temporary, cancellationToken);
                 if (trashFolder is not null)
                 {
-                    var backup = Path.Combine(trashFolder, path.Replace('/', '\\'));
+                    var backup = NameEncoding.ToLocalFullPath(trashFolder, path);
                     Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
                     File.Copy(local, backup, overwrite: true);
                 }
@@ -192,7 +193,7 @@ internal sealed class QuietServerChanges
         await CopyToPcAsync(path, temporary, cancellationToken);
         if (trashFolder is not null)
         {
-            var backup = Path.Combine(trashFolder, path.Replace('/', '\\'));
+            var backup = NameEncoding.ToLocalFullPath(trashFolder, path);
             Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
             File.Copy(local, backup, overwrite: true);
         }
@@ -296,7 +297,12 @@ internal sealed class QuietServerChanges
         File.Move(temporary, _snapshotFile, overwrite: true);
     }
 
-    private string LocalPath(string path) => Path.Combine(_pair.LocalPath, path.Replace('/', '\\'));
+    /// <summary>
+    /// The file on the PC for a path of the cloud - named as rclone names it there ("Frage?.txt" is "Frage？.txt"). Before,
+    /// the path was taken as it was: such a file was never found, and a name with "\" from the server ("..\Fremd.txt")
+    /// led to a file outside the synchronised folder - which a same-size change in the cloud then replaced.
+    /// </summary>
+    private string LocalPath(string path) => NameEncoding.ToLocalFullPath(_pair.LocalPath, path);
 
     private async Task CopyToPcAsync(string cloudPath, string localPath, CancellationToken cancellationToken)
     {

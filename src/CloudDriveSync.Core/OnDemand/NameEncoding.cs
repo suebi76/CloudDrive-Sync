@@ -58,6 +58,19 @@ public static class NameEncoding
     public static string ToLocalPath(string standardPath) =>
         string.Join('\\', standardPath.Split('/').Select(ToLocalName));
 
+    /// <summary>
+    /// The full path on the PC of a "/" separated path of the cloud, below <paramref name="root"/> - and never outside it.
+    /// Names come from a server, and some servers allow "\" or ".." in a name: encoded like rclone does, they stay names
+    /// ("..＼Datei.txt" - a file in the folder). The check below only makes sure of it once more.
+    /// </summary>
+    public static string ToLocalFullPath(string root, string standardPath)
+    {
+        var names = standardPath.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(ToLocalName).ToList();
+        if (names.Count == 0 || names.Any(name => name is "." or ".." || name.IndexOfAny(['\\', '/', ':']) >= 0))
+            throw new ArgumentException("A path of the cloud would lead outside the synchronised folder.", nameof(standardPath));
+        return Path.Combine([root, .. names]);
+    }
+
     /// <summary>A relative Windows path as "/" separated path of the cloud.</summary>
     public static string ToStandardPath(string localPath) =>
         string.Join('/', localPath.Split('\\', '/').Select(ToStandardName));

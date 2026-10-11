@@ -113,7 +113,7 @@ public sealed partial class SyncService
         foreach (var (path, noted) in record.Pc)
         {
             if (path == SyncFilters.SentinelFile) continue;
-            var file = new FileInfo(Path.Combine(pair.LocalPath, NameEncoding.ToLocalPath(path)));
+            var file = new FileInfo(NameEncoding.ToLocalFullPath(pair.LocalPath, path));
             if (file.Exists && file.Length == noted.Size && Math.Abs((file.LastWriteTimeUtc - noted.Time).Ticks) <= TimeSpan.TicksPerSecond) files.Add(file.FullName);
         }
         return files;

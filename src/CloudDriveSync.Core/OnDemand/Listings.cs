@@ -139,7 +139,7 @@ internal static class Listings
             {
                 if (entry.Path == SyncFilters.SentinelFile) continue;
                 cancellationToken.ThrowIfCancellationRequested();
-                var full = Path.Combine(localRoot, NameEncoding.ToLocalPath(entry.Path));
+                var full = NameEncoding.ToLocalFullPath(localRoot, entry.Path);
                 PlaceholderInfo? placeholder;
                 try
                 {
@@ -180,7 +180,7 @@ internal static class Listings
         {
             if (listed.Contains(path) || refused.Any(r => path.Equals(r, StringComparison.OrdinalIgnoreCase) || path.StartsWith(r + "/", StringComparison.OrdinalIgnoreCase)))
                 continue;
-            var full = Path.Combine(localRoot, NameEncoding.ToLocalPath(path));
+            var full = NameEncoding.ToLocalFullPath(localRoot, path);
             if (!StillThere(full)) continue;
             refused.Add(path);
             if (Placeholders.IsBrokenAt(full)) broken.Add(path);

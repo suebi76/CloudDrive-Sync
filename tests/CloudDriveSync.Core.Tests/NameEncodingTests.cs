@@ -5,6 +5,31 @@ namespace CloudDriveSync.Core.Tests;
 public class NameEncodingTests
 {
     [Theory]
+    [InlineData("..")]
+    [InlineData("../Fremd/Datei.txt")]
+    [InlineData("Ordner/../../Fremd.txt")]
+    [InlineData("..\\..\\Fremd.txt")]
+    [InlineData("Ordner/..\\..\\..\\Windows\\Fremd.txt")]
+    [InlineData("C:\\Windows\\Fremd.txt")]
+    [InlineData("\\\\server\\share\\Fremd.txt")]
+    [InlineData("/Fremd.txt")]
+    [InlineData("Ordner//Fremd.txt")]
+    public void A_name_from_a_server_never_leads_outside_the_folder(string fromServer)
+    {
+        // Names come from a server, and some servers allow "\\" or ".." in a name: none may reach a file elsewhere on the PC.
+        var root = Path.Combine(Path.GetTempPath(), "Schule Übungen");
+        var full = NameEncoding.ToLocalFullPath(root, fromServer);
+        Assert.StartsWith(root + Path.DirectorySeparatorChar, full, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_name_from_a_server_is_the_name_rclone_gives_the_file_on_the_PC()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Schule Übungen");
+        Assert.Equal(Path.Combine(root, "Ordner", "Frage\uFF1F.txt"), NameEncoding.ToLocalFullPath(root, "Ordner/Frage?.txt"));
+    }
+
+    [Theory]
     [InlineData("Bericht.docx", "Bericht.docx")]
     [InlineData("Übung 1 – äöüß.txt", "Übung 1 – äöüß.txt")]
     [InlineData("Was?.docx", "Was？.docx")]

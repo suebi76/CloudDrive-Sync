@@ -440,6 +440,10 @@ Daraus folgen Regeln für den Kern:
   es.
 - **Platzhalter heißen wie bei rclone:** `NameEncoding` übersetzt Namen so, wie rclones lokales Backend sie unter Windows
   schreibt („Was?.docx“ wird „Was？.docx“). So passt ein Ordner, den bisync gefüllt hat, nach dem Umstellen.
+- **Ein Pfad aus der Cloud bleibt im Ordner:** Jeder Pfad der Cloud wird an genau einer Stelle zu einem Pfad am PC
+  (`NameEncoding.ToLocalFullPath`, in beiden Modi). Ein Name mit „\“ oder „..“ vom Server bleibt dabei ein Name im
+  Ordner („..＼Fremd.txt“); die Stelle prüft das noch einmal. Vorher nahm die klassische Prüfung gleich großer
+  Änderungen (`QuietServerChanges`) solche Namen als Pfad und erreichte eine Datei neben dem Ordner.
 
 ### So arbeitet der Kern
 
