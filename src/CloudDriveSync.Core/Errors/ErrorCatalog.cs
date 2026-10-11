@@ -68,6 +68,8 @@ public static class ErrorCatalog
             "File is open in another program", "A changed file is open and locked in another program right now, e.g. in Word or Excel. CloudDrive-Sync tries again every minute and transfers it once it is free. Nothing is lost."),
         ["CD-4511"] = new("Nicht alles konnte hochgeladen werden", "In manchen Ordnern darfst du nur lesen – zum Beispiel in Gruppen, in denen nur Lehrkräfte schreiben. Deine Änderungen dort bleiben auf diesem PC erhalten; alles andere wird weiter abgeglichen. Eigene Dateien legst du am besten in einen Ordner, in dem du schreiben darfst.",
             "Not everything could be uploaded", "In some folders you may only read - for example in groups where only teachers write. Your changes there stay on this PC; everything else keeps being synchronised. Put files of your own into a folder you may write to."),
+        ["CD-4513"] = new("Datei ist in der Cloud gerade gesperrt", "Jemand hat die Datei in der Cloud geöffnet, zum Beispiel in Nextcloud Office, und der Server lässt sie so lange nicht ändern. CloudDrive-Sync versucht es später erneut und überträgt deine Änderung, sobald sie frei ist. Es geht nichts verloren.",
+            "File is locked in the cloud right now", "Someone has the file open in the cloud, for example in Nextcloud Office, and the server does not let it be changed meanwhile. CloudDrive-Sync tries again later and transfers your change once it is free. Nothing is lost."),
         ["CD-4512"] = new("Cloud-Ordner nicht erreichbar – Synchronisation angehalten", "Der Ordner auf dem Server fehlt oder erscheint plötzlich leer – zum Beispiel, weil er umbenannt wurde oder du nicht mehr Mitglied der Gruppe bist. Zur Sicherheit wurde nichts verändert. Prüfe den Ordner im Browser und versuche es dann erneut.",
             "Cloud folder not reachable - synchronisation stopped", "The folder on the server is missing or suddenly looks empty - for example because it was renamed or you are no longer a member of the group. To be safe, nothing was changed. Check the folder in the browser, then try again."),
         ["CD-4513"] = new("Lokaler Ordner enthält nicht lesbare Einträge", "Im gewählten Ordner liegen beschädigte oder verwaiste Cloud-Platzhalter, oder ein Unterordner ist nicht lesbar. Räume den Ordner zuerst auf oder wähle einen neuen leeren Ordner.",
@@ -112,6 +114,8 @@ public static class ErrorCatalog
         ("CD-4504", new Regex(@"(?i)must run --resync|cannot find prior path1 or path2 listings|out of sync, run --resync", RegexOptions.Compiled)),
         ("CD-4510", new Regex(@"(?i)being used by another process|cannot access the file because", RegexOptions.Compiled)),
         ("CD-3012", new Regex(@"(?im):\s*401 Unauthorized\s*$|NotAuthenticated|Username or password was incorrect", RegexOptions.Compiled)),
+        // Someone has the file open (Nextcloud Office, a WebDAV lock): it passes.
+        ("CD-4513", new Regex(@"(?i):\s*423 Locked\s*$|Exception\\FileLocked", RegexOptions.Compiled)),
         ("CD-3006", new Regex(@"(?i)507 Insufficient Storage|quota (?:limit )?(?:reached|exceeded)|insufficient storage", RegexOptions.Compiled)),
         // IServ answers a write into a folder without the right to write with "Failed to write file … 500".
         ("CD-4511", new Regex(@"(?i)Failed to write file|403 Forbidden|read[- ]only file system", RegexOptions.Compiled)),

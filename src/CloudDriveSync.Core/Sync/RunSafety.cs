@@ -105,7 +105,7 @@ internal static partial class RunSafety
     [GeneratedRegex(@"(?i)Bisync critical error|cannot find prior Path1 or Path2 listings")]
     private static partial Regex CriticalPattern();
 
-    [GeneratedRegex(@"(?i)being used by another process|cannot access the file|failed to open source object|i/o timeout|connection reset|connection refused|unexpected EOF|context deadline exceeded|TLS handshake timeout|no such host|network is unreachable|50[234] |429 Too Many Requests|cannot find prior Path1 or Path2 listings")]
+    [GeneratedRegex(@"(?i)being used by another process|cannot access the file|failed to open source object|i/o timeout|connection reset|connection refused|unexpected EOF|context deadline exceeded|TLS handshake timeout|no such host|network is unreachable|50[234] |429 Too Many Requests|423 Locked|cannot find prior Path1 or Path2 listings")]
     private static partial Regex PassingPattern();
 
     [GeneratedRegex(@"(?i)being used by another process|cannot access the file")]
@@ -143,7 +143,8 @@ internal static partial class RunSafety
     /// <summary>
     /// Whether the server refused a file for good - a folder to read only, a type of file it does not take - rather than a
     /// passing trouble. The reason may be a whole error page over several lines (Nextcloud, a filter in front of it): then
-    /// the status rclone puts at its end counts, not what the page says.
+    /// the status rclone puts at its end counts, not what the page says. "423 Locked" is no refusal: someone has the file
+    /// open (e.g. in Nextcloud Office), and it passes - before, such a file stayed on the PC for good.
     /// </summary>
     internal static bool IsRefusal(string reason) =>
         RefusalPattern().IsMatch(reason.Split('\n', 2)[0]) || TrailingRefusalPattern().IsMatch(reason) || RefusedNamePattern().IsMatch(reason);
@@ -152,7 +153,7 @@ internal static partial class RunSafety
     [GeneratedRegex(@"(?ms)ERROR : (?<path>[^\r\n]+?): Failed to copy: (?<reason>.*?)\s*(?=^\d{4}/\d{2}/\d{2} |\z)")]
     private static partial Regex FailedCopyPattern();
 
-    [GeneratedRegex(@"(?i):\s*(?:403 Forbidden|404 Not Found|405 Method Not Allowed|409 Conflict|415 Unsupported Media Type|423 Locked)\s*$")]
+    [GeneratedRegex(@"(?i):\s*(?:403 Forbidden|404 Not Found|405 Method Not Allowed|409 Conflict|415 Unsupported Media Type)\s*$")]
     private static partial Regex TrailingRefusalPattern();
 
     // Nextcloud answers a name it does not take (a reserved one, an ending like ".part") to the upload itself with 400 - not
@@ -160,7 +161,7 @@ internal static partial class RunSafety
     [GeneratedRegex(@"(?is)^(?:operations/copyfile:\s*)?unchunked simple update failed:.*:\s*400 Bad Request\s*$")]
     private static partial Regex RefusedNamePattern();
 
-    // IServ: "Failed to write file … 500", Nextcloud: 403, others 404, 405, 409 or 423.
-    [GeneratedRegex(@"(?i)Failed to write file|403 Forbidden|404 Not Found|405 Method Not Allowed|409 Conflict|423 Locked|read[- ]only|permission denied")]
+    // IServ: "Failed to write file … 500", Nextcloud: 403, others 404, 405 or 409.
+    [GeneratedRegex(@"(?i)Failed to write file|403 Forbidden|404 Not Found|405 Method Not Allowed|409 Conflict|read[- ]only|permission denied")]
     private static partial Regex RefusalPattern();
 }

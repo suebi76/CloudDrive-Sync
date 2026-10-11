@@ -17,6 +17,11 @@ public enum ChangeKind
     DeletedOnPc,
     /// <summary>The server did not take it; it stays on the PC (see SyncPairSettings.LocalOnly).</summary>
     KeptOnPc,
+    /// <summary>
+    /// The server did not let it be deleted, renamed or changed (e.g. a share to read only): it is back on the PC as the
+    /// server has it.
+    /// </summary>
+    Restored,
 }
 
 /// <summary>One file a run changed, relative to the synchronised folder and "/" separated.</summary>

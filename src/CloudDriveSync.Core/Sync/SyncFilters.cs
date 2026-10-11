@@ -39,7 +39,12 @@ public static class SyncFilters
             text.AppendLine("- " + pattern.Trim());
         // On both sides the protection file is part of the synchronisation; where only the PC has it, it stays out.
         text.AppendLine(cloudCheckFile ? $"+ /{SentinelFile}" : $"- /{SentinelFile}");
-        foreach (var path in localOnly ?? []) text.AppendLine($"- /{EscapeGlob(path)}");
+        // A file, or a folder with everything in it: "- /Ordner" alone leaves the folder and its content in (rclone).
+        foreach (var path in localOnly ?? [])
+        {
+            text.AppendLine($"- /{EscapeGlob(path)}");
+            text.AppendLine($"- /{EscapeGlob(path)}/**");
+        }
         if (selection.Mode == SelectionMode.Selected)
         {
             foreach (var path in Normalise(selection.Include))

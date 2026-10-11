@@ -24,6 +24,7 @@ public static class Glyphs
     public const string Info = "\uE946";
     public const string Upload = "\uE898";
     public const string Download = "\uE896";
+    public const string Undo = "\uE7A7";
 
     public static string Of(WebDavKind kind) => kind switch
     {

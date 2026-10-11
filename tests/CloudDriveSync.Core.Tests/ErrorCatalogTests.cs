@@ -15,6 +15,8 @@ public class ErrorCatalogTests
     [InlineData("Post \"https://x/\": dial tcp: lookup x: no such host", "CD-5001")]
     [InlineData("operations/copyfile: unchunked simple update failed: Failed to write file.: IServ\\Library\\Sudo\\Exception\\SudoException: 500 Internal Server Error", "CD-4511")]
     [InlineData("Put \"https://webdav.example.org/Groups/.clouddrive-sync\": 403 Forbidden", "CD-4511")]
+    // Someone has the file open in Nextcloud Office: it passes - never "the server does not take it".
+    [InlineData("operations/copyfile: unchunked simple update failed: \"Plan.docx\" is locked: OCA\\DAV\\Connector\\Sabre\\Exception\\FileLocked: 423 Locked", "CD-4513")]
     [InlineData("something else entirely", "CD-9000")]
     public void Recognises_errors(string text, string code) => Assert.Equal(code, ErrorCatalog.Classify(text));
 

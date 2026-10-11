@@ -209,7 +209,7 @@ public sealed partial class SyncRunner
         // no rebuild. A rebuild that broke off is simply repeated.
         if (RunSafety.IsCritical(text) && RunSafety.IsPassing(text) && (mode == BisyncMode.Resync || RunSafety.RestoreGoodState(workDir, folder)))
         {
-            var passing = RunSafety.IsFileInUse(text) ? "CD-4510" : "CD-5001";
+            var passing = RunSafety.IsFileInUse(text) ? "CD-4510" : ErrorCatalog.Classify(text) == "CD-4513" ? "CD-4513" : "CD-5001";
             var why = Summarise(report, result.Error);
             Log.Warn("Sync", $"Run of '{pair.Id}' broke off ({passing}); the last good state is kept and the run follows soon: {why}");
             return new SyncRunOutcome(false, passing, why, SyncDecision.None, final, deletes, conflicts, true);

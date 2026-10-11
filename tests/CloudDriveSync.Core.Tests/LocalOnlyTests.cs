@@ -53,8 +53,11 @@ public class LocalOnlyTests : IDisposable
     [Fact]
     public void Files_that_stay_on_the_PC_are_left_out()
     {
-        var pair = new SyncPairSettings { LocalOnly = ["Gruppe A/Meins [1].txt"] };
-        Assert.Contains("- /Gruppe A/Meins \\[1\\].txt", SyncFilters.Build(pair));
+        var pair = new SyncPairSettings { LocalOnly = ["Gruppe A/Meins [1].txt", "Gruppe A/Neuer Ordner"] };
+        var filter = SyncFilters.Build(pair).ReplaceLineEndings("\n");
+        Assert.Contains("- /Gruppe A/Meins \\[1\\].txt\n", filter);
+        // A folder the server did not let be made stays on the PC with everything in it: "- /Ordner" alone leaves it in.
+        Assert.Contains("- /Gruppe A/Neuer Ordner\n- /Gruppe A/Neuer Ordner/**\n", filter);
     }
 
     [Fact]

@@ -12,6 +12,7 @@ namespace CloudDriveSync.Core.OnDemand;
 
 /// <summary>What carrying out a plan did, for the run's result and the activity list.</summary>
 /// <param name="CloudChanged">Steps left alone because the cloud no longer had the version the plan was made with.</param>
+/// <param name="ServerLocked">Files someone has open in the cloud ("423 Locked"): tried again later.</param>
 internal sealed record ExecutionResult(
     IReadOnlyList<FileChange> Changes,
     long Transfers,
@@ -22,7 +23,8 @@ internal sealed record ExecutionResult(
     IReadOnlyList<string> Failed,
     IReadOnlyList<string> Broken,
     int HeldBack,
-    int CloudChanged);
+    int CloudChanged,
+    IReadOnlyList<string> ServerLocked);
 
 /// <summary>
 /// Carries out a <see cref="SyncPlan"/>, step by step, each step recorded in the <see cref="ItemStore"/> as soon as it
@@ -30,7 +32,9 @@ internal sealed record ExecutionResult(
 /// or a deletion in the cloud happens only while the cloud still has the known version, a deletion on the PC only while
 /// the file is unchanged there. A step whose side changed meanwhile is left for the next run, which then sees the
 /// change. Order: moves, folders, uploads, conflicts, new placeholders, refreshed ones, deletions (files before their
-/// folders, which go only when empty).
+/// folders, which go only when empty). What the server does not let be changed (e.g. a share to read only) is never lost
+/// and never tried again in every run: what may not be deleted or moved comes back from the server, a change of one's own
+/// stays on the PC beside the server's version, and what may not be added stays on the PC.
 /// </summary>
 [SupportedOSPlatform("windows10.0.17763")]
 internal sealed partial class Executor
@@ -53,6 +57,11 @@ internal sealed partial class Executor
     private readonly List<string> _failed = [];
     private readonly List<string> _toFetch = [];
     private readonly List<string> _broken = [];
+    private readonly List<string> _serverLocked = [];
+    // New folders the server did not let be made: nothing below them is tried in this run.
+    private readonly List<string> _refusedFolders = [];
+    // New places of moves the server did not allow: the plan's further steps there are left to the next run.
+    private readonly List<string> _undone = [];
     private readonly Func<string, bool> _isBroken;
     private bool _placeholdersStopped;
     private int _heldBack;
@@ -115,7 +124,7 @@ internal sealed partial class Executor
         _total += _toFetch.Count;
         foreach (var path in _toFetch) await StepAsync(path, () => FetchAsync(path), Downloading);
         Report(force: true);
-        return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed, _broken, _heldBack, _cloudChanged);
+        return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed, _broken, _heldBack, _cloudChanged, _serverLocked);
     }
 
     /// <summary>
@@ -126,6 +135,11 @@ internal sealed partial class Executor
     private async Task StepAsync(string path, Func<Task> step, string? doing = null)
     {
         _cancel.ThrowIfCancellationRequested();
+        if (Undone(path))
+        {
+            _done++;
+            return;
+        }
         if (doing is not null)
         {
             _current = $"{doing}: {Name(path)}";
@@ -143,8 +157,12 @@ internal sealed partial class Executor
         catch (CdException e) when (e.Code == "CD-4511")
         {
             Log.Info("OnDemand", $"'{_pair.Id}': the server did not take '{path}'; it stays on the PC.");
-            _localOnly.Add(path);
-            _changes.Add(new FileChange(ChangeKind.KeptOnPc, path));
+            KeepOnPc(path);
+        }
+        catch (CdException e) when (e.Code == "CD-4513")
+        {
+            Log.Info("OnDemand", $"'{_pair.Id}': '{path}' is locked in the cloud (someone has it open); it follows later.");
+            _serverLocked.Add(path);
         }
         catch (Exception e) when (IsInUse(e))
         {
@@ -179,6 +197,25 @@ internal sealed partial class Executor
         _progress(new JobProgress(_bytes + _currentBytes, _totalBytes, Math.Min(_done, _total), _total, speed, 0, 0, _failed.Count, Current: _current));
     }
 
+    /// <summary>The server refused a change for good (e.g. a share to read only, a type it does not take) - no passing trouble.</summary>
+    private static bool Refused(CdException e) => e.Code == "CD-4511" || (e.Code == "CD-9000" && RunSafety.IsRefusal(e.Detail ?? ""));
+
+    /// <summary>
+    /// At or below the new place of a move the server did not allow: the plan took the move as done, so its further steps
+    /// there no longer fit - the next run plans them afresh.
+    /// </summary>
+    private bool Undone(string path) => _undone.Any(place => path == place || path.StartsWith(place + "/", StringComparison.Ordinal));
+
+    /// <summary>Lies in a new folder the server did not let be made in this run (it stays on the PC with everything in it).</summary>
+    private bool BelowRefused(string path) => _refusedFolders.Any(folder => path.StartsWith(folder + "/", StringComparison.Ordinal));
+
+    /// <summary>Stays on the PC and out of the synchronisation from now on (see SyncPairSettings.LocalOnly).</summary>
+    private void KeepOnPc(string path)
+    {
+        _localOnly.Add(path);
+        _changes.Add(new FileChange(ChangeKind.KeptOnPc, path));
+    }
+
     private async Task MoveCloudAsync(MoveCloud move)
     {
         // Look again: a place taken in the cloud since the listing is never overwritten (the next run keeps both). Only
@@ -190,26 +227,41 @@ internal sealed partial class Executor
             _cloudChanged++;
             return;
         }
-        if (move.Item.IsDirectory)
+        try
         {
-            // A whole folder: one move on the server where it can (WebDAV MOVE), nothing is uploaded again.
-            await _rc.CallAsync("sync/move", new JsonObject
+            if (move.Item.IsDirectory)
             {
-                ["srcFs"] = $"{_cloudFs}/{move.Item.Path}",
-                ["dstFs"] = $"{_cloudFs}/{move.NewPath}",
-                ["createEmptySrcDirs"] = true,
-                ["deleteEmptySrcDirs"] = true,
-            }, TimeSpan.FromMinutes(30), _cancel);
+                // A whole folder: one move on the server where it can (WebDAV MOVE), nothing is uploaded again.
+                await _rc.CallAsync("sync/move", new JsonObject
+                {
+                    ["srcFs"] = $"{_cloudFs}/{move.Item.Path}",
+                    ["dstFs"] = $"{_cloudFs}/{move.NewPath}",
+                    ["createEmptySrcDirs"] = true,
+                    ["deleteEmptySrcDirs"] = true,
+                }, TimeSpan.FromMinutes(30), _cancel);
+            }
+            else
+            {
+                await _rc.CallAsync("operations/movefile", new JsonObject
+                {
+                    ["srcFs"] = _cloudFs,
+                    ["srcRemote"] = move.Item.Path,
+                    ["dstFs"] = _cloudFs,
+                    ["dstRemote"] = move.NewPath,
+                }, TimeSpan.FromMinutes(5), _cancel);
+            }
         }
-        else
+        catch (CdException e) when (Refused(e))
         {
-            await _rc.CallAsync("operations/movefile", new JsonObject
+            // Gone in the cloud meanwhile: the next run sees it (the moved entry is then a new one on the PC).
+            if (await _files.StatAsync(_remote, CloudFetcher.CloudPath(_pair, move.Item.Path), withHash: false, _cancel) is null)
             {
-                ["srcFs"] = _cloudFs,
-                ["srcRemote"] = move.Item.Path,
-                ["dstFs"] = _cloudFs,
-                ["dstRemote"] = move.NewPath,
-            }, TimeSpan.FromMinutes(5), _cancel);
+                Log.Info("OnDemand", $"'{_pair.Id}': '{move.Item.Path}' is gone in the cloud meanwhile; not moved.");
+                _cloudChanged++;
+                return;
+            }
+            UndoMove(move, e.Detail);
+            return;
         }
         _store.Move(move.Item.Path, move.NewPath);
         _takenNames.Add(move.NewPath);
@@ -218,7 +270,18 @@ internal sealed partial class Executor
 
     private async Task CreateCloudFolderAsync(CreateCloudFolder folder)
     {
-        await _rc.CallAsync("operations/mkdir", new JsonObject { ["fs"] = _cloudFs, ["remote"] = folder.Path }, TimeSpan.FromMinutes(2), _cancel);
+        if (BelowRefused(folder.Path)) return;
+        try
+        {
+            await _rc.CallAsync("operations/mkdir", new JsonObject { ["fs"] = _cloudFs, ["remote"] = folder.Path }, TimeSpan.FromMinutes(2), _cancel);
+        }
+        catch (CdException e) when (Refused(e))
+        {
+            // Nothing may be added here (e.g. a share to read only): the folder stays on the PC with everything in it, and
+            // nothing below it is tried - not in this run, and no more from now on.
+            _refusedFolders.Add(folder.Path);
+            throw new CdException("CD-4511", e.Detail, e);
+        }
         var stat = await _files.StatAsync(_remote, CloudFetcher.CloudPath(_pair, folder.Path), withHash: false, _cancel);
         var id = _store.Upsert(new SyncItem(0, folder.Path, true, 0, stat?.Ticks ?? DateTime.UtcNow.Ticks, null, null, null));
         MakePlaceholder(folder.Local, id);
@@ -247,6 +310,7 @@ internal sealed partial class Executor
     /// <summary>Uploads a new or changed file and makes it a placeholder in step with the uploaded version.</summary>
     private async Task UploadAsync(LocalEntry local, SyncItem? known)
     {
+        if (BelowRefused(local.Path)) return;
         var full = LocalFull(local.Path);
         var version = Placeholders.ReadVersion(full);
         // The cloud may have changed since the listing: then this is a conflict for the next run, nothing is overwritten.
@@ -262,10 +326,16 @@ internal sealed partial class Executor
         {
             await CopyUpAsync(local);
         }
-        catch (CdException e) when (e.Code == "CD-9000" && RunSafety.IsRefusal(e.Detail ?? ""))
+        catch (CdException e) when (Refused(e))
         {
-            // The server does not take this file (e.g. a type it blocks, answered with an error page): like a folder to
-            // read only, it stays on the PC and is not tried again in every run.
+            // The server has the file but does not let it be changed (e.g. a share to read only): the change stays beside it.
+            if (known is not null && before is not null)
+            {
+                KeepBeside(local, known, e.Detail);
+                return;
+            }
+            // A new file the server does not take (e.g. a type it blocks, answered with an error page; a folder to read
+            // only): it stays on the PC and is not tried again in every run.
             throw new CdException("CD-4511", e.Detail, e);
         }
         finally
@@ -292,8 +362,9 @@ internal sealed partial class Executor
             ["dstFs"] = _cloudFs,
             ["dstRemote"] = local.Path,
             // The run knows the file changed. On servers without times of their own rclone compares sizes only and would
-            // skip a change that keeps the size.
-            ["_config"] = new JsonObject { ["IgnoreTimes"] = true },
+            // skip a change that keeps the size. One more try at most: rclone tries a whole upload up to ten times - with a
+            // file someone has open ("423 Locked") that held the run up for minutes; the next run tries again anyway.
+            ["_config"] = new JsonObject { ["IgnoreTimes"] = true, ["LowLevelRetries"] = 2 },
         };
         if (local.Size < LiveProgressFrom || _progress is null)
         {
@@ -333,7 +404,7 @@ internal sealed partial class Executor
     /// </summary>
     private Task CreatePlaceholdersAsync(IReadOnlyList<CloudEntry> entries)
     {
-        foreach (var group in entries.GroupBy(e => Parent(e.Path)).OrderBy(g => g.Key.Length == 0 ? -1 : Depth(g.Key)))
+        foreach (var group in entries.Where(e => !Undone(e.Path)).GroupBy(e => Parent(e.Path)).OrderBy(g => g.Key.Length == 0 ? -1 : Depth(g.Key)))
         {
             _cancel.ThrowIfCancellationRequested();
             _done += group.Count();
@@ -508,7 +579,10 @@ internal sealed partial class Executor
             }
             catch (CdException e) when (e.Code is not ("CD-5001" or "CD-5003" or "CD-3012"))
             {
+                // Something new in it, or the server does not let it go: it comes back on the PC, so what is in it can come,
+                // too. Before, it stayed away - and every run tried to delete it again.
                 Log.Info("OnDemand", $"'{_pair.Id}': folder '{remove.Path}' stays in the cloud ({e.Detail}).");
+                Restore(remove.Path);
             }
             return;
         }
@@ -521,10 +595,157 @@ internal sealed partial class Executor
             return;
         }
         if (now is not null)
-            await _rc.CallAsync("operations/deletefile", new JsonObject { ["fs"] = _cloudFs, ["remote"] = remove.Path }, TimeSpan.FromMinutes(2), _cancel);
+        {
+            try
+            {
+                await _rc.CallAsync("operations/deletefile", new JsonObject { ["fs"] = _cloudFs, ["remote"] = remove.Path }, TimeSpan.FromMinutes(2), _cancel);
+            }
+            catch (CdException e) when (Refused(e))
+            {
+                // Gone all the same (e.g. "404 Not Found"): deleted.
+                if (await _files.StatAsync(_remote, CloudFetcher.CloudPath(_pair, remove.Path), _withHashes, _cancel) is not null)
+                {
+                    // The server does not let it be deleted (e.g. a share to read only): it comes back. Before, it was kept
+                    // out of the synchronisation for good - gone from the PC although the cloud still had it.
+                    Log.Info("OnDemand", $"'{_pair.Id}': the server did not let '{remove.Path}' be deleted ({e.Detail}); it comes back.");
+                    Restore(remove.Path);
+                    return;
+                }
+            }
+        }
         _store.Remove(remove.Item.Id);
         _deletes++;
         _changes.Add(new FileChange(ChangeKind.DeletedInCloud, remove.Path));
+    }
+
+    /// <summary>
+    /// Brings back on the PC what the server did not let be changed: as the cloud has it - a placeholder without data, as
+    /// the store knows it -, with the folders above it where they are missing. A place taken on the PC meanwhile stays as
+    /// it is; the next run sees what is there.
+    /// </summary>
+    private void Restore(string path)
+    {
+        var missing = new List<SyncItem>();
+        for (var place = path; place.Length > 0 && !Path.Exists(LocalFull(place)); place = Parent(place))
+        {
+            if (_store.FindByPath(place) is not { } item)
+            {
+                Log.Warn("OnDemand", $"'{_pair.Id}': '{path}' not brought back: '{place}' is not known.");
+                return;
+            }
+            missing.Add(item);
+        }
+        if (missing.Count == 0) return;
+        missing.Reverse();
+        foreach (var item in missing)
+        {
+            if (_placeholdersStopped)
+            {
+                _heldBack++;
+                return;
+            }
+            var folder = Parent(item.Path) is { Length: > 0 } parent ? LocalFull(parent) : _pair.LocalPath;
+            var entry = new CloudEntry(item.Path, item.IsDirectory, item.CloudSize, item.CloudTicks, item.CloudHash);
+            var created = new List<CloudEntry>();
+            CreateIn(folder, [entry], created);
+            if (created.Count == 0) return;
+            if (_isBroken(LocalFull(item.Path)))
+            {
+                _broken.Add(item.Path);
+                _placeholdersStopped = true;
+                Log.Error("OnDemand", $"'{_pair.Id}': Windows wrote the placeholder '{item.Path}' broken; no more are made.");
+                return;
+            }
+            _takenNames.Add(item.Path);
+            // In a folder kept on this device, what comes back is kept, too.
+            if (PinnedFolder(folder))
+            {
+                Placeholders.SetPinState(LocalFull(item.Path), PinState.Pinned, recurse: false);
+                if (!item.IsDirectory) _toFetch.Add(item.Path);
+            }
+        }
+        _changes.Add(new FileChange(ChangeKind.Restored, path));
+        Log.Info("OnDemand", $"'{_pair.Id}': '{path}' is back on the PC as the server has it.");
+    }
+
+    /// <summary>
+    /// A change the server does not take although it has the file (e.g. a share to read only): the PC's version goes
+    /// beside it under a conflict name and stays on the PC, and the server's version comes back under the name - nothing
+    /// is lost, and the file keeps coming from the server. The Nextcloud client does the same.
+    /// </summary>
+    private void KeepBeside(LocalEntry local, SyncItem known, string? reason)
+    {
+        var copy = MovePcVersionBeside(known.Path, local);
+        Log.Info("OnDemand", $"'{_pair.Id}': the server did not take the change of '{known.Path}' ({reason}); it stays on the PC as '{copy}'.");
+        KeepOnPc(copy);
+        Restore(known.Path);
+    }
+
+    /// <summary>The PC's version goes beside the file under a conflict name, as a normal file; returns that name.</summary>
+    private string MovePcVersionBeside(string path, LocalEntry local)
+    {
+        var full = LocalFull(local.Path);
+        var name = ConflictName(path, "PC");
+        if (local.Placeholder is not null) Placeholders.Revert(full);
+        File.Move(full, LocalFull(name));
+        return name;
+    }
+
+    /// <summary>
+    /// The server does not let it be moved or renamed (e.g. a share to read only). A file whose data is on the PC stays
+    /// where it was put, as a file of its own - the next run uploads it there, or keeps it on the PC when the server does
+    /// not take it there either -, and the original comes back. Anything else goes back to its place: nothing of it lies
+    /// only on the PC.
+    /// </summary>
+    private void UndoMove(MoveCloud move, string? reason)
+    {
+        Log.Info("OnDemand", $"'{_pair.Id}': the server did not let '{move.Item.Path}' be moved to '{move.NewPath}' ({reason}).");
+        _undone.Add(move.NewPath);
+        var now = LocalFull(move.NewPath);
+        var before = LocalFull(move.Item.Path);
+        if (!Path.Exists(now))
+        {
+            Restore(move.Item.Path);
+            return;
+        }
+        var caseOnly = string.Equals(move.Item.Path, move.NewPath, StringComparison.OrdinalIgnoreCase);
+        if (!caseOnly && !move.Item.IsDirectory && Placeholders.Read(now) is { IsFullyOnDisk: true })
+        {
+            Placeholders.Revert(now);
+            Restore(move.Item.Path);
+            return;
+        }
+        if (caseOnly || !Path.Exists(before))
+        {
+            if (Parent(move.Item.Path) is { Length: > 0 } parent) Restore(parent);
+            if (Directory.Exists(Path.GetDirectoryName(before)))
+            {
+                MoveBack(now, before, move.Item.IsDirectory);
+                // Windows takes a renamed placeholder as changed; back under its name and unchanged, it is in step again.
+                if (!move.Item.IsDirectory) Placeholders.MarkInSyncIfUnchanged(before, new FileVersion(move.Item.LocalSize ?? -1, move.Item.LocalTicks ?? -1, -1));
+                _changes.Add(new FileChange(ChangeKind.Restored, move.Item.Path));
+                return;
+            }
+        }
+        // Its place is taken on the PC: a file without its data goes (the server has it); a folder becomes one of its own -
+        // what is in it keeps its identity, and the next run handles each entry the same way.
+        if (move.Item.IsDirectory) Placeholders.Revert(now);
+        else File.Delete(now);
+        Restore(move.Item.Path);
+    }
+
+    /// <summary>Back to the old name on the PC - also when only upper and lower case differ (through a name in between).</summary>
+    private static void MoveBack(string now, string before, bool isDirectory)
+    {
+        var from = now;
+        if (string.Equals(now, before, StringComparison.OrdinalIgnoreCase))
+        {
+            from = now + ".clouddrive-move";
+            if (isDirectory) Directory.Move(now, from);
+            else File.Move(now, from);
+        }
+        if (isDirectory) Directory.Move(from, before);
+        else File.Move(from, before);
     }
 
     private Task DropAsync(DropPlaceholder drop)

@@ -66,6 +66,14 @@ public class RunSafetyTests : IDisposable
         const string network = "ERROR : Bisync critical error: dial tcp: lookup webdav.example.org: i/o timeout";
         Assert.True(RunSafety.IsPassing(network));
         Assert.False(RunSafety.IsFileInUse(network));
+        // Someone has the file open in the cloud (Nextcloud Office): passes, and is no refusal.
+        const string lockedInCloud = @"ERROR : Plan.docx: Failed to copy: unchunked simple update failed: ""Plan.docx"" is locked: OCA\DAV\Connector\Sabre\Exception\FileLocked: 423 Locked";
+        Assert.True(RunSafety.IsPassing(lockedInCloud));
+        Assert.False(RunSafety.IsRefusal(@"unchunked simple update failed: ""Plan.docx"" is locked: OCA\DAV\Connector\Sabre\Exception\FileLocked: 423 Locked"));
+        Assert.Empty(RunSafety.RefusedUploads("""
+            2026/10/11 09:00:00 INFO  : - Path2             Queue copy to Path1                         - cd-nc:Ablage/Plan.docx
+            2026/10/11 09:00:01 ERROR : Plan.docx: Failed to copy: unchunked simple update failed: "Plan.docx" is locked: OCA\DAV\Connector\Sabre\Exception\FileLocked: 423 Locked
+            """, "cd-nc:Ablage"));
         const string broken = "ERROR : Bisync critical error: path1 listing is corrupt";
         Assert.True(RunSafety.IsCritical(broken));
         Assert.False(RunSafety.IsPassing(broken));

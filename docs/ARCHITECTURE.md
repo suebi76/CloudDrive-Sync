@@ -293,9 +293,25 @@ sie still endgültig zu löschen.
   Änderungen nicht verloren gehen.
 - **Der letzte gute Zustand** (`RunSafety`): Vorübergehende Probleme kosten keinen Neuaufbau mehr.
 - **Abgelehnte Dateien bleiben am PC** (`LocalOnly`) statt einen Neuaufbau zu erzwingen; die Prüfsumme der Filterdatei
-  wird dafür gezielt erneuert. Als abgelehnt gilt, was der Server mit 403, 404, 405, 409, 415 oder 423 beantwortet – bei
-  einer ganzen Fehlerseite (ein Filter vor Nextcloud, der z. B. Programmdateien sperrt) zählt der Status an ihrem Ende,
-  nicht ihr Text (`RunSafety.IsRefusal`); bei „bei Bedarf“ ebenso.
+  wird dafür gezielt erneuert. Als abgelehnt gilt, was der Server mit 403, 404, 405, 409 oder 415 beantwortet – bei einer
+  ganzen Fehlerseite (ein Filter vor Nextcloud, der z. B. Programmdateien sperrt) zählt der Status an ihrem Ende, nicht
+  ihr Text (`RunSafety.IsRefusal`); bei „bei Bedarf“ ebenso. „423 Locked“ ist keine Ablehnung: Jemand hat die Datei
+  geöffnet (z. B. in Nextcloud Office), das geht vorbei (`CD-4513`, später erneut) – vorher blieb sie für immer am PC.
+  Ein Ordner bleibt mit seinem Inhalt am PC: `- /Ordner` und `- /Ordner/**` (die erste Regel allein lässt rclone den
+  Ordner samt Inhalt sehen, geprüft).
+- **Was der Server nicht ändern lässt, kommt zurück (bei Bedarf).** Freigaben anderer nur zum Lesen (Nextcloud) oder
+  Gruppen ohne Schreibrecht (IServ): rclone reicht die Rechte (`oc:permissions`) nicht durch, also reagiert der
+  `Executor` auf die Ablehnung. Die Idee stammt vom Nextcloud-Client:
+  - Was nicht gelöscht werden darf, kommt vom Server zurück (`Restore`, samt fehlender Ordner darüber, mit der bekannten
+    Kennung). Ebenso ein Ordner, der sich nicht löschen lässt, weil inzwischen Neues darin liegt – vorher versuchte
+    jeder Lauf es erneut.
+  - Eine nicht angenommene Änderung bleibt als `Name.Konflikt-PC1.ext` am PC (`LocalOnly`), die Fassung des Servers kommt
+    zurück und wird weiter abgeglichen (`KeepBeside`). Bei einem Konflikt behält die Fassung des Servers den Namen.
+  - Ein verbotenes Verschieben wird rückgängig gemacht (`UndoMove`): Liegen die Daten einer Datei am PC, bleibt sie als
+    eigene Datei am neuen Ort, sonst geht sie zurück; die weiteren Schritte des Plans dort übernimmt der nächste Lauf.
+  - Ein neuer Ordner, den der Server nicht anlegen lässt, bleibt mit allem darin am PC; darunter wird nichts versucht.
+
+  Nichts davon wiederholt sich in jedem Lauf (`SharesTests`; der Testserver bildet Nextclouds Antworten nach).
 - **Ausgelassen und ignoriert.** Ordner, die der Server nicht lesen lässt, nennt die Karte (`SyncPairState.LeftOut`, in
   `state.json`), einmal auch als Benachrichtigung. Abgelehnte Dateien erklärt sie mit ihren Dateitypen und Lösungen. Beides
   lässt sich „Künftig ignorieren“: Dateitypen (`SyncFilters.TypeRule`, z. B. `*.[dD][lL][lL]`), einzelne Dateien oder
@@ -342,8 +358,14 @@ sie still endgültig zu löschen.
 - **IServ** speichert keine eigenen Änderungszeiten (rclone vergleicht dort nur Größen) und nimmt in seiner Wurzel und
   in „Groups“ selbst keine Dateien an (Antwort 500). Seine Ordner heißen im WebDAV `Files` und `Groups`, auf den
   Webseiten „Eigene Dateien“ und „Gruppen“ – CloudDrive-Sync zeigt die bekannten Namen (`CloudFolderNames`).
-- **Nextcloud** hat Änderungszeiten und Prüfsummen und antwortet auf abgelehnte Schreibzugriffe mit 403. `rclone serve
-  webdav` kann Nextcloud nicht nachbilden; dafür braucht es einen echten Testzugang.
+- **Nextcloud** hat Änderungszeiten und Prüfsummen und antwortet auf abgelehnte Schreibzugriffe mit 403, auf eine
+  geöffnete Datei mit 423. `rclone serve webdav` kann Nextcloud nicht nachbilden; der Testproxy (`RefusingProxy`) bildet
+  einiges nach (Ordnerzeiten, nicht lesbare Ordner, Freigaben nur zum Lesen, gesperrte Dateien, die Prüfsumme nach dem
+  Hochladen), alles Weitere braucht einen echten Testzugang.
+- **Nach einem gescheiterten Hochladen** löscht rclone die Datei am Ziel („Remove failed upload“) und versucht das
+  Hochladen bis zu zehnmal – bei einer gesperrten Datei minutenlang. „Bei Bedarf“ lädt deshalb mit höchstens zwei
+  Versuchen hoch (`LowLevelRetries`). Bricht das Hochladen eines Netzfehlers wegen ab, fehlt die alte Fassung in der
+  Cloud, bis der nächste Lauf die neue hochlädt – vorgemerkt für 0.4.
 - **Groß- und Kleinschreibung:** Windows hält `Bericht.docx` und `bericht.docx` für dieselbe Datei, die Server für zwei.
   bisync stoppt dann mit „out of sync“; `CaseRenames` gleicht die Schreibweisen vorher an.
 - **rclones Löschgrenze** zählt Ordner mit (siehe oben).

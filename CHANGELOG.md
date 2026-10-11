@@ -3,6 +3,28 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.15] – 2026-10-11
+
+Fifteenth test version on the way to 0.3: shares other people own, safely.
+
+### Fixed
+
+- Files on demand in a share to read only (Nextcloud) or a folder without the right to write (IServ) - what the server
+  does not let be changed is never lost, never hidden for good and no longer tried again in every run:
+  - A file deleted on the PC comes back. Before, it was left out of the synchronisation for good - gone from the PC
+    although the cloud still had it.
+  - A change the server does not take stays on the PC beside the owner's version (`Name.Konflikt-PC1.ext`), and the
+    owner's version comes back and keeps arriving. Before, the file took no part any more.
+  - A file or folder renamed or moved there goes back to its place; a file whose data is on the PC also stays where it
+    was put, as a file of one's own (uploaded where that is allowed).
+  - A file changed on both sides keeps both versions there, too; the server's version keeps the name.
+  - A new folder there stays on the PC with everything in it. Before, every run tried to create it again: the filter
+    rule left the folder in.
+- A folder deleted on the PC while the cloud got something new in it comes back with it, instead of failing in every run.
+- A file someone has open in the cloud (e.g. in Nextcloud Office, "423 Locked") stayed on the PC for good. Now it is tried
+  again later (new message CD-4513), and an upload no longer waits minutes for such a file.
+- The activity list shows what came back: "wiederhergestellt – der Server lässt das nicht zu".
+
 ## [0.3.0-preview.14] – 2026-10-11
 
 Fourteenth test version on the way to 0.3: quicker runs for IServ with files on demand.

@@ -71,7 +71,7 @@ internal sealed class OnDemandRunner
                 };
             }
             // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
-            live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4605" ? ProviderStatus.Idle
+            live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4513" or "CD-4605" ? ProviderStatus.Idle
                 : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
             return outcome;
         }
@@ -203,7 +203,7 @@ internal sealed class OnDemandRunner
             if (result.Broken.Count > 0) PlaceholderAlarm.Raise(folder, result.Broken.Count);
             if (mode == BisyncMode.Resync && live.MergeNeeded) live.Merged();
             executor.ApplyPinStates(local);
-            executor.MarkFoldersInSync(result.Failed.Concat(result.Locked), leftOut);
+            executor.MarkFoldersInSync(result.Failed.Concat(result.Locked).Concat(result.ServerLocked), leftOut);
             var freed = executor.FreeUpSpace(local, freeUpDays, nowUtc);
             var space = Executor.Measure(local, cloud.Entries.Values, freed);
             var final = new JobProgress(result.Bytes, result.Bytes, result.Transfers, result.Transfers, 0, 0, 0, result.Failed.Count);
@@ -227,6 +227,9 @@ internal sealed class OnDemandRunner
             if (result.Locked.Count > 0)
                 return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space,
                     leftOutFolders);
+            if (result.ServerLocked.Count > 0)
+                return new SyncRunOutcome(false, "CD-4513", string.Join(", ", result.ServerLocked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly,
+                    result.Changes, space, leftOutFolders);
             if (result.Failed.Count > 0)
                 return new SyncRunOutcome(false, "CD-4605", string.Join(", ", result.Failed.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space,
                     leftOutFolders);

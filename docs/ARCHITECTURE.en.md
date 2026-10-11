@@ -294,9 +294,25 @@ silently.
   changes are not lost.
 - **The last good state** (`RunSafety`): passing problems no longer cost a rebuild.
 - **Refused files stay on the PC** (`LocalOnly`) instead of forcing a rebuild; the checksum of the filter file is renewed
-  deliberately for that. Refused is what the server answers with 403, 404, 405, 409, 415 or 423 - with a whole error page
-  (a filter in front of Nextcloud that blocks program files, for example) the status at its end counts, not its text
-  (`RunSafety.IsRefusal`); the same with files on demand.
+  deliberately for that. Refused is what the server answers with 403, 404, 405, 409 or 415 - with a whole error page (a
+  filter in front of Nextcloud that blocks program files, for example) the status at its end counts, not its text
+  (`RunSafety.IsRefusal`); the same with files on demand. "423 Locked" is no refusal: someone has the file open (e.g. in
+  Nextcloud Office), and that passes (`CD-4513`, tried again later) - before, it stayed on the PC for good. A folder
+  stays on the PC with what is in it: `- /Folder` and `- /Folder/**` (with the first rule alone rclone sees the folder
+  and its content, checked).
+- **What the server does not let be changed comes back (files on demand).** Shares of others to read only (Nextcloud)
+  or groups without the right to write (IServ): rclone does not pass the permissions (`oc:permissions`) on, so the
+  `Executor` reacts to the server's refusal. The idea comes from the Nextcloud client:
+  - What may not be deleted comes back from the server (`Restore`, with missing folders above it, with its known
+    identity). So does a folder that cannot be deleted because something new lies in it meanwhile - before, every run
+    tried again.
+  - A change the server does not take stays on the PC as `Name.Konflikt-PC1.ext` (`LocalOnly`); the server's version
+    comes back and keeps being synchronised (`KeepBeside`). In a conflict, the server's version keeps the name.
+  - A move that is not allowed is undone (`UndoMove`): a file whose data is on the PC stays at the new place as a file of
+    its own, anything else goes back; the plan's further steps there are left to the next run.
+  - A new folder the server does not let be made stays on the PC with everything in it; nothing below it is tried.
+
+  None of this repeats in every run (`SharesTests`; the test server plays Nextcloud's answers).
 - **Left out and ignored.** Folders the server does not let be read are named on the card (`SyncPairState.LeftOut`, in
   `state.json`), once also as a notification. Refused files are explained with their file types and what helps. Both can
   be ignored from now on: file types (`SyncFilters.TypeRule`, e.g. `*.[dD][lL][lL]`), single files or folders
@@ -343,8 +359,14 @@ silently.
 - **IServ** keeps no modification times of its own (rclone compares sizes only there) and takes no files in its root and
   in "Groups" itself (answer 500). In WebDAV its folders are called `Files` and `Groups`, on its web pages "Eigene
   Dateien" and "Gruppen" - CloudDrive-Sync shows the familiar names (`CloudFolderNames`).
-- **Nextcloud** has modification times and checksums and answers refused writes with 403. `rclone serve webdav` cannot
-  emulate Nextcloud; testing it needs a real account.
+- **Nextcloud** has modification times and checksums and answers refused writes with 403, a file someone has open with
+  423. `rclone serve webdav` cannot imitate Nextcloud; the test proxy (`RefusingProxy`) plays some of it (folder times,
+  folders that cannot be read, shares to read only, locked files, the checksum after an upload), anything else needs a
+  real test account.
+- **After a failed upload** rclone deletes the file at the target ("Remove failed upload") and tries an upload up to ten
+  times - with a locked file for minutes. Files on demand therefore upload with two tries at most (`LowLevelRetries`). If
+  an upload breaks off on a network error, the old version is missing in the cloud until the next run uploads the new
+  one - noted for 0.4.
 - **Upper and lower case:** Windows takes `Bericht.docx` and `bericht.docx` for the same file, the servers for two.
   bisync then stops with "out of sync"; `CaseRenames` aligns the spellings beforehand.
 - **rclone's deletion limit** counts folders as well (see above).

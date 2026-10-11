@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
+using CloudDriveSync.Core.Errors;
 using CloudDriveSync.Core.Settings;
 
 namespace CloudDriveSync.Core.OnDemand;
@@ -35,25 +36,48 @@ internal sealed partial class Executor
 
         var pcKeepsName = PcKeepsName(local, cloud);
         Log.Info("OnDemand", $"'{_pair.Id}': conflict at '{conflict.Path}' - {(pcKeepsName switch { true => "the PC's version keeps the name", false => "the cloud's version keeps the name", null => "both versions are renamed" })}.");
+        string? pcCopy = null;
         if (pcKeepsName != true)
         {
-            // The PC's version goes beside it: a normal file under its new name, uploaded as a new file.
-            var name = ConflictName(conflict.Path, "PC");
-            if (local.Placeholder is not null) Placeholders.Revert(full);
-            File.Move(full, LocalFull(name));
-            await UploadAsync(new LocalEntry(name, false, local.Size, local.Ticks, null), null);
+            // The PC's version goes beside it: a normal file under its new name, uploaded as a new file - or kept on the PC
+            // where the server does not take it (e.g. a share to read only).
+            pcCopy = MovePcVersionBeside(conflict.Path, local);
+            try
+            {
+                await UploadAsync(new LocalEntry(pcCopy, false, local.Size, local.Ticks, null), null);
+            }
+            catch (CdException e) when (e.Code == "CD-4511")
+            {
+                KeepOnPc(pcCopy);
+            }
         }
         if (pcKeepsName != false)
         {
             // The cloud's version goes beside it: renamed on the server, it appears on the PC as a placeholder.
             var name = ConflictName(conflict.Path, "Cloud");
-            await _rc.CallAsync("operations/movefile", new JsonObject
+            try
             {
-                ["srcFs"] = _cloudFs,
-                ["srcRemote"] = conflict.Path,
-                ["dstFs"] = _cloudFs,
-                ["dstRemote"] = name,
-            }, TimeSpan.FromMinutes(5), _cancel);
+                await _rc.CallAsync("operations/movefile", new JsonObject
+                {
+                    ["srcFs"] = _cloudFs,
+                    ["srcRemote"] = conflict.Path,
+                    ["dstFs"] = _cloudFs,
+                    ["dstRemote"] = name,
+                }, TimeSpan.FromMinutes(5), _cancel);
+            }
+            catch (CdException e) when (Refused(e))
+            {
+                // The server does not let its version be renamed (e.g. a share to read only): it keeps the name, and the
+                // PC's version stays beside it on the PC.
+                Log.Info("OnDemand", $"'{_pair.Id}': the server did not let '{conflict.Path}' be renamed ({e.Detail}); its version keeps the name.");
+                if (pcCopy is null)
+                {
+                    pcCopy = MovePcVersionBeside(conflict.Path, local);
+                    KeepOnPc(pcCopy);
+                }
+                await CreatePlaceholdersAsync([cloud]);
+                return;
+            }
             await CreatePlaceholdersAsync([cloud with { Path = name }]);
         }
         if (pcKeepsName == true)
