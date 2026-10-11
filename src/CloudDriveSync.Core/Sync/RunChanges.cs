@@ -22,6 +22,8 @@ public enum ChangeKind
     /// server has it.
     /// </summary>
     Restored,
+    /// <summary>Renamed or moved in the cloud (e.g. on another PC), so on the PC, too.</summary>
+    Moved,
 }
 
 /// <summary>One file a run changed, relative to the synchronised folder and "/" separated.</summary>

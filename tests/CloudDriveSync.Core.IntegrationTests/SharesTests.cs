@@ -164,6 +164,20 @@ public class SharesTests
     }
 
     [Fact]
+    public async Task A_file_renamed_only_in_upper_and_lower_case_in_a_share_to_read_only_goes_back()
+    {
+        await using var world = await WorldAsync();
+        File.Move(world.Pc($"{Shared}/Arbeitsblatt.txt"), world.Pc($"{Shared}/ARBEITSBLATT.txt"));
+
+        await RunAsync(world);
+        Assert.Equal(["Arbeitsblatt.txt"], Directory.GetFiles(world.Pc(Shared)).Select(Path.GetFileName));
+        Assert.True(InSync(world, $"{Shared}/Arbeitsblatt.txt"));
+        // The way back went through the folder's recycle bin, which never takes part: nothing is left there.
+        Assert.Empty(Directory.EnumerateFileSystemEntries(world.Pc(SyncFilters.TrashFolder)));
+        await AssertSettledAsync(world);
+    }
+
+    [Fact]
     public async Task A_file_moved_out_of_a_share_to_read_only_is_copied_and_the_original_comes_back()
     {
         await using var world = await WorldAsync();

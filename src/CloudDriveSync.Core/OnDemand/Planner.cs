@@ -170,7 +170,39 @@ public static class Planner
                     actions.Add(new MarkInSync(known, onPc));
             }
         }
+        // 3. Renamed or moved in the cloud (e.g. on another PC): its placeholder moves along instead of going and coming.
+        if (!input.Rebuild) localDeletions -= MatchCloudMoves(actions);
         return new SyncPlan(actions, knownFiles, cloudDeletions, localDeletions, skipped);
+    }
+
+    /// <summary>
+    /// A file gone in the cloud and unchanged on the PC, and a file new in the cloud, are one moved file when they surely
+    /// are the same: the same name, size and time - and checksum, where the server has one for both -, with exactly one of
+    /// each. Then the placeholder moves along: what was on the PC stays there, nothing is fetched again, nothing goes into
+    /// the recycle bin - and a folder renamed on another PC is no mass deletion that stops the run. Returns how many.
+    /// </summary>
+    private static int MatchCloudMoves(List<SyncAction> actions)
+    {
+        static (string Name, long Size, long Ticks) Key(string path, long size, long ticks) => (path[(path.LastIndexOf('/') + 1)..], size, ticks);
+        var gone = actions.OfType<RemoveLocal>().Where(r => !r.Item.IsDirectory).ToLookup(r => Key(r.Item.Path, r.Item.CloudSize, r.Item.CloudTicks));
+        var created = actions.OfType<CreatePlaceholder>().Where(c => !c.Cloud.IsDirectory).ToLookup(c => Key(c.Cloud.Path, c.Cloud.Size, c.Cloud.Ticks));
+        // By reference, in one pass over the plan: a folder of ten thousand files renamed elsewhere stays quick.
+        var moves = new Dictionary<object, SyncAction>(ReferenceEqualityComparer.Instance);
+        var replaced = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        foreach (var group in gone)
+        {
+            if (group.Count() != 1 || created[group.Key].Count() != 1) continue;
+            var remove = group.Single();
+            var create = created[group.Key].Single();
+            if (remove.Item.CloudHash is { } before && create.Cloud.Hash is { } after && before != after) continue;
+            moves[remove] = new MoveLocal(remove.Item, remove.Local, create.Cloud);
+            replaced.Add(create);
+        }
+        if (moves.Count == 0) return 0;
+        for (var i = 0; i < actions.Count; i++)
+            if (moves.TryGetValue(actions[i], out var move)) actions[i] = move;
+        actions.RemoveAll(replaced.Contains);
+        return moves.Count;
     }
 
     /// <summary>

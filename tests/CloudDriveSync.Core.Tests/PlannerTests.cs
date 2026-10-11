@@ -195,6 +195,66 @@ public class PlannerTests
         Assert.Single(plan.Skipped);
     }
 
+    [Fact]
+    public void A_file_moved_in_the_cloud_moves_on_the_PC_too_and_is_no_deletion()
+    {
+        // Renamed on another PC: gone in the old folder, new in the new one - surely the same file (name, size, time).
+        var plan = Plan([Known(1, "Alt", dir: true), Known(2, "Alt/a.txt"), Known(3, "Alt/b.txt", size: 20)],
+            [Cloud("Neu", dir: true), Cloud("Neu/a.txt"), Cloud("Neu/b.txt", size: 20)],
+            [Placeholder(1, "Alt", dir: true), Placeholder(2, "Alt/a.txt", onDisk: true), Placeholder(3, "Alt/b.txt", size: 20)]);
+        var moves = plan.Actions.OfType<MoveLocal>().OrderBy(m => m.Path, StringComparer.Ordinal).ToList();
+        Assert.Equal(["Neu/a.txt", "Neu/b.txt"], moves.Select(m => m.Cloud.Path));
+        Assert.Equal([2L, 3L], moves.Select(m => m.Item.Id));
+        Assert.Equal("Neu", Assert.Single(plan.Actions.OfType<CreatePlaceholder>()).Path);
+        Assert.Equal("Alt", Assert.Single(plan.Actions.OfType<RemoveLocal>()).Path);
+        Assert.Equal(0, plan.Deletions);
+    }
+
+    [Theory]
+    [InlineData("Neu/a.txt", 11, 0, null, null)]
+    [InlineData("Neu/a.txt", 10, 1, null, null)]
+    [InlineData("Neu/a.txt", 10, 0, "sha1:aa", "sha1:bb")]
+    [InlineData("Neu/anders.txt", 10, 0, null, null)]
+    public void A_file_gone_in_the_cloud_and_a_new_one_are_no_move_unless_surely_the_same(string newPath, long size, int laterBy, string? before, string? after)
+    {
+        var plan = Plan([Known(1, "Alt/a.txt", hash: before)], [Cloud(newPath, size: size, ticks: T0 + laterBy * TimeSpan.TicksPerSecond, hash: after)],
+            [Placeholder(1, "Alt/a.txt")]);
+        Assert.Empty(plan.Actions.OfType<MoveLocal>());
+        Assert.Single(plan.Actions.OfType<RemoveLocal>());
+        Assert.Single(plan.Actions.OfType<CreatePlaceholder>());
+        Assert.Equal(1, plan.LocalDeletions);
+    }
+
+    [Fact]
+    public void A_large_folder_renamed_in_the_cloud_is_ten_thousand_moves_and_no_deletion()
+    {
+        const int count = 10_000;
+        var known = Enumerable.Range(1, count).Select(i => Known(i, $"Alt/{i}.txt", size: i)).Append(Known(count + 1, "Alt", dir: true)).ToArray();
+        var cloud = Enumerable.Range(1, count).Select(i => Cloud($"Neu/{i}.txt", size: i)).Append(Cloud("Neu", dir: true)).ToArray();
+        var local = Enumerable.Range(1, count).Select(i => Placeholder(i, $"Alt/{i}.txt", size: i)).Append(Placeholder(count + 1, "Alt", dir: true)).ToArray();
+        var plan = Plan(known, cloud, local);
+        Assert.Equal(count, plan.Actions.OfType<MoveLocal>().Count());
+        Assert.Equal(count + 2, plan.Actions.Count);
+        Assert.Equal(0, plan.Deletions);
+    }
+
+    [Fact]
+    public void Two_files_that_could_be_the_moved_one_are_no_move()
+    {
+        var plan = Plan([Known(1, "Alt/a.txt")], [Cloud("Neu/a.txt"), Cloud("Auch neu/a.txt")], [Placeholder(1, "Alt/a.txt")]);
+        Assert.Empty(plan.Actions.OfType<MoveLocal>());
+        Assert.Equal(1, plan.LocalDeletions);
+    }
+
+    [Fact]
+    public void A_file_moved_in_the_cloud_but_changed_on_the_PC_keeps_the_change()
+    {
+        var plan = Plan([Known(1, "Alt/a.txt")], [Cloud("Neu/a.txt")], [Placeholder(1, "Alt/a.txt", size: 12, ticks: T1, inSync: false, onDisk: true)]);
+        Assert.Empty(plan.Actions.OfType<MoveLocal>());
+        Assert.Single(plan.Actions.OfType<Upload>());
+        Assert.Single(plan.Actions.OfType<CreatePlaceholder>());
+    }
+
     [Theory]
     [InlineData(10, 6, 50, 0, true)]
     [InlineData(10, 5, 50, 0, false)]

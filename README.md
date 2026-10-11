@@ -43,6 +43,10 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
   - Beenden: Du wählst, was auf dem PC bleibt – die Dateien, alles (vorher heruntergeladen) oder nichts. „Vom PC
     löschen“ lädt erst alles hoch und legt dann den Ordner in den Papierkorb von Windows; Dateien, die es nur auf dem PC
     gibt, nur nach Rückfrage. Es bleiben keine Platzhalter zurück, die sich nicht löschen lassen.
+- **Mehrere Rechner:** Dasselbe Konto und dieselben Ordner lassen sich auf mehreren PCs synchronisieren, z. B. in der
+  Schule und zu Hause. Jeder PC führt seinen eigenen Stand; in der Cloud liegt von CloudDrive-Sync nur die gemeinsame
+  Schutzdatei. Beenden, Konto entfernen oder Deinstallieren auf einem PC ändert nichts für die anderen. Bei „Dateien bei
+  Bedarf“ wird, was ein anderer PC umbenennt oder verschiebt, auch hier nur verschoben – nichts wird neu geladen.
 - **IServ-Besonderheit:** IServ speichert keine eigenen Änderungszeiten. CloudDrive-Sync merkt sich die Zeiten des
   Servers selbst und erkennt so auch Änderungen, die die Dateigröße nicht verändern.
 - **Im Hintergrund:** Symbol im Infobereich mit Statuspunkt, Windows-Benachrichtigungen bei Konflikten und

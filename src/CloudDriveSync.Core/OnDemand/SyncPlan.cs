@@ -24,6 +24,12 @@ public sealed record RemoveCloud(SyncItem Item) : SyncAction(Item.Path);
 /// <summary>Renamed or moved on the PC: it is moved in the cloud (no upload; shares and versions stay).</summary>
 public sealed record MoveCloud(SyncItem Item, string NewPath) : SyncAction(NewPath);
 
+/// <summary>
+/// Renamed or moved in the cloud (e.g. on another PC), unchanged on the PC: the placeholder moves along - its data stays,
+/// nothing is fetched again, and nothing counts as deleted.
+/// </summary>
+public sealed record MoveLocal(SyncItem Item, LocalEntry Local, CloudEntry Cloud) : SyncAction(Cloud.Path);
+
 /// <summary>On both sides and the same, but not known yet (first run, rebuild): it is taken as in step.</summary>
 public sealed record Adopt(LocalEntry Local, CloudEntry Cloud) : SyncAction(Cloud.Path);
 

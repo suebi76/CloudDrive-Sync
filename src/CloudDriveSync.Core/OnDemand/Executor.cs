@@ -113,6 +113,8 @@ internal sealed partial class Executor
         foreach (var conflict in actions.OfType<Conflict>()) await StepAsync(conflict.Path, () => ResolveAsync(conflict), "Behält beide Fassungen");
         await CreatePlaceholdersAsync(actions.OfType<CreatePlaceholder>().Select(a => a.Cloud).ToList());
         foreach (var refresh in actions.OfType<RefreshPlaceholder>()) await StepAsync(refresh.Path, () => RefreshAsync(refresh), "Aktualisiert");
+        // After the new folders, before the old ones go (only when empty).
+        foreach (var move in actions.OfType<MoveLocal>()) await StepAsync(move.Path, () => MoveLocalAsync(move), "Verschiebt am PC");
         foreach (var remove in actions.OfType<RemoveLocal>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path)))
             await StepAsync(remove.Path, () => RemoveLocalAsync(remove), "Entfernt vom PC");
         foreach (var remove in actions.OfType<RemoveCloud>().OrderBy(a => a.Item.IsDirectory ? 1 : 0).ThenByDescending(a => Depth(a.Path)))
@@ -527,6 +529,30 @@ internal sealed partial class Executor
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Renamed or moved in the cloud (e.g. on another PC): the placeholder moves along, with its data. Looks again first:
+    /// only the unchanged placeholder of this item moves, and only to a free place in a folder that is there - otherwise
+    /// it stays, and the next run sees what is there.
+    /// </summary>
+    private Task MoveLocalAsync(MoveLocal move)
+    {
+        var from = LocalFull(move.Item.Path);
+        var to = LocalFull(move.Cloud.Path);
+        var now = Path.Exists(from) ? Placeholders.Read(from) : null;
+        if (now is null || !now.InSync || ItemIdentity.Decode(now.Identity)?.Id != move.Item.Id || Path.Exists(to) || !Directory.Exists(Path.GetDirectoryName(to)))
+        {
+            Log.Info("OnDemand", $"'{_pair.Id}': '{move.Item.Path}' not moved to '{move.Cloud.Path}' on the PC (changed or taken meanwhile); the next run sees it.");
+            return Task.CompletedTask;
+        }
+        File.Move(from, to);
+        _store.Update(move.Item with { Path = move.Cloud.Path, CloudSize = move.Cloud.Size, CloudTicks = move.Cloud.Ticks, CloudHash = move.Cloud.Hash ?? move.Item.CloudHash });
+        // Windows takes a renamed placeholder as changed; unchanged, it is in step again.
+        Placeholders.MarkInSyncIfUnchanged(to, new FileVersion(move.Item.LocalSize ?? -1, move.Item.LocalTicks ?? -1, -1));
+        _takenNames.Add(move.Cloud.Path);
+        _changes.Add(new FileChange(ChangeKind.Moved, move.Cloud.Path));
+        return Task.CompletedTask;
+    }
+
     private Task RemoveLocalAsync(RemoveLocal remove)
     {
         var full = LocalFull(remove.Path);
@@ -720,7 +746,7 @@ internal sealed partial class Executor
             if (Parent(move.Item.Path) is { Length: > 0 } parent) Restore(parent);
             if (Directory.Exists(Path.GetDirectoryName(before)))
             {
-                MoveBack(now, before, move.Item.IsDirectory);
+                MoveBack(now, before, move.Item.IsDirectory, SyncTrash.FolderOf(_pair.LocalPath));
                 // Windows takes a renamed placeholder as changed; back under its name and unchanged, it is in step again.
                 if (!move.Item.IsDirectory) Placeholders.MarkInSyncIfUnchanged(before, new FileVersion(move.Item.LocalSize ?? -1, move.Item.LocalTicks ?? -1, -1));
                 _changes.Add(new FileChange(ChangeKind.Restored, move.Item.Path));
@@ -734,13 +760,18 @@ internal sealed partial class Executor
         Restore(move.Item.Path);
     }
 
-    /// <summary>Back to the old name on the PC - also when only upper and lower case differ (through a name in between).</summary>
-    private static void MoveBack(string now, string before, bool isDirectory)
+    /// <summary>
+    /// Back to the old name on the PC - also when only upper and lower case differ: then through a place in the folder's
+    /// recycle bin, which never takes part in the synchronisation (should CloudDrive-Sync stop right then, nothing of its
+    /// own goes up; the next run brings the entry back from the server).
+    /// </summary>
+    private static void MoveBack(string now, string before, bool isDirectory, string trash)
     {
         var from = now;
         if (string.Equals(now, before, StringComparison.OrdinalIgnoreCase))
         {
-            from = now + ".clouddrive-move";
+            Directory.CreateDirectory(trash);
+            from = Path.Combine(trash, $".move-{Guid.NewGuid():N}");
             if (isDirectory) Directory.Move(now, from);
             else File.Move(now, from);
         }

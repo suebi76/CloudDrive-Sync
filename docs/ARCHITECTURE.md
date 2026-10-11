@@ -288,7 +288,18 @@ sie still endgültig zu löschen.
   Ordner nur zum Lesen), prüft `CloudFolderCheck` den Cloud-Ordner vor jedem Lauf selbst. Mehrere PCs teilen sich die
   Wächterdatei in der Cloud: Beim Einrichten bleibt eine vorhandene unangetastet, beim Beenden bleibt sie stehen (sonst
   hielten alle anderen PCs mit `CD-4503` an), und ihre Zeit am PC übernimmt `PcListingTimes` immer – ihr Inhalt ändert
-  sich nie. Abgesichert durch `MultiDeviceTests` (zwei PCs an einem Server, beide Modi).
+  sich nie (derselbe Text seit 0.1.0).
+- **Mehrere PCs** mit demselben Konto und Ordner: Jeder PC führt seinen Stand für sich (`sync\<id>\` im Datenordner, eigene
+  Anmeldung, eigener Papierkorb `.clouddrive-papierkorb`, der nie abgeglichen wird); die Wächterdatei ist das Einzige von
+  CloudDrive-Sync in der Cloud. Beenden (auch „Vom PC löschen“: erst abgleichen, dann nur am PC in den Papierkorb), Konto
+  entfernen und Deinstallieren ändern nur diesen PC. Was ein anderer PC umbenennt oder verschiebt, sieht „bei Bedarf“ als
+  Löschen und Neu – `Planner.MatchCloudMoves` macht daraus ein Verschieben am PC (`MoveLocal`), wenn es sicher dieselbe
+  Datei ist: gleicher Name, gleiche Größe und Zeit (Nextcloud: auch Prüfsumme), genau eine verschwundene und eine neue.
+  Dann bleiben die Daten am PC, nichts kommt in den Papierkorb, und ein umbenannter großer Ordner ist keine
+  Massenlöschung, die den Lauf anhält. Grenze klassisch: Speichern zwei PCs im selben Moment eine neue Datei gleichen
+  Namens, gewinnt die zuletzt hochgeladene – bisync schaut vor dem Hochladen nicht nach; die andere liegt im Papierkorb
+  ihres PCs. Bei Bedarf schaut jeder Schritt vorher nach, beide bleiben. Abgesichert durch `MultiDeviceTests` (zwei PCs
+  an einem Server, beide Modi, IServ und Nextcloud – auch: nur die Wächterdatei in der Cloud, unverändert).
 - **Eigene Serverzeiten** (`QuietServerChanges`) für Server ohne verlässliche Änderungszeiten, damit gleich große
   Änderungen nicht verloren gehen.
 - **Der letzte gute Zustand** (`RunSafety`): Vorübergehende Probleme kosten keinen Neuaufbau mehr.

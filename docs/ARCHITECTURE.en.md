@@ -288,8 +288,19 @@ silently.
 - **A sentinel file on both sides** - and where the server takes no file (IServ: "Gruppen" itself, the whole account,
   read-only folders), `CloudFolderCheck` checks the cloud folder itself before every run. Several PCs share the sentinel
   file in the cloud: setting up leaves an existing one as it is, ending leaves it there (otherwise every other PC would
-  stop with `CD-4503`), and `PcListingTimes` always takes its time on the PC as it is - its content never changes.
-  Covered by `MultiDeviceTests` (two PCs on one server, both modes).
+  stop with `CD-4503`), and `PcListingTimes` always takes its time on the PC as it is - its content never changes (the
+  same text since 0.1.0).
+- **Several PCs** with the same account and folder: each PC keeps its state for itself (`sync\<id>\` in the data folder,
+  its own sign-in, its own recycle bin `.clouddrive-papierkorb`, which never takes part); the sentinel file is all of
+  CloudDrive-Sync in the cloud. Ending (also "Vom PC löschen": synchronise first, then into the recycle bin on the PC
+  only), removing the account and uninstalling change this PC only. What another PC renames or moves, files on demand see
+  as deleted and new - `Planner.MatchCloudMoves` makes it a move on the PC (`MoveLocal`) when it surely is the same file:
+  the same name, size and time (Nextcloud: checksum, too), exactly one gone and one new. Then the data stays on the PC,
+  nothing goes into the recycle bin, and a renamed large folder is no mass deletion that stops the run. Limit, classic:
+  when two PCs save a new file of the same name at the same moment, the one uploaded last wins - bisync does not look
+  before it uploads; the other one is in the recycle bin of its PC. With files on demand every step looks first, both
+  stay. Covered by `MultiDeviceTests` (two PCs on one server, both modes, IServ and Nextcloud - also: only the sentinel
+  file in the cloud, unchanged).
 - **Server times of its own** (`QuietServerChanges`) for servers without reliable modification times, so same-size
   changes are not lost.
 - **The last good state** (`RunSafety`): passing problems no longer cost a rebuild.

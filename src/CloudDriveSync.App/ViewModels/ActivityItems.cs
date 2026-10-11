@@ -20,6 +20,7 @@ public sealed partial class ChangeRow
             ChangeKind.DeletedInCloud => (Glyphs.Trash, "in der Cloud gelöscht"),
             ChangeKind.DeletedOnPc => (Glyphs.Trash, trashKept ? "am PC gelöscht – im Papierkorb" : "am PC gelöscht"),
             ChangeKind.Restored => (Glyphs.Undo, "wiederhergestellt – der Server lässt das nicht zu"),
+            ChangeKind.Moved => (Glyphs.Folder, "verschoben wie in der Cloud"),
             _ => (Glyphs.Warning, "bleibt nur auf diesem PC"),
         };
         CanShow = change.Kind is not (ChangeKind.DeletedInCloud or ChangeKind.DeletedOnPc);

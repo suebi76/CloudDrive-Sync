@@ -3,6 +3,30 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.16] – 2026-10-11
+
+Sixteenth test version on the way to 0.3: several PCs with the same folders.
+
+### Changed
+
+- Files on demand: a file or folder renamed or moved on another PC (or in the browser) is moved on this PC as well,
+  instead of being deleted and fetched again. What was on the PC stays there, nothing goes into the recycle bin, and a
+  renamed folder with many files no longer stops the run with a question about deletions. Only files that are surely
+  the same move (the same name, size and time - and checksum, where the server has one -, exactly one of each);
+  anything else goes the safe way as before.
+- The activity list shows such files as "verschoben wie in der Cloud".
+
+### Checked
+
+- Several PCs with the same account and folders, both modes: synchronising on both, ending on one PC in any way
+  (keeping the files, everything, or "Vom PC löschen"), removing the account, rebuilding and switching the mode on one PC,
+  both PCs running at the same moment, a second PC whose folder has copies already, Nextcloud. Whatever one PC does, the
+  other neither stops nor loses anything. The only file of CloudDrive-Sync's own in the cloud is the protection file the
+  PCs share; it never changes.
+- Known limit of classic synchronisations ("Alle Dateien auf diesem PC"): when two PCs save a new file of the same name
+  at the same moment, the one uploaded last is in the cloud and the other one in CloudDrive-Sync's recycle bin of its PC.
+  With files on demand both stay side by side.
+
 ## [0.3.0-preview.15] – 2026-10-11
 
 Fifteenth test version on the way to 0.3: shares other people own, safely.
