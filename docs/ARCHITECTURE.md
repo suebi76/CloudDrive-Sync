@@ -455,8 +455,12 @@ Stand abweicht):
   wird aus „die neuere gewinnt“ „beide behalten“. Hat der Server eine Prüfsumme und ist der Inhalt gleich, entsteht keine
   Kopie.
 - Eine Änderung schlägt eine Löschung: In der Cloud geändert und am PC gelöscht (oder umgekehrt) bringt die Datei zurück.
-- Beim ersten Lauf und beim Neuaufbau wird nichts gelöscht; gleich große Dateien gelten als gleich (wie bei bisync auf
-  Servern ohne Prüfsumme), sonst bleiben beide.
+- Beim ersten Lauf und beim Neuaufbau wird nichts gelöscht. Eine Datei auf beiden Seiten gilt als gleich, wenn sie
+  gleich groß ist und denselben Inhalt hat – geprüft über die Prüfsumme des Servers oder, wo er keine hat (IServ), indem
+  der Inhalt aus der Cloud gelesen und verglichen wird (`Executor.SameContentAsync`, Abbruch beim ersten Unterschied).
+  Sonst bleiben beide. Nur beim Umstellen einer klassischen Synchronisation gilt, was seit bisyncs letztem Lauf auf beiden
+  Seiten unverändert ist, ohne Lesen als gleich (`Adopt.Proven`). Klassisch (bisync) gilt beim ersten Abgleich weiter
+  „gleich groß = gleich“, wo der Server keine Prüfsumme hat.
 - Eine normale Datei am Platz eines Platzhalters ist eine Änderung (so speichert Office). Ein Platzhalter an einem neuen
   Platz wurde umbenannt oder verschoben – er wird in der Cloud verschoben, nicht neu hochgeladen; ein Ordner nimmt seinen
   Inhalt mit. Liegt der Platzhalter einer Datei noch irgendwo am PC, gilt sie nie als „am PC gelöscht“.

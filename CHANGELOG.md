@@ -3,6 +3,19 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.19] – 2026-10-11
+
+Nineteenth test version on the way to 0.3: more of the bug hunt.
+
+### Fixed
+
+- Files on demand, setting up a folder that has copies already (from a USB stick, or a synchronisation ended and set up
+  again): on servers without checksums (IServ) a file of the same size on both sides counted as the same. A file changed
+  in the cloud meanwhile that kept its size - a date in a text - was then taken as the PC's older copy, and that would
+  later have gone up over the newer one. Now its content is compared (read from the cloud, stopping at the first
+  difference); different content keeps both versions. Classic synchronisations keep "same size = same" on their first
+  run - set up new folders with files on demand.
+
 ## [0.3.0-preview.18] – 2026-10-11
 
 Eighteenth test version on the way to 0.3: more of the bug hunt.

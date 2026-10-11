@@ -196,6 +196,20 @@ public class PlannerTests
     }
 
     [Fact]
+    public void A_file_on_both_sides_is_proven_the_same_only_when_switching_shows_it_unchanged()
+    {
+        // Otherwise its content is compared when the plan is carried out (Executor.AdoptAsync).
+        var cloud = new Dictionary<string, CloudEntry>(StringComparer.Ordinal) { ["a.txt"] = Cloud("a.txt"), ["b.txt"] = Cloud("b.txt") };
+        LocalEntry[] local = [Normal("a.txt"), Normal("b.txt")];
+        var first = Planner.Plan(new Planner.Input([], cloud, local, Rebuild: true));
+        Assert.Equal(2, first.Actions.OfType<Adopt>().Count());
+        Assert.All(first.Actions.OfType<Adopt>(), adopt => Assert.False(adopt.Proven));
+        var switching = Planner.Plan(new Planner.Input([], cloud, local, Rebuild: true, InStep: new HashSet<string>(["a.txt"])));
+        Assert.True(Assert.Single(switching.Actions.OfType<Adopt>()).Proven);
+        Assert.Equal("b.txt", Assert.Single(switching.Actions.OfType<Conflict>()).Path);
+    }
+
+    [Fact]
     public void A_file_moved_in_the_cloud_moves_on_the_PC_too_and_is_no_deletion()
     {
         // Renamed on another PC: gone in the old folder, new in the new one - surely the same file (name, size, time).

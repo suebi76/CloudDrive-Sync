@@ -95,7 +95,7 @@ public static class Planner
             {
                 if (inCloud is not null && onPc is not null)
                     actions.Add(isDirectory || (Same(onPc, inCloud) && (input.InStep is null || input.InStep.Contains(place)))
-                        ? new Adopt(onPc, inCloud) : new Conflict(onPc, inCloud, null));
+                        ? new Adopt(onPc, inCloud, Proven: input.InStep?.Contains(place) == true) : new Conflict(onPc, inCloud, null));
                 else if (inCloud is not null)
                     actions.Add(new CreatePlaceholder(inCloud));
                 else if (onPc!.IsDirectory)

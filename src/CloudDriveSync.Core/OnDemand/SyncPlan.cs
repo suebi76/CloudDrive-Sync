@@ -31,7 +31,11 @@ public sealed record MoveCloud(SyncItem Item, string NewPath) : SyncAction(NewPa
 public sealed record MoveLocal(SyncItem Item, LocalEntry Local, CloudEntry Cloud) : SyncAction(Cloud.Path);
 
 /// <summary>On both sides and the same, but not known yet (first run, rebuild): it is taken as in step.</summary>
-public sealed record Adopt(LocalEntry Local, CloudEntry Cloud) : SyncAction(Cloud.Path);
+/// <param name="Proven">
+/// Known to be the same without looking at the content: unchanged on both sides since bisync's last run (switching a
+/// classic synchronisation). Otherwise a file of the same size is the same only with the same content.
+/// </param>
+public sealed record Adopt(LocalEntry Local, CloudEntry Cloud, bool Proven = false) : SyncAction(Cloud.Path);
 
 /// <summary>A placeholder that was not marked in sync although it is the version that was uploaded: marked now.</summary>
 public sealed record MarkInSync(SyncItem Item, LocalEntry Local) : SyncAction(Item.Path);

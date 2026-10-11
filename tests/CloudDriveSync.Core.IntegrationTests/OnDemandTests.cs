@@ -635,6 +635,22 @@ public class OnDemandTests
         Assert.False(File.Exists(world.Cloud("nur online.txt")));
     }
 
+    [Fact]
+    public async Task A_file_already_on_the_PC_counts_as_the_same_only_with_the_same_content()
+    {
+        // Set up on a folder with copies already (from a USB stick, or a synchronisation ended and set up again). Without a
+        // checksum (IServ) the same size is not enough: the cloud's version changed meanwhile and kept its size.
+        await using var world = await WorldAsync(
+            cloud: w => { w.WriteCloud("Termine.txt", "Elternabend am 10.10."); w.WriteCloud("Gleich.txt", "unverändert"); },
+            pc: w => { w.WritePc("Termine.txt", "Elternabend am 09.10."); w.WritePc("Gleich.txt", "unverändert"); });
+
+        var termine = world.CloudFiles().Where(f => f.StartsWith("Termine", StringComparison.Ordinal)).Select(world.ReadCloud).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(["Elternabend am 09.10.", "Elternabend am 10.10."], termine);
+        Assert.Equal("unverändert", world.ReadCloud("Gleich.txt"));
+        Assert.DoesNotContain(world.CloudFiles(), f => f.StartsWith("Gleich.Konflikt", StringComparison.Ordinal));
+        AssertInStep(world);
+    }
+
     [Theory]
     [InlineData(507, "CD-3006")]
     [InlineData(500, "CD-4605")]

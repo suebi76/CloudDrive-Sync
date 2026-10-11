@@ -451,8 +451,11 @@ retries, decisions and history are the same. Only the run itself differs (`SyncS
   bisync (`Name.Konflikt-PC1.ext`, `Name.Konflikt-Cloud1.ext`). On servers without times of their own, "the newer one
   wins" becomes "keep both". When the server has a checksum and the content is the same, no copy is made.
 - A change beats a deletion: changed in the cloud and deleted on the PC (or the other way round) brings the file back.
-- The first run and a rebuild delete nothing; files of the same size count as the same (as with bisync on servers without
-  checksums), otherwise both stay.
+- The first run and a rebuild delete nothing. A file on both sides counts as the same when it has the same size and the
+  same content - checked by the server's checksum or, where it has none (IServ), by reading the content from the cloud
+  and comparing it (`Executor.SameContentAsync`, stopping at the first difference). Otherwise both stay. Only when
+  switching a classic synchronisation, what is unchanged on both sides since bisync's last run counts as the same without
+  reading (`Adopt.Proven`). Classic (bisync) keeps "same size = same" on its first run where the server has no checksum.
 - A normal file in the place of a placeholder is a change (that is how Office saves). A placeholder in a new place was
   renamed or moved - it is moved in the cloud, not uploaded again; a folder takes its content along. While a file's
   placeholder lies anywhere on the PC, the file never counts as "deleted on the PC".

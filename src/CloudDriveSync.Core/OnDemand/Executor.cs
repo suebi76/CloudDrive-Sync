@@ -107,7 +107,7 @@ internal sealed partial class Executor
         _totalBytes = actions.OfType<Upload>().Sum(u => u.Local.Size);
         foreach (var move in actions.OfType<MoveCloud>()) await StepAsync(move.NewPath, () => MoveCloudAsync(move), "Verschiebt in der Cloud");
         foreach (var folder in actions.OfType<CreateCloudFolder>().OrderBy(a => Depth(a.Path))) await StepAsync(folder.Path, () => CreateCloudFolderAsync(folder), "Legt in der Cloud an");
-        foreach (var adopt in actions.OfType<Adopt>().OrderBy(a => a.Cloud.IsDirectory ? 0 : 1).ThenBy(a => Depth(a.Path))) await StepAsync(adopt.Path, () => AdoptAsync(adopt));
+        foreach (var adopt in actions.OfType<Adopt>().OrderBy(a => a.Cloud.IsDirectory ? 0 : 1).ThenBy(a => Depth(a.Path))) await StepAsync(adopt.Path, () => AdoptAsync(adopt), "Vergleicht");
         foreach (var upload in actions.OfType<Upload>()) await StepAsync(upload.Path, () => UploadAsync(upload.Local, upload.Item), Uploading);
         foreach (var mark in actions.OfType<MarkInSync>()) await StepAsync(mark.Path, () => MarkAsync(mark));
         foreach (var conflict in actions.OfType<Conflict>()) await StepAsync(conflict.Path, () => ResolveAsync(conflict), "Behält beide Fassungen");
@@ -290,23 +290,54 @@ internal sealed partial class Executor
         _takenNames.Add(folder.Path);
     }
 
-    private Task AdoptAsync(Adopt adopt)
+    private async Task AdoptAsync(Adopt adopt)
     {
         var full = LocalFull(adopt.Path);
         if (adopt.Cloud.IsDirectory)
         {
             var id = _store.Upsert(new SyncItem(0, adopt.Cloud.Path, true, 0, adopt.Cloud.Ticks, null, null, null));
             MakePlaceholder(adopt.Local, id);
-            return Task.CompletedTask;
+            return;
         }
-        // Where the server has a checksum, the same size is not enough: different content is a conflict after all.
-        if (adopt.Cloud.Hash is not null && adopt.Local.OnDisk && !LocalHashMatches(full, adopt.Cloud.Hash))
-            return ResolveAsync(new Conflict(adopt.Local, adopt.Cloud, null));
+        // The same size is not enough: different content is a conflict after all - checked by the server's checksum, or,
+        // where it has none (IServ, most WebDAV servers), by the content itself. Before, a file changed in the cloud that
+        // kept its size (a date in a text) was taken as the PC's copy - and the PC's older version would later have gone up.
+        if (adopt.Local.OnDisk && (adopt.Cloud.Hash is { } hash ? !LocalHashMatches(full, hash) : !adopt.Proven && !await SameContentAsync(full, adopt.Cloud)))
+        {
+            await ResolveAsync(new Conflict(adopt.Local, adopt.Cloud, null));
+            return;
+        }
         var version = Placeholders.ReadVersion(full);
         var itemId = _store.Upsert(new SyncItem(0, adopt.Cloud.Path, false, adopt.Cloud.Size, adopt.Cloud.Ticks, adopt.Cloud.Hash, version.Size, version.LastWriteTicks));
         if (adopt.Local.OnDisk) FinishUpload(adopt.Local, itemId, version);
         else MakePlaceholder(adopt.Local, itemId);
-        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Whether the file on the PC has the content of the cloud's file - read from the cloud and compared piece by piece; it
+    /// stops at the first difference.
+    /// </summary>
+    private async Task<bool> SameContentAsync(string full, CloudEntry cloud)
+    {
+        if (cloud.Size == 0) return new FileInfo(full).Length == 0;
+        try
+        {
+            await using var remote = await _files.OpenAsync(_remote, CloudFetcher.CloudPath(_pair, cloud.Path), 0, cloud.Size, _cancel);
+            await using var local = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, useAsync: true);
+            var cloudPiece = new byte[1 << 16];
+            var pcPiece = new byte[1 << 16];
+            while (true)
+            {
+                var count = await remote.Content.ReadAsync(cloudPiece, _cancel);
+                if (count == 0) return await local.ReadAsync(pcPiece.AsMemory(0, 1), _cancel) == 0;
+                var got = await local.ReadAtLeastAsync(pcPiece.AsMemory(0, count), count, throwOnEndOfStream: false, _cancel);
+                if (got != count || !cloudPiece.AsSpan(0, count).SequenceEqual(pcPiece.AsSpan(0, count))) return false;
+            }
+        }
+        catch (HttpRequestException e)
+        {
+            throw new CdException("CD-5001", $"{cloud.Path}: {e.Message}", e);
+        }
     }
 
     /// <summary>Uploads a new or changed file and makes it a placeholder in step with the uploaded version.</summary>
