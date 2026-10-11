@@ -222,7 +222,7 @@ public class SharesTests
 
         var locked = await world.RunAsync();
         Assert.False(locked.Success);
-        Assert.Equal("CD-4513", locked.ErrorCode);
+        Assert.Equal("CD-4514", locked.ErrorCode);
         Assert.True(locked.Retryable);
         Assert.Null(locked.LocalOnlyAdded);
         Assert.Equal("meins", world.ReadCloud("Eigenes/Notiz.txt"));

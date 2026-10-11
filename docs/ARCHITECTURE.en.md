@@ -308,7 +308,7 @@ silently.
   deliberately for that. Refused is what the server answers with 403, 404, 405, 409 or 415 - with a whole error page (a
   filter in front of Nextcloud that blocks program files, for example) the status at its end counts, not its text
   (`RunSafety.IsRefusal`); the same with files on demand. "423 Locked" is no refusal: someone has the file open (e.g. in
-  Nextcloud Office), and that passes (`CD-4513`, tried again later) - before, it stayed on the PC for good. A folder
+  Nextcloud Office), and that passes (`CD-4514`, tried again later) - before, it stayed on the PC for good. A folder
   stays on the PC with what is in it: `- /Folder` and `- /Folder/**` (with the first rule alone rclone sees the folder
   and its content, checked).
 - **What the server does not let be changed comes back (files on demand).** Shares of others to read only (Nextcloud)

@@ -74,6 +74,15 @@ public class RunSafetyTests : IDisposable
             2026/10/11 09:00:00 INFO  : - Path2             Queue copy to Path1                         - cd-nc:Ablage/Plan.docx
             2026/10/11 09:00:01 ERROR : Plan.docx: Failed to copy: unchunked simple update failed: "Plan.docx" is locked: OCA\DAV\Connector\Sabre\Exception\FileLocked: 423 Locked
             """, "cd-nc:Ablage"));
+        // Each passing trouble by its name - bisync's "must run --resync" in the report does not decide it.
+        const string resync = "\nERROR : Bisync aborted. Must run --resync to recover.";
+        Assert.Equal("CD-4510", RunSafety.PassingCode(locked));
+        Assert.Equal("CD-3006", RunSafety.PassingCode("ERROR : a.txt: Failed to copy: unchunked simple update failed: 507 Insufficient Storage" + resync));
+        Assert.Equal("CD-4514", RunSafety.PassingCode(lockedInCloud + resync));
+        const string diskFull = @"ERROR : Bilder/Ausflug.jpg: Failed to copy: write C:\Schule\Bilder\Ausflug.jpg.partial: There is not enough space on the disk.";
+        Assert.True(RunSafety.IsPassing(diskFull));
+        Assert.Equal("CD-4515", RunSafety.PassingCode(diskFull + resync));
+        Assert.Equal("CD-5001", RunSafety.PassingCode(network + resync));
         const string broken = "ERROR : Bisync critical error: path1 listing is corrupt";
         Assert.True(RunSafety.IsCritical(broken));
         Assert.False(RunSafety.IsPassing(broken));

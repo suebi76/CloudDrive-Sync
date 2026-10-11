@@ -161,7 +161,7 @@ internal sealed partial class Executor
             Log.Info("OnDemand", $"'{_pair.Id}': the server did not take '{path}'; it stays on the PC.");
             KeepOnPc(path);
         }
-        catch (CdException e) when (e.Code == "CD-4513")
+        catch (CdException e) when (e.Code == "CD-4514")
         {
             Log.Info("OnDemand", $"'{_pair.Id}': '{path}' is locked in the cloud (someone has it open); it follows later.");
             _serverLocked.Add(path);

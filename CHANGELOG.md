@@ -3,6 +3,22 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.18] – 2026-10-11
+
+Eighteenth test version on the way to 0.3: more of the bug hunt.
+
+### Fixed
+
+- A file someone has open in the cloud was reported with the code and text of another message ("Lokaler Ordner enthält
+  nicht lesbare Einträge", CD-4513): the code was given twice. It is CD-4514 now ("Datei ist in der Cloud gerade
+  gesperrt"); a test makes sure every code has exactly one entry.
+- Classic synchronisations: a drive of the PC that is full asked for a rebuild. It now passes without one - "Kein Platz
+  mehr auf diesem PC" (CD-4515), with the hint that files on demand take space only when opened.
+
+### Changed
+
+- Replacing a file in the cloud (preview.17) costs two requests less: after the upload the copy beside it just goes.
+
 ## [0.3.0-preview.17] – 2026-10-11
 
 Seventeenth test version on the way to 0.3: the first results of the bug hunt, module by module.

@@ -71,7 +71,7 @@ internal sealed class OnDemandRunner
                 };
             }
             // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
-            live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4513" or "CD-4605" ? ProviderStatus.Idle
+            live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4514" or "CD-4605" ? ProviderStatus.Idle
                 : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
             return outcome;
         }
@@ -230,7 +230,7 @@ internal sealed class OnDemandRunner
                 return new SyncRunOutcome(false, "CD-4510", string.Join(", ", result.Locked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space,
                     leftOutFolders);
             if (result.ServerLocked.Count > 0)
-                return new SyncRunOutcome(false, "CD-4513", string.Join(", ", result.ServerLocked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly,
+                return new SyncRunOutcome(false, "CD-4514", string.Join(", ", result.ServerLocked.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly,
                     result.Changes, space, leftOutFolders);
             if (result.Failed.Count > 0)
                 return new SyncRunOutcome(false, "CD-4605", string.Join(", ", result.Failed.Take(5)), SyncDecision.None, final, result.Deletes, conflicts, true, localOnly, result.Changes, space,

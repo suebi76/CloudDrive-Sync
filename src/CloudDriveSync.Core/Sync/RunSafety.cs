@@ -82,6 +82,18 @@ internal static partial class RunSafety
     public static bool IsLockedInCloud(string text) => LockedInCloudPattern().IsMatch(text);
 
     /// <summary>
+    /// The code of trouble that passes, by what passes - a run report says "must run --resync" in any case, which says
+    /// nothing about it: a file open on the PC, the cloud's storage full, a file open in the cloud, the PC's drive full,
+    /// or (anything else) the network.
+    /// </summary>
+    public static string PassingCode(string text) =>
+        IsFileInUse(text) ? "CD-4510"
+        : IsStorageFull(text) ? "CD-3006"
+        : IsLockedInCloud(text) ? "CD-4514"
+        : DiskFullPattern().IsMatch(text) ? "CD-4515"
+        : "CD-5001";
+
+    /// <summary>
     /// Files bisync could not upload because the server did not take them (a folder to read only), relative to the
     /// synchronised folder. Only uploads count - bisync's queue of copies to path 1 names them.
     /// </summary>
@@ -111,7 +123,7 @@ internal static partial class RunSafety
     [GeneratedRegex(@"(?i)Bisync critical error|cannot find prior Path1 or Path2 listings")]
     private static partial Regex CriticalPattern();
 
-    [GeneratedRegex(@"(?i)being used by another process|cannot access the file|failed to open source object|i/o timeout|connection reset|connection refused|unexpected EOF|context deadline exceeded|TLS handshake timeout|no such host|network is unreachable|50[234] |429 Too Many Requests|423 Locked|507 Insufficient Storage|insufficient storage|quota (?:limit )?(?:reached|exceeded)|cannot find prior Path1 or Path2 listings")]
+    [GeneratedRegex(@"(?i)being used by another process|cannot access the file|failed to open source object|i/o timeout|connection reset|connection refused|unexpected EOF|context deadline exceeded|TLS handshake timeout|no such host|network is unreachable|50[234] |429 Too Many Requests|423 Locked|507 Insufficient Storage|insufficient storage|quota (?:limit )?(?:reached|exceeded)|not enough space on the disk|cannot find prior Path1 or Path2 listings")]
     private static partial Regex PassingPattern();
 
     [GeneratedRegex(@"(?i)being used by another process|cannot access the file")]
@@ -122,6 +134,10 @@ internal static partial class RunSafety
 
     [GeneratedRegex(@"(?im):\s*423 Locked\s*$|Exception\\FileLocked")]
     private static partial Regex LockedInCloudPattern();
+
+    // rclone reports Windows' errors in English (Go asks Windows for English texts), whatever the language of Windows.
+    [GeneratedRegex(@"(?i)not enough space on the disk")]
+    private static partial Regex DiskFullPattern();
 
     [GeneratedRegex(@"(?m)Queue copy to Path1\s+-\s+(.+?)\s*$")]
     private static partial Regex UploadQueuePattern();

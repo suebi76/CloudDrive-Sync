@@ -307,7 +307,7 @@ sie still endgültig zu löschen.
   wird dafür gezielt erneuert. Als abgelehnt gilt, was der Server mit 403, 404, 405, 409 oder 415 beantwortet – bei einer
   ganzen Fehlerseite (ein Filter vor Nextcloud, der z. B. Programmdateien sperrt) zählt der Status an ihrem Ende, nicht
   ihr Text (`RunSafety.IsRefusal`); bei „bei Bedarf“ ebenso. „423 Locked“ ist keine Ablehnung: Jemand hat die Datei
-  geöffnet (z. B. in Nextcloud Office), das geht vorbei (`CD-4513`, später erneut) – vorher blieb sie für immer am PC.
+  geöffnet (z. B. in Nextcloud Office), das geht vorbei (`CD-4514`, später erneut) – vorher blieb sie für immer am PC.
   Ein Ordner bleibt mit seinem Inhalt am PC: `- /Ordner` und `- /Ordner/**` (die erste Regel allein lässt rclone den
   Ordner samt Inhalt sehen, geprüft).
 - **Was der Server nicht ändern lässt, kommt zurück (bei Bedarf).** Freigaben anderer nur zum Lesen (Nextcloud) oder
