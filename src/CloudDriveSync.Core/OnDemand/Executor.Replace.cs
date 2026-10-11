@@ -99,6 +99,12 @@ internal sealed partial class Executor
                         ["dstFs"] = cloudFs,
                         ["dstRemote"] = path,
                     }, TimeSpan.FromMinutes(30), cancellationToken);
+                    // The known version is back - on servers like IServ with the time the copy got. Noted, so the next run
+                    // does not take it for a change in the cloud: that made a conflict of it, and both versions copies.
+                    if (store.FindByPath(path) is { } known &&
+                        await files.StatAsync(remote, CloudFetcher.CloudPath(pair, path), withHash: false, cancellationToken) is { } back &&
+                        back.Size == known.CloudSize)
+                        store.Update(known with { CloudTicks = back.Ticks });
                     Log.Warn("OnDemand", $"'{pair.Id}': the upload of '{path}' failed and the file was gone from the cloud; its version there is back.");
                 }
                 else

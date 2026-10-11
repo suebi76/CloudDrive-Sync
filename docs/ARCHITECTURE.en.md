@@ -389,7 +389,9 @@ silently.
   locked file for minutes. Files on demand therefore upload with two tries at most (`LowLevelRetries`) and replace a file
   the cloud has only with a copy beside it (`Executor.ReplaceAsync`): first copied on the server
   (`CloudDrive-Sync-Sicherung-….tmp`, `*.tmp` is never synchronised), then the upload; afterwards the copy takes the
-  file's place again if the file is gone, and goes in any case. The note of it is in `items.db` (`upload-backup`); left
+  file's place again if the file is gone, and goes in any case. Put back, it is the known version - on IServ, though,
+  with the time of copying; that time goes into `items.db`, otherwise the next run took it for a change in the cloud and
+  made conflict copies of both versions. The note of it is in `items.db` (`upload-backup`); left
   after a crash, the next run settles it before anything else (`RecoverAsync`). When the server does not even take the
   copy because its storage is full, nothing is uploaded. Uploading under another name and renaming would be simpler, but
   gives the file a new ID in Nextcloud - shares, versions and comments would be lost. Classic (bisync) keeps the limit:
@@ -585,7 +587,9 @@ the whole program with it (preview.9). `FolderWalk` goes folder by folder, passe
 in it is unknown, and the callers treat it so: the deletion guard counts none of it as missing and keeps what it knew of
 it, "Vom PC löschen" leaves the folder and names it, and where everything must come onto the PC (download everything,
 back to classic) it ends with `CD-4609` before anything changes. The folder itself unreadable still throws. And no single
-synchronisation holds up the start of the others (`SyncService.Start`). `FolderWalk` never follows links (symbolic links,
+synchronisation holds up the start of the others (`SyncService.Start`). Looking for conflict copies passes nothing over by
+its attributes: placeholders are reparse points, too, and so it found no conflict copy at all with files on demand (up to
+preview.21). `FolderWalk` never follows links (symbolic links,
 junctions) - placeholders are reparse points, too, but no links. Before, moving the rest of a folder into the recycle bin
 could reach files outside it through a junction; now the link stays and is named.
 

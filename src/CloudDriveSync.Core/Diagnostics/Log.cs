@@ -10,6 +10,7 @@ public static partial class Log
 {
     private static readonly object Gate = new();
     private static string? _directory;
+    private static readonly AsyncLocal<List<string>?> Captured = new();
 
     public static void Initialize(string directory)
     {
@@ -23,8 +24,21 @@ public static partial class Log
     public static void Warn(string component, string message) => Write("WARN", component, message);
     public static void Error(string component, string message) => Write("ERROR", component, message);
 
+    /// <summary>
+    /// For tests: what the calling test writes from now on (its own flow and the tasks it starts) is kept in the list,
+    /// too. Tests running beside it write in flows of their own and do not reach it.
+    /// </summary>
+    internal static List<string> Capture()
+    {
+        var lines = new List<string>();
+        Captured.Value = lines;
+        return lines;
+    }
+
     private static void Write(string level, string component, string message)
     {
+        if (Captured.Value is { } captured)
+            lock (captured) captured.Add($"[{level}] [{component}] {Redact(message)}");
         var directory = _directory;
         if (directory is null) return;
         var line = $"{DateTimeOffset.Now:yyyy-MM-ddTHH:mm:ss.fffzzz} [{level,-5}] [{component}] {Redact(message)}{Environment.NewLine}";

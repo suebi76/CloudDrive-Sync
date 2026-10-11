@@ -111,7 +111,9 @@ public sealed partial class SyncRunner
         }
 
         var group = $"sync/{pair.Id}";
-        await TryCallAsync(rc, "core/stats-reset", new JsonObject { ["group"] = group });
+        // Fresh statistics: whatever a run that broke off left goes. Deleting, not resetting - resetting a group that is not
+        // there wrote an error into rclone's log for every run.
+        await TryCallAsync(rc, "core/stats-delete", new JsonObject { ["group"] = group });
         var body = BisyncCommand.Build(pair, account, workDir, filtersFile, mode, resyncMode, keepTrash: keepTrash);
         Log.Info("Sync", $"Run of '{pair.Id}' started ({mode}).");
         var result = await rc.RunJobAsync("sync/bisync", body, group, progress, cancellationToken);
@@ -243,7 +245,9 @@ public sealed partial class SyncRunner
         var found = new List<string>();
         try
         {
-            foreach (var file in FolderWalk.Files(localPath, FileAttributes.ReparsePoint))
+            // Nothing passed over by its attributes: placeholders (files on demand) are reparse points, too, and passing
+            // those over left out every conflict copy there - and every folder. Links are never entered (FolderWalk).
+            foreach (var file in FolderWalk.Files(localPath, FileAttributes.None))
             {
                 if (!ConflictPattern().IsMatch(file.Name)) continue;
                 var relative = Path.GetRelativePath(localPath, file.FullName);

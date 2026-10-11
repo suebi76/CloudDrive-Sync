@@ -18,6 +18,9 @@ public sealed partial class SyncService
 
     private readonly Lock _cleanUpGate = new();
 
+    /// <summary>A folder still held is tried every 2 minutes: its line goes into the log once, not at every try.</summary>
+    private readonly LogOnce _cleanUpLog = new();
+
     /// <summary>How long Windows gets to clear up after a registration ended; tests make it short.</summary>
     internal TimeSpan CleanUpWait { get; set; } = TimeSpan.FromSeconds(15);
 
@@ -40,10 +43,12 @@ public sealed partial class SyncService
                     {
                         if (OnDemandSupported) FinishCleanUps();
                     }, cancellationToken);
+                    _cleanUpLog.Settled("");
                 }
                 catch (Exception e) when (e is not OperationCanceledException)
                 {
-                    Log.Warn("Sync", $"Clearing up left-overs failed, tried again later: {e.Message}");
+                    var line = $"Clearing up left-overs failed, tried again later: {e.Message}";
+                    if (_cleanUpLog.IsNew("", line)) Log.Warn("Sync", line);
                 }
                 lock (_cleanUpGate)
                 {
@@ -272,20 +277,26 @@ public sealed partial class SyncService
                     {
                         // Nothing left (the program let go, or the folder is gone): the registration that waited for it ends.
                         if (registered is not null) SyncRoots.Unregister(item.Registration);
+                        _cleanUpLog.Settled(item.Registration);
                         continue;
                     }
                     var again = OnDemandPair.CleanUpSpec(item.Registration, item.Folder, item.Context);
                     // Only its own registration makes a placeholder readable again.
                     if (registered is null) SyncRoots.Register(again);
-                    var ended = Leftovers.EndWhenClear(item.Registration, item.Folder, again, CleanUpWait, out var result);
-                    Log.Info("Sync", ended
-                        ? $"Left-overs of '{item.Context}' cleared: {result.Removed} removed, {result.Kept} kept as normal files."
-                        : $"Left-overs of '{item.Context}': {result.Failed.Count} still held by a program; the folder stays registered until they are free.");
-                    if (!ended) left.Add(item);
+                    if (Leftovers.EndWhenClear(item.Registration, item.Folder, again, CleanUpWait, out var result))
+                    {
+                        _cleanUpLog.Settled(item.Registration);
+                        Log.Info("Sync", $"Left-overs of '{item.Context}' cleared: {result.Removed} removed, {result.Kept} kept as normal files.");
+                        continue;
+                    }
+                    var line = $"Left-overs of '{item.Context}': {result.Failed.Count} still held by a program; the folder stays registered until they are free.";
+                    if (_cleanUpLog.IsNew(item.Registration, line)) Log.Info("Sync", line);
+                    left.Add(item);
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or COMException)
                 {
-                    Log.Warn("Sync", $"Left-overs of '{item.Context}' not cleared yet: {e.Message}");
+                    var line = $"Left-overs of '{item.Context}' not cleared yet: {e.Message}";
+                    if (_cleanUpLog.IsNew(item.Registration, line)) Log.Warn("Sync", line);
                     left.Add(item);
                 }
             }

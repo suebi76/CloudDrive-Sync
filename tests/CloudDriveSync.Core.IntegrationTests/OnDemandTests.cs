@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using CloudDriveSync.Core.CloudFiles;
+using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
 using CloudDriveSync.Core.OnDemand;
 using CloudDriveSync.Core.Settings;
@@ -202,6 +203,19 @@ public class OnDemandTests
         Assert.Equal("am PC geändert", world.ReadCloud("Plan.Konflikt-PC1.txt"));
         Assert.Equal("in der Cloud geändert, länger", world.ReadCloud("Plan.Konflikt-Cloud1.txt"));
         AssertInStep(world);
+    }
+
+    [Fact]
+    public async Task Conflict_copies_are_named_also_as_placeholders_and_in_folders()
+    {
+        // The search for conflict copies passed over placeholders - and with them over every folder of files on demand: the
+        // card, the list of conflicts and the notice never named one.
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("Ordner/Plan.txt", "gemeinsam"));
+        Fetch(world, "Ordner/Plan.txt");
+        world.WritePc("Ordner/Plan.txt", "am PC geändert");
+        world.WriteCloud("Ordner/Plan.txt", "in der Cloud geändert, länger", later: true);
+        var outcome = await RunAsync(world);
+        Assert.Equal(["Ordner/Plan.Konflikt-Cloud1.txt", "Ordner/Plan.Konflikt-PC1.txt"], outcome.Conflicts.Select(c => c.Replace('\\', '/')));
     }
 
     [Fact]
@@ -663,6 +677,13 @@ public class OnDemandTests
         world.WritePc("Bericht.txt", "neue, längere Fassung", later: true);
         world.Proxy!.RefusalStatus = status;
         world.Proxy.RefuseUploads = path => path.EndsWith("Bericht.txt", StringComparison.Ordinal);
+        // Like IServ: a copy made on the server gets a time of its own.
+        world.Proxy.Changed = relative =>
+        {
+            var copy = Path.Combine(world.CloudRoot, relative.Replace('/', '\\'));
+            if (relative.Contains("CloudDrive-Sync-Sicherung-", StringComparison.Ordinal) && File.Exists(copy))
+                File.SetLastWriteTimeUtc(copy, DateTime.UtcNow.AddMinutes(5));
+        };
 
         var failed = await world.RunAsync();
         Assert.False(failed.Success);
@@ -670,11 +691,13 @@ public class OnDemandTests
         Assert.Equal("alte Fassung", world.ReadCloud("Bericht.txt"));
         Assert.Equal("neue, längere Fassung", world.ReadPc("Bericht.txt"));
 
-        // Room again: the new version goes up - and no copy is left beside it.
+        // Room again: the new version goes up - and no copy is left beside it. Nobody else changed the file: no conflict copy
+        // (the copy that took the file's place again has a time of its own on servers like IServ - it is still the known version).
         world.Proxy.RefuseUploads = null;
         await RunAsync(world);
         Assert.Equal("neue, längere Fassung", world.ReadCloud("Bericht.txt"));
         Assert.Empty(Directory.GetFiles(world.Cloud(""), "CloudDrive-Sync-Sicherung-*", SearchOption.AllDirectories));
+        Assert.Equal(["Bericht.txt"], world.CloudFiles().Where(f => !f.StartsWith(".clouddrive", StringComparison.Ordinal)));
         AssertInStep(world);
     }
 
@@ -851,6 +874,28 @@ public class OnDemandTests
         Assert.False(File.Exists(noted));
         Assert.False(File.Exists(world.Pc("gehalten.txt")));
         Assert.Equal("nur online", world.ReadCloud("gehalten.txt"));
+        Directory.Delete(world.Local, recursive: true);
+    }
+
+    [Fact]
+    public async Task A_folder_a_program_holds_goes_into_the_log_once_not_at_every_try()
+    {
+        // Tried again every 2 minutes while a program holds it - and each try wrote the same line: 720 a day.
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("a.txt", "a"); w.WriteCloud("gehalten.txt", "nur online"); });
+        world.Host.Sync.CleanUpWait = TimeSpan.FromSeconds(1);
+        var lines = Log.Capture();
+        using (new FileStream(world.Pc("gehalten.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.True((await world.Host.Sync.RemoveAsync(world.Pair.Id)).StillHeld);
+            for (var attempt = 0; attempt < 3; attempt++) world.Host.Sync.FinishCleanUps();
+        }
+        world.Host.Sync.FinishCleanUps();
+        Assert.Equal(0, Leftovers.Count(world.Local));
+        lock (lines)
+        {
+            Assert.Single(lines, line => line.Contains("still held by a program"));
+            Assert.Single(lines, line => line.Contains("cleared:"));
+        }
         Directory.Delete(world.Local, recursive: true);
     }
 

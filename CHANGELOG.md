@@ -3,6 +3,22 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.22] – 2026-10-11
+
+Twenty-second test version on the way to 0.3: conflicts that are seen, logs that stay readable.
+
+### Fixed
+
+- Files on demand: conflict copies were never named - not on the card, not in the list of conflicts, not in a notice.
+  The search for them passed over placeholders, and with them over every folder.
+- Files on demand, IServ and other servers without times of their own: after an upload that failed (storage full, a
+  server error), the next run made conflict copies of both versions although nobody else had changed the file. The
+  cloud's version, put back from its copy on the server, had the time of copying; that time is noted now.
+- rclone's log: every run wrote an error about statistics ('group … not found'). Harmless, but misleading for everyone
+  who reads the log.
+- The log: a folder a program still held after its synchronisation ended was noted with the same line every 2 minutes
+  (720 lines a day). Now once, and again only when something changes.
+
 ## [0.3.0-preview.21] – 2026-10-11
 
 Twenty-first test version on the way to 0.3: names from the server stay names.

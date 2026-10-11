@@ -405,11 +405,12 @@ internal sealed partial class Executor
             await _rc.CallAsync("operations/copyfile", body, TimeSpan.FromHours(6), _cancel);
             return;
         }
-        // One group of statistics per synchronisation, started afresh for each file (the engine keeps every group).
+        // One group of statistics per synchronisation, started afresh for each file (the engine keeps every group). Deleted,
+        // not reset: resetting the group before the first file wrote an error into rclone's log.
         var group = $"upload/{_pair.Id}";
         try
         {
-            await _rc.CallAsync("core/stats-reset", new JsonObject { ["group"] = group }, cancellationToken: _cancel);
+            await _rc.CallAsync("core/stats-delete", new JsonObject { ["group"] = group }, cancellationToken: _cancel);
         }
         catch (CdException)
         {

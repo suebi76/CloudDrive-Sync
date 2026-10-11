@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using CloudDriveSync.Core.Settings;
+using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.IntegrationTests;
 
@@ -32,5 +34,26 @@ public partial class EngineTests
         {
             if (!hung.HasExited) NtResumeProcess(hung.Handle);
         }
+    }
+
+    [Theory]
+    [InlineData(SyncMode.Classic)]
+    [InlineData(SyncMode.OnDemand)]
+    public async Task Runs_leave_no_error_about_statistics_in_the_engine_log(SyncMode mode)
+    {
+        // Every run wrote 'core/stats-reset: group "sync/..." not found' into rclone's log as an ERROR: CloudDrive-Sync
+        // reset statistics that were not there (yet). Harmless - but an error in the log misleads everyone who reads it.
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Plan.txt", "Plan");
+        await world.AddAccountAsync();
+        await world.AddPairAsync(p => p.Mode = mode);
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        // Large enough for an upload with progress (its own group of statistics) in files on demand.
+        world.WritePc("Gross.bin", new string('x', 5 << 20));
+        Assert.True((await world.RunAsync()).Success);
+        world.WritePc("Gross.bin", new string('y', 5 << 20));
+        Assert.True((await world.RunAsync()).Success);
+        using var log = new StreamReader(new FileStream(world.Host.Paths.RcloneLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+        Assert.DoesNotContain("core/stats", await log.ReadToEndAsync());
     }
 }

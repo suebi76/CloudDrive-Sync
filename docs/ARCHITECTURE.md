@@ -388,7 +388,9 @@ sie still endgültig zu löschen.
   bis zu zehnmal – bei einer gesperrten Datei minutenlang. „Bei Bedarf“ lädt deshalb mit höchstens zwei Versuchen hoch
   (`LowLevelRetries`) und ersetzt eine Datei, die die Cloud hat, nur mit einer Kopie daneben (`Executor.ReplaceAsync`):
   erst auf dem Server kopieren (`CloudDrive-Sync-Sicherung-….tmp`, `*.tmp` wird nie abgeglichen), dann hochladen; danach
-  kommt die Kopie an ihren Platz zurück, falls die Datei fehlt, und geht in jedem Fall. Die Notiz dazu steht in
+  kommt die Kopie an ihren Platz zurück, falls die Datei fehlt, und geht in jedem Fall. Zurückgeholt ist sie die bekannte
+  Fassung – bei IServ aber mit der Zeit des Kopierens; diese Zeit kommt in `items.db`, sonst hielt der nächste Lauf sie für
+  eine Änderung in der Cloud und machte aus beiden Fassungen Konfliktkopien. Die Notiz dazu steht in
   `items.db` (`upload-backup`); bleibt sie nach einem Absturz stehen, erledigt der nächste Lauf sie vor allem anderen
   (`RecoverAsync`). Nimmt der Server schon die Kopie nicht, weil der Speicher voll ist, wird nicht hochgeladen. Hochladen
   unter anderem Namen und Umbenennen wäre einfacher, gäbe der Datei bei Nextcloud aber eine neue ID – Freigaben,
@@ -593,7 +595,9 @@ kaputten Platzhalter an, und mit ihr das ganze Programm (preview.9). `FolderWalk
 verweigerten und nennt ihn; was darin liegt, ist unbekannt, und so behandeln es die Aufrufer: Der Löschschutz zählt es nicht
 als fehlend und behält, was er davon wusste, „Vom PC löschen“ lässt den Ordner stehen und nennt ihn, und wo alles auf den
 PC muss (alles herunterladen, zurück zu klassisch), endet es mit `CD-4609`, bevor sich etwas ändert. Der Ordner selbst
-unlesbar wirft weiter. Und keine einzelne Synchronisation hält den Start der anderen auf (`SyncService.Start`).
+unlesbar wirft weiter. Und keine einzelne Synchronisation hält den Start der anderen auf (`SyncService.Start`). Die
+Suche nach Konfliktkopien übergeht dabei nichts nach seinen Attributen: Platzhalter sind ebenfalls Analysepunkte, und so
+fand sie bei Bedarf keine einzige Konfliktkopie (bis preview.21).
 Verknüpfungen (symbolische Links, Junctions) folgt `FolderWalk` nie – Platzhalter sind zwar auch Analysepunkte, aber keine
 Links. Vorher konnte „In den Papierkorb“ für den Rest eines Ordners über eine Junction Dateien außerhalb erreichen; jetzt
 bleibt der Link stehen und wird genannt.
