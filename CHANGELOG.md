@@ -3,7 +3,10 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.3.0-preview.24] – 2026-10-11
+
+Twenty-fourth test version on the way to 0.3: the version for the practical test before 0.3.0. Nothing changes in
+what the program does.
 
 ### Changed
 
