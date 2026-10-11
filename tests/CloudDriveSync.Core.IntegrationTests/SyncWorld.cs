@@ -158,11 +158,12 @@ internal sealed class SyncWorld : IAsyncDisposable
     }
 
     /// <summary>One run like the service does it, but in the test's own rhythm.</summary>
-    public async Task<SyncRunOutcome> RunAsync(BisyncMode mode = BisyncMode.Normal, bool keepTrash = true)
+    /// <param name="pcOnly">As the folder watcher asks for it: only a change on the PC.</param>
+    public async Task<SyncRunOutcome> RunAsync(BisyncMode mode = BisyncMode.Normal, bool keepTrash = true, bool pcOnly = false)
     {
         using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         var pair = Host.Sync.FindPair(Pair.Id) ?? Pair;
-        if (pair.Mode == SyncMode.OnDemand) return await Host.Sync.RunOnDemandAsync(pair, Account, mode, _ => { }, keepTrash, limit.Token);
+        if (pair.Mode == SyncMode.OnDemand) return await Host.Sync.RunOnDemandAsync(pair, Account, mode, _ => { }, keepTrash, limit.Token, pcOnly: pcOnly);
         return await Runner.RunAsync(pair, Account, mode, "newer", null, limit.Token, keepTrash);
     }
 

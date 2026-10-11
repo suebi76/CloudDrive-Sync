@@ -165,11 +165,12 @@ einen eigenen **`PairWorker`** (`SyncService.PairWorker.cs`):
 
 - Ein **Intervall-Timer** holt Änderungen aus der Cloud (Standard: alle 5 Minuten).
 - Ein **Ordnerwächter** (`FileSystemWatcher`) bemerkt Änderungen am PC; nach 5 Sekunden Ruhe startet ein Lauf.
-  Temporäre Dateien von Office und LibreOffice zählen nicht.
+  Temporäre Dateien von Office und LibreOffice zählen nicht. Bei „Dateien bei Bedarf“ ohne Nextcloud liest ein solcher
+  Lauf die Cloud nicht, wo das sicher ist (siehe „Nur Änderungen am PC“).
 - **Wiederholungen:** Eine geöffnete Datei wird jede Minute neu versucht, Netz- oder Serverprobleme nach 1, 2, 4 …
   Minuten, höchstens im Intervall.
 - Anfragen, die während eines Laufs kommen, werden zusammengefasst; die stärkste gewinnt (Neuaufbau vor „Änderungen
-  übernehmen“ vor normalem Lauf).
+  übernehmen“ vor normalem Lauf). Nur wenn alle vom Ordnerwächter kommen, bleibt es ein Lauf nur für Änderungen am PC.
 - Höchstens **zwei Läufe gleichzeitig** über alle Synchronisationen. „Abgleich überprüfen“ wartet, bis ein laufender
   Abgleich derselben Synchronisation fertig ist.
 - Braucht eine Synchronisation eine **Entscheidung** (zu viele Löschungen, Neuaufbau, Anmeldung, fehlender Ordner),
@@ -472,7 +473,26 @@ alles unter dem obersten Ordner: im Testbaum 212 statt 32 Ordner). Die Liste ble
 Dateien scheiterten – vorher las danach jeder Lauf wieder alles und scheiterte an derselben Datei (beim Nutzer: 3.649
 Ordner, vier Minuten, im Kreis). Sie gilt nur für dieselben Filterregeln und nur bei Nextcloud; ein Lauf, der als Ganzes
 abbricht, behält nichts; Neuaufbau und Umstellen lesen alles. IServ und andere WebDAV-Server geben Änderungen nicht an
-Ordnerzeiten weiter – dort wird immer alles gelesen.
+Ordnerzeiten weiter – dort liest jeder Lauf alles, außer wenn nur der PC etwas geändert hat:
+
+**Nur Änderungen am PC (IServ, WebDAV):** Beim Nutzer brauchte das Lesen einer IServ-Synchronisation mit 859 Ordnern gut
+20 s – auch wenn am PC nur eine Datei gespeichert wurde. Hat nur der Ordnerwächter einen Lauf angefordert, nimmt
+`OnDemandRunner` die Cloud-Seite deshalb aus `items.db` (`QuickCloudAsync`), statt sie zu lesen. Das gilt nur, solange
+- die ganze Cloud vor weniger als einem Intervall (höchstens zwei Stunden) von einem Lauf gelesen wurde, der seinen Plan
+  ausgeführt hat (`LastListing` in `items.db`; ein Lauf, der die Cloud liest, löscht den Eintrag zuerst – ein
+  abgebrochener hinterlässt also keinen –, und ein Schritt, der die Cloud anders vorfand, verhindert ihn);
+- die Filterregeln dieselben sind (Auswahl, Ausschlüsse, „Nur auf diesem PC“) – sonst hielte ein Lauf einen inzwischen
+  ausgeschlossenen Ordner, der am PC fehlt, für „am PC gelöscht“;
+- Windows am PC nichts verweigert hat (`refused-on-pc.txt` leer);
+- die Wächterdatei in der Cloud liegt (eine Anfrage).
+
+Intervall, „Jetzt synchronisieren“, Wiederholungen und Entscheidungen lesen immer alles. Jeder Schritt, der die Cloud
+ändert, schaut vorher nach (`Executor`: Hochladen und Löschen nur gegen die bekannte Fassung, Verschieben nur an einen
+freien Platz – das schließt auch bei vollen Läufen die Lücke zwischen Lesen und Verschieben). Fand ein Schritt die Cloud
+anders vor, liest derselbe Lauf sofort alles und gleicht ab; beide Fassungen bleiben. Was sich nur in der Cloud geändert
+hat, kommt mit dem nächsten Lauf, der sie liest – spätestens nach dem Intervall. Der Löschschutz gilt unverändert. Am
+Testserver liest ein solcher Lauf mit einer neuen Datei nur den Ordner, in den sie geht (rclone schaut vor dem Hochladen
+nach), statt aller Ordner.
 
 **Platzhalter anlegen:** `CfCreatePlaceholders` legt viele Einträge in einem Aufruf an. Kommt in demselben Aufruf ein
 Eintrag nach einem mit längerer Kennung (`ItemIdentity`), schreibt Windows ihn kaputt: Er lässt sich nie öffnen

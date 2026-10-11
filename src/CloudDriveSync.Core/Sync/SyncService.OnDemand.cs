@@ -74,15 +74,16 @@ public sealed partial class SyncService
         return null;
     }
 
+    /// <param name="pcOnly">Only a change on the PC asked for the run (the folder watcher).</param>
     internal Task<SyncRunOutcome> RunOnDemandAsync(SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress> progress, bool keepTrash, CancellationToken cancellationToken,
-        BisyncRecord? converting = null, Action<string>? activity = null)
+        BisyncRecord? converting = null, Action<string>? activity = null, bool pcOnly = false)
     {
         if (!OnDemandSupported)
             return Task.FromResult(new SyncRunOutcome(false, "CD-4601", "Windows 10 1809 or later is needed", SyncDecision.None, JobProgress.None, 0, [], false));
         var runner = _onDemandRunner ??= new OnDemandRunner(_paths, _engine, _files);
         var freeUpDays = _settings.Current.Preferences.FreeUpAfterDays;
         return runner.RunAsync(LiveFor(pair.Id), pair, account, mode, progress, keepTrash, freeUpDays, Time.GetUtcNow().UtcDateTime, cancellationToken, converting, activity,
-            PlaceholderCheck);
+            PlaceholderCheck, pcOnly);
     }
 
     [SupportedOSPlatform("windows10.0.17763")]

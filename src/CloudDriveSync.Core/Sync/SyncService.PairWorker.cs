@@ -38,7 +38,8 @@ public sealed partial class SyncService
         // Held during a run - and while the synchronisation is being checked, so both never overlap.
         private readonly SemaphoreSlim _busy = new(1, 1);
         private int _failures;
-        private (BisyncMode Mode, bool AnswersDecision)? _pending;
+        // PcOnly: only the folder watcher asked - every other request reads the cloud as well.
+        private (BisyncMode Mode, bool AnswersDecision, bool PcOnly)? _pending;
         private CancellationTokenSource? _skipDelay;
         private bool _running;
         private bool _stopped;
@@ -124,7 +125,7 @@ public sealed partial class SyncService
             {
                 if (_stopped) return;
                 // Waits until changes have calmed down for a moment (e.g. Office saving a document in several steps).
-                _debounce ??= new Timer(_ => Request(BisyncMode.Normal));
+                _debounce ??= new Timer(_ => Request(BisyncMode.Normal, pcOnly: true));
                 _debounce.Change(LocalChangeDelay, Timeout.InfiniteTimeSpan);
             }
             // Shown at once, so nobody wonders whether the change was noticed.
@@ -160,8 +161,10 @@ public sealed partial class SyncService
         /// Asks for a run. Requests that arrive while one is waiting or running are merged; the strongest mode wins
         /// (rebuild over "apply the changes" over a normal run). <paramref name="answersDecision"/>: the user answered
         /// an open question, so the run goes ahead although the synchronisation waits for a decision or is paused.
+        /// <paramref name="pcOnly"/>: only a change on the PC asks; the run stays one of these only while no other request
+        /// joins it.
         /// </summary>
-        public void Request(BisyncMode mode, bool answersDecision = false, TimeSpan? delay = null)
+        public void Request(BisyncMode mode, bool answersDecision = false, TimeSpan? delay = null, bool pcOnly = false)
         {
             lock (_lock)
             {
@@ -170,7 +173,9 @@ public sealed partial class SyncService
                 if (pair is null) return;
                 // Automatic runs wait while paused or while a decision is open.
                 if (!answersDecision && (pair.Paused || _saved.Decision != SyncDecision.None)) return;
-                if (_pending is null || Rank(mode) > Rank(_pending.Value.Mode) || answersDecision) _pending = (mode, answersDecision);
+                var onlyPc = pcOnly && (_pending is null || _pending.Value.PcOnly);
+                if (_pending is null || Rank(mode) > Rank(_pending.Value.Mode) || answersDecision) _pending = (mode, answersDecision, onlyPc);
+                else _pending = _pending.Value with { PcOnly = onlyPc };
                 if (_running)
                 {
                     // A request without delay ("now") ends the pause after the start of CloudDrive-Sync.
@@ -206,7 +211,7 @@ public sealed partial class SyncService
                 }
                 while (true)
                 {
-                    (BisyncMode Mode, bool AnswersDecision) request;
+                    (BisyncMode Mode, bool AnswersDecision, bool PcOnly) request;
                     lock (_lock)
                     {
                         if (_pending is null || _stopped)
@@ -224,7 +229,7 @@ public sealed partial class SyncService
                         await _busy.WaitAsync(_stop.Token);
                         try
                         {
-                            await RunOnceAsync(request.Mode, request.AnswersDecision);
+                            await RunOnceAsync(request.Mode, request.AnswersDecision, request.PcOnly);
                         }
                         finally
                         {
@@ -249,7 +254,7 @@ public sealed partial class SyncService
             }
         }
 
-        private async Task RunOnceAsync(BisyncMode mode, bool answersDecision)
+        private async Task RunOnceAsync(BisyncMode mode, bool answersDecision, bool pcOnly)
         {
             var pair = _service.FindPair(_id);
             var account = pair is null ? null : _service._accounts.Find(pair.AccountId);
@@ -283,7 +288,7 @@ public sealed partial class SyncService
                 var keepTrash = _service._settings.Current.Preferences.TrashDays > 0;
                 outcome = pair.Mode == SyncMode.OnDemand
                     ? await _service.RunOnDemandAsync(pair, account, mode, progress => Publish(State with { Progress = progress }), keepTrash, _stop.Token,
-                        activity: text => Publish(State with { Activity = text }))
+                        activity: text => Publish(State with { Activity = text }), pcOnly: pcOnly && mode == BisyncMode.Normal)
                     : await _service._runner.RunAsync(pair, account, mode, "newer", progress => Publish(State with { Progress = progress }), _stop.Token, keepTrash);
             }
             catch (OperationCanceledException)

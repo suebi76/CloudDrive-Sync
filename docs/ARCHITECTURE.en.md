@@ -166,10 +166,12 @@ PC, see "Ending and removing an account"), pausing, changing settings, answering
 
 - An **interval timer** fetches changes from the cloud (default: every 5 minutes).
 - A **folder watcher** (`FileSystemWatcher`) notices changes on the PC; after 5 seconds of quiet a run starts. Temporary
-  files of Office and LibreOffice do not count.
+  files of Office and LibreOffice do not count. With files on demand and no Nextcloud, such a run does not read the
+  cloud where that is safe (see "PC changes only").
 - **Retries:** a file held open by another program is tried again every minute, network or server trouble after 1, 2,
   4 … minutes, at most the interval.
 - Requests that arrive during a run are merged; the strongest wins (rebuild over "apply the changes" over a normal run).
+  Only when all of them come from the folder watcher does the run stay one for PC changes only.
 - At most **two runs at the same time** across all synchronisations. "Abgleich überprüfen" waits until a running sync
   of the same synchronisation has finished.
 - When a synchronisation needs a **decision** (too many deletions, rebuild, sign-in, missing folder), no automatic runs
@@ -466,8 +468,26 @@ the way was left out entirely, and after every upload the next run read everythi
 32 folders in the test tree). The listing stays also after a run in which single files failed - before, every following
 run read everything again and failed on the same file (for the user: 3,649 folders, four minutes, in a loop). It counts
 only for the same filter rules and only with Nextcloud; a run that breaks off as a whole keeps nothing; rebuilding and
-switching read everything. IServ and other WebDAV servers do not pass changes on to folder times - there everything is
-always read.
+switching read everything. IServ and other WebDAV servers do not pass changes on to folder times - there every run reads
+everything, unless only the PC changed something:
+
+**PC changes only (IServ, WebDAV):** For the user, reading an IServ synchronisation with 859 folders took a good 20 s -
+also when only one file was saved on the PC. When only the folder watcher asked for a run, `OnDemandRunner` therefore
+takes the cloud side from `items.db` (`QuickCloudAsync`) instead of reading it. Only while
+- the whole cloud was read less than one interval ago (two hours at most) by a run that carried its plan out
+  (`LastListing` in `items.db`; a run that reads the cloud clears it first - one that breaks off leaves none - and a step
+  that found the cloud different keeps it from being written);
+- the filter rules are the same (selection, exclusions, "only on this PC") - otherwise a run would take a folder
+  excluded since and missing on the PC as "deleted on the PC";
+- Windows refused nothing on the PC (`refused-on-pc.txt` empty);
+- the protection file is in the cloud (one request).
+
+The interval, "sync now", retries and decisions always read everything. Every step that changes the cloud looks at it
+first (`Executor`: uploads and deletions only against the known version, moves only to a free place - which also closes
+the gap between reading and moving in full runs). When a step found the cloud different, the same run reads everything
+at once and synchronises; both versions stay. What changed only in the cloud comes with the next run that reads it - at
+the latest after the interval. The deletion guard applies as before. At the test server such a run with a new file reads
+only the folder it goes into (rclone looks before uploading) instead of every folder.
 
 **Making placeholders:** `CfCreatePlaceholders` makes many entries in one call. When an entry comes after one with a
 longer identity (`ItemIdentity`) in the same call, Windows writes it broken: it never opens ("Die Clouddatei-Metadaten

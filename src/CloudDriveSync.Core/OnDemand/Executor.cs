@@ -11,6 +11,7 @@ using CloudDriveSync.Core.Sync;
 namespace CloudDriveSync.Core.OnDemand;
 
 /// <summary>What carrying out a plan did, for the run's result and the activity list.</summary>
+/// <param name="CloudChanged">Steps left alone because the cloud no longer had the version the plan was made with.</param>
 internal sealed record ExecutionResult(
     IReadOnlyList<FileChange> Changes,
     long Transfers,
@@ -20,7 +21,8 @@ internal sealed record ExecutionResult(
     IReadOnlyList<string> Locked,
     IReadOnlyList<string> Failed,
     IReadOnlyList<string> Broken,
-    int HeldBack);
+    int HeldBack,
+    int CloudChanged);
 
 /// <summary>
 /// Carries out a <see cref="SyncPlan"/>, step by step, each step recorded in the <see cref="ItemStore"/> as soon as it
@@ -54,6 +56,7 @@ internal sealed partial class Executor
     private readonly Func<string, bool> _isBroken;
     private bool _placeholdersStopped;
     private int _heldBack;
+    private int _cloudChanged;
     private string? _trashStamp;
     private long _transfers;
     private long _bytes;
@@ -112,7 +115,7 @@ internal sealed partial class Executor
         _total += _toFetch.Count;
         foreach (var path in _toFetch) await StepAsync(path, () => FetchAsync(path), Downloading);
         Report(force: true);
-        return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed, _broken, _heldBack);
+        return new ExecutionResult(_changes, _transfers, _bytes, _deletes, _localOnly, _locked, _failed, _broken, _heldBack, _cloudChanged);
     }
 
     /// <summary>
@@ -178,6 +181,15 @@ internal sealed partial class Executor
 
     private async Task MoveCloudAsync(MoveCloud move)
     {
+        // Look again: a place taken in the cloud since the listing is never overwritten (the next run keeps both). Only
+        // the spelling changing is the same place - on a server that ignores case the stat finds the item itself.
+        if (!string.Equals(move.Item.Path, move.NewPath, StringComparison.OrdinalIgnoreCase)
+            && await _files.StatAsync(_remote, CloudFetcher.CloudPath(_pair, move.NewPath), withHash: false, _cancel) is not null)
+        {
+            Log.Info("OnDemand", $"'{_pair.Id}': '{move.NewPath}' was taken in the cloud meanwhile; '{move.Item.Path}' not moved.");
+            _cloudChanged++;
+            return;
+        }
         if (move.Item.IsDirectory)
         {
             // A whole folder: one move on the server where it can (WebDAV MOVE), nothing is uploaded again.
@@ -242,6 +254,7 @@ internal sealed partial class Executor
         if (before is not null && (known is null || before.Value.Size != known.CloudSize || before.Value.Ticks != known.CloudTicks))
         {
             Log.Info("OnDemand", $"'{_pair.Id}': '{local.Path}' changed in the cloud meanwhile; the next run handles it.");
+            _cloudChanged++;
             return;
         }
         _uploading.Start();
@@ -504,6 +517,7 @@ internal sealed partial class Executor
         if (now is not null && (now.Value.Size != remove.Item.CloudSize || now.Value.Ticks != remove.Item.CloudTicks))
         {
             Log.Info("OnDemand", $"'{_pair.Id}': '{remove.Path}' changed in the cloud meanwhile; not deleted.");
+            _cloudChanged++;
             return;
         }
         if (now is not null)

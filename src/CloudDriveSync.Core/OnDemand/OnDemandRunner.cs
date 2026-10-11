@@ -1,6 +1,10 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using CloudDriveSync.Core.Accounts;
 using CloudDriveSync.Core.CloudFiles;
 using CloudDriveSync.Core.Diagnostics;
 using CloudDriveSync.Core.Engine;
@@ -43,12 +47,29 @@ internal sealed class OnDemandRunner
     /// <param name="converting">Switching a classic synchronisation: what its last run left in step (see <see cref="InStep"/>).</param>
     /// <param name="activity">What the run is doing, for its card - large trees take a while to read.</param>
     /// <param name="placeholderCheck">Whether Windows wrote a new placeholder broken; tests stand in for Windows.</param>
+    /// <param name="pcOnly">Only a change on the PC asked for the run: the cloud may be taken as last read (see <see cref="QuickCloudAsync"/>).</param>
     public async Task<SyncRunOutcome> RunAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null, Action<string>? activity = null, Func<string, bool>? placeholderCheck = null)
+        int freeUpDays, DateTime nowUtc, CancellationToken cancellationToken, BisyncRecord? converting = null, Action<string>? activity = null, Func<string, bool>? placeholderCheck = null,
+        bool pcOnly = false)
     {
         try
         {
-            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, activity, placeholderCheck, cancellationToken);
+            var cloudChanged = false;
+            var outcome = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, activity, placeholderCheck, pcOnly,
+                () => cloudChanged = true, cancellationToken);
+            if (cloudChanged && outcome.Success)
+            {
+                // The cloud was not as the run took it: it is read now, rather than when the interval comes.
+                Log.Info("OnDemand", $"'{pair.Id}': the cloud changed since it was last read; reading it now.");
+                var full = await RunCoreAsync(live, pair, account, mode, progress, keepTrash, freeUpDays, nowUtc, converting, activity, placeholderCheck, false,
+                    () => { }, cancellationToken);
+                outcome = full with
+                {
+                    Deletes = outcome.Deletes + full.Deletes,
+                    LocalOnlyAdded = Both(outcome.LocalOnlyAdded, full.LocalOnlyAdded),
+                    Changes = Both(outcome.Changes, full.Changes),
+                };
+            }
             // Explorer shows it at the folder itself: what is left for the next run is no trouble, no connection is "offline".
             live.Report(outcome.Success || outcome.ErrorCode is "CD-4510" or "CD-4605" ? ProviderStatus.Idle
                 : outcome.ErrorCode is "CD-5001" ? ProviderStatus.Offline : ProviderStatus.Error);
@@ -61,8 +82,12 @@ internal sealed class OnDemandRunner
         }
     }
 
+    private static IReadOnlyList<T>? Both<T>(IReadOnlyList<T>? first, IReadOnlyList<T>? second) =>
+        first is null || first.Count == 0 ? second : second is null || second.Count == 0 ? first : [.. first, .. second];
+
     private async Task<SyncRunOutcome> RunCoreAsync(OnDemandPair live, SyncPairSettings pair, AccountSettings account, BisyncMode mode, Action<JobProgress>? progress, bool keepTrash,
-        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, Action<string>? activity, Func<string, bool>? placeholderCheck, CancellationToken cancellationToken)
+        int freeUpDays, DateTime nowUtc, BisyncRecord? converting, Action<string>? activity, Func<string, bool>? placeholderCheck, bool pcOnly, Action cloudChanged,
+        CancellationToken cancellationToken)
     {
         // Without the folder (e.g. its drive is not connected) nothing runs - an empty folder is never taken as "all deleted".
         if (!Directory.Exists(pair.LocalPath)) return Failed("CD-4501", pair.LocalPath, SyncDecision.Folder, retryable: true);
@@ -98,10 +123,20 @@ internal sealed class OnDemandRunner
             trees.Forget();
 
             var clock = Stopwatch.StartNew();
-            activity?.Invoke("Liest die Cloud …");
-            var rootTicks = nextcloud && converting is null ? await Listings.RootTicksAsync(rc, pair, cancellationToken) : 0;
-            var cloud = await Listings.ListCloudAsync(rc, pair, filters, nextcloud, cancellationToken,
-                p => activity?.Invoke($"Liest die Cloud: {Count(p.Folders)} Ordner, {Count(p.Files)} Dateien …"), saved?.Tree, rootTicks, () => nowUtc);
+            // Servers without folder times that pass changes on (IServ, WebDAV): a change on the PC alone goes up without
+            // reading the whole cloud folder, where that is safe (QuickCloudAsync).
+            var quickable = !nextcloud && converting is null;
+            var cloud = quickable && pcOnly && mode == BisyncMode.Normal ? await QuickCloudAsync(live.Store, folder, pair, rules, nowUtc, cancellationToken) : null;
+            var quick = cloud is not null;
+            if (cloud is null)
+            {
+                // Until this run has carried its plan out, no later run takes the cloud from the store (switching, too).
+                if (!nextcloud) LastListing.Clear(live.Store);
+                activity?.Invoke("Liest die Cloud …");
+                var rootTicks = nextcloud && converting is null ? await Listings.RootTicksAsync(rc, pair, cancellationToken) : 0;
+                cloud = await Listings.ListCloudAsync(rc, pair, filters, nextcloud, cancellationToken,
+                    p => activity?.Invoke($"Liest die Cloud: {Count(p.Folders)} Ordner, {Count(p.Files)} Dateien …"), saved?.Tree, rootTicks, () => nowUtc);
+            }
             var cloudTime = clock.Elapsed;
             if (pair.CloudCheckFile && !cloud.SentinelFound)
                 return Failed("CD-4503", "check file check failed: the protection file is missing in the cloud folder", SyncDecision.Folder, retryable: false);
@@ -145,8 +180,10 @@ internal sealed class OnDemandRunner
                 return Failed("CD-4502", $"too many deletes ({DeleteGuard.Limits(pair)}, {plan.Deletions} of {plan.KnownFiles}{sides} (CloudDrive-Sync, files on demand)",
                     SyncDecision.Deletions, retryable: false);
             }
-            Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); cloud listed in {cloudTime.TotalSeconds:0.0} s "
-                + $"({cloud.Entries.Count} entries in {cloud.Folders} folders, {cloud.Read} read{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")}), "
+            var cloudText = quick ? $"cloud not read (PC changes only; {cloud.Entries.Count} entries as last read)"
+                : $"cloud listed in {cloudTime.TotalSeconds:0.0} s ({cloud.Entries.Count} entries in {cloud.Folders} folders, {cloud.Read} read"
+                + $"{(cloud.Unreadable.Count > 0 ? $", {cloud.Unreadable.Count} not readable" : "")})";
+            Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); {cloudText}, "
                 + $"PC in {localTime.TotalSeconds:0.0} s ({local.Count} entries{(pc.Refused.Count > 0 ? $", {pc.Refused.Count} refused by Windows" : "")}).");
             if (plan.Actions.Count > 0) activity?.Invoke($"Gleicht ab: {Count(plan.Actions.Count)} Schritte …");
             clock.Restart();
@@ -154,6 +191,15 @@ internal sealed class OnDemandRunner
             var executor = new Executor(rc, _files, live.Store, pair, account, keepTrash, cloud.Entries.Keys, progress, cancellationToken,
                 PlaceholderAlarm.IsRaised(folder), placeholderCheck);
             var result = await executor.RunAsync(plan);
+            if (quick && result.CloudChanged > 0)
+            {
+                LastListing.Clear(live.Store);
+                cloudChanged();
+            }
+            // What the store knows is the cloud as listed, with everything this run did to it: what left the selection is
+            // forgotten, and no step found the cloud other than listed.
+            else if (!quick && quickable && result.CloudChanged == 0 && plan.Actions.OfType<Forget>().All(f => live.Store.Find(f.Item.Id) is null))
+                LastListing.Save(live.Store, nowUtc, rules, cloud.Unreadable);
             if (result.Broken.Count > 0) PlaceholderAlarm.Raise(folder, result.Broken.Count);
             if (mode == BisyncMode.Resync && live.MergeNeeded) live.Merged();
             executor.ApplyPinStates(local);
@@ -168,7 +214,8 @@ internal sealed class OnDemandRunner
             // folders, four minutes - and fail on the same file. A run that broke off as a whole keeps nothing.
             if (nextcloud && converting is null && cloud.Tree is not null)
                 trees.Save(rules, cloud.Tree, saved?.FullUtc ?? nowUtc, plan.Actions.SelectMany(a => a is MoveCloud move ? [a.Path, move.Item.Path] : new[] { a.Path }));
-            var leftOutFolders = cloud.Unreadable;
+            // Not read: the folders left out stay as the last listing found them.
+            var leftOutFolders = quick ? null : cloud.Unreadable;
             if (result.Broken.Count > 0 || result.HeldBack > 0)
             {
                 var detail = result.Broken.Count > 0
@@ -192,6 +239,61 @@ internal sealed class OnDemandRunner
             var decision = e.Code == "CD-3012" ? SyncDecision.SignIn : SyncDecision.None;
             return Failed(e.Code, e.Detail ?? e.Message, decision, retryable: decision == SyncDecision.None);
         }
+    }
+
+    /// <summary>
+    /// The cloud side for a run that only a change on the PC asked for, taken from the store instead of reading the cloud
+    /// folder - on servers without folder times that pass changes on, reading means every folder (IServ: 859 folders,
+    /// 20 s); now only the folder a new file goes into is looked at. Only while that is safe: the whole cloud folder was read less than one
+    /// interval ago (two hours at most) by a run that carried its plan out, with the filter rules of now, and Windows
+    /// refused nothing on the PC. The protection file is looked at all the same. Every step that changes the cloud looks
+    /// at it again first (Executor); when it was changed meanwhile, the cloud is read at once. What changed only in the
+    /// cloud comes with the next run that reads it - at the latest when the interval comes. Null: the cloud is read.
+    /// </summary>
+    private async Task<Listings.CloudSide?> QuickCloudAsync(ItemStore store, string folder, SyncPairSettings pair, string rules, DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var last = LastListing.Load(store);
+        if (last is null || last.Rules != LastListing.Hash(rules)) return null;
+        var age = nowUtc - new DateTime(last.Ticks, DateTimeKind.Utc);
+        var interval = TimeSpan.FromMinutes(Math.Clamp(pair.IntervalMinutes, 1, 1440));
+        if (age < TimeSpan.Zero || age >= interval || age >= FullListingEvery) return null;
+        if (RefusedOnPc.Load(folder).Count > 0) return null;
+        if (pair.CloudCheckFile && await _files.StatAsync(AccountService.RemoteName(pair.AccountId) + ":", CloudFetcher.CloudPath(pair, SyncFilters.SentinelFile),
+                withHash: false, cancellationToken) is null)
+            return null;
+        var entries = store.All().ToDictionary(item => item.Path, item => new CloudEntry(item.Path, item.IsDirectory, item.CloudSize, item.CloudTicks, item.CloudHash),
+            StringComparer.Ordinal);
+        return new Listings.CloudSide(entries, SentinelFound: pair.CloudCheckFile, CaseClashes: [], last.Unreadable, Folders: 0);
+    }
+
+    /// <summary>
+    /// When the cloud folder was last read as a whole by a run that carried its plan out (UTC ticks of the run's start),
+    /// with which filter rules, and the folders the server did not let be read then - kept in the store, cleared while a
+    /// run reads the cloud, so a run that breaks off leaves none behind.
+    /// </summary>
+    private sealed record LastListing(long Ticks, string Rules, IReadOnlyList<string> Unreadable)
+    {
+        private const string Key = "cloud-listed";
+
+        public static LastListing? Load(ItemStore store)
+        {
+            try
+            {
+                return store.GetMeta(Key) is { Length: > 0 } text ? JsonSerializer.Deserialize<LastListing>(text) : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        public static void Save(ItemStore store, DateTime listedUtc, string rules, IReadOnlyList<string> unreadable) =>
+            store.SetMeta(Key, JsonSerializer.Serialize(new LastListing(listedUtc.Ticks, Hash(rules), unreadable)));
+
+        public static void Clear(ItemStore store) => store.SetMeta(Key, "");
+
+        public static string Hash(string rules) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rules)));
     }
 
     /// <summary>

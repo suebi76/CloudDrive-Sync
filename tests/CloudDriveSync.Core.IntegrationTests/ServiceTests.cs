@@ -209,6 +209,33 @@ public class ServiceTests
     }
 
     [Fact]
+    public async Task A_change_on_the_PC_goes_up_without_reading_the_cloud_and_synchronise_now_reads_it()
+    {
+        // Files on demand at IServ: the folder watcher asks for PC changes only, every other request reads the cloud.
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        for (var i = 1; i <= 8; i++) world.WriteCloud($"Ordner {i}/a.txt", $"{i}");
+        await world.AddAccountAsync();
+        var log = new StateLog(world.Host.Sync);
+        world.Host.Sync.Start();
+        var first = log.WaitAsync(s => Finished(s) && s.LastRun is not null);
+        await world.AddPairAsync(p => p.Mode = SyncMode.OnDemand);
+        Assert.Equal(SyncStatus.Idle, (await first).Status);
+
+        world.Proxy!.ResetCount();
+        var uploaded = log.WaitAsync(s => Finished(s) && File.Exists(world.Cloud("Ordner 2/neu.txt")));
+        world.WritePc("Ordner 2/neu.txt", "vom PC");
+        Assert.Equal(SyncStatus.Idle, (await uploaded).Status);
+        Assert.Equal("vom PC", world.ReadCloud("Ordner 2/neu.txt"));
+        Assert.All(world.Proxy.Listed, folder => Assert.Equal($"{SyncWorld.CloudFolder}/Ordner 2", folder));
+
+        world.WriteCloud("Ordner 5/aus der Cloud.txt", "neu in der Cloud");
+        var read = log.WaitAsync(s => Finished(s) && File.Exists(world.Pc("Ordner 5/aus der Cloud.txt")));
+        world.Host.Sync.RunNow(world.Pair.Id);
+        Assert.Equal(SyncStatus.Idle, (await read).Status);
+        Assert.True(world.Proxy.Listings > 8, $"{world.Proxy.Listings} folders read");
+    }
+
+    [Fact]
     public async Task A_changed_selection_rebuilds_by_itself_and_removing_keeps_all_files()
     {
         await using var world = await SyncWorld.CreateAsync();

@@ -3,6 +3,25 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.14] – 2026-10-11
+
+Fourteenth test version on the way to 0.3: quicker runs for IServ with files on demand.
+
+### Changed
+
+- Files on demand with IServ and other WebDAV servers: a change on the PC goes up without reading the whole cloud folder
+  first. Before, every run read every folder - about 20 seconds for a synchronisation with 859 folders, even when only
+  one file was saved on the PC; now only the folder the file goes into is looked at. Only while that is safe: the cloud
+  folder was read as a whole less than one interval ago, the selection and exclusions are the same, Windows refused
+  nothing on the PC, and the protection file is in the cloud. Every step that changes the cloud looks at it first; if
+  something changed there meanwhile, the run reads the whole cloud folder at once and keeps both versions. What changed
+  only in the cloud comes with the interval, as before; "Jetzt synchronisieren" always reads everything.
+
+### Fixed
+
+- A file or folder renamed on the PC could replace one that took the new name in the cloud (from another device) after
+  the cloud was read. Before moving, CloudDrive-Sync now looks whether the place is still free; if not, both are kept.
+
 ## [0.3.0-preview.13] – 2026-10-11
 
 Thirteenth test version on the way to 0.3: a fixed deletion limit.

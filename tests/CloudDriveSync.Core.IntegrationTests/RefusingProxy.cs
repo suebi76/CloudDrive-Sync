@@ -41,7 +41,16 @@ internal sealed class RefusingProxy : IAsyncDisposable
     /// <summary>How long every answer takes in addition, like a server far away; none by default.</summary>
     public TimeSpan Delay { get; set; }
 
-    public void ResetCount() => Interlocked.Exchange(ref _listings, 0);
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _listed = new();
+
+    /// <summary>The folders listed since the count was reset, relative to the served root.</summary>
+    public IReadOnlyList<string> Listed => _listed.ToList();
+
+    public void ResetCount()
+    {
+        Interlocked.Exchange(ref _listings, 0);
+        _listed.Clear();
+    }
 
     /// <summary>
     /// Told about every change that went through (upload, deletion, move, copy, new folder), with the path relative to the
@@ -90,7 +99,11 @@ internal sealed class RefusingProxy : IAsyncDisposable
         try
         {
             var path = Uri.UnescapeDataString(request.Url!.AbsolutePath).TrimEnd('/');
-            if (request.HttpMethod == "PROPFIND" && request.Headers["Depth"] == "1") Interlocked.Increment(ref _listings);
+            if (request.HttpMethod == "PROPFIND" && request.Headers["Depth"] == "1")
+            {
+                Interlocked.Increment(ref _listings);
+                _listed.Enqueue(path.StartsWith(_basePath + "/", StringComparison.Ordinal) ? path[(_basePath.Length + 1)..] : path);
+            }
             if (Delay > TimeSpan.Zero) await Task.Delay(Delay);
             if (request.HttpMethod == "PROPFIND" && _refused is { } refused && string.Equals(path, refused, StringComparison.Ordinal))
             {
