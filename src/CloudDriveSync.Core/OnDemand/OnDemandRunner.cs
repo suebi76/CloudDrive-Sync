@@ -106,6 +106,8 @@ internal sealed class OnDemandRunner
             // were confirmed before.
             if (live.MergeNeeded) mode = BisyncMode.Resync;
             var rc = await _engine.EnsureRunningAsync(cancellationToken);
+            // A copy beside a file an earlier run could not settle (stopped right then): first of all, before the listing.
+            await Executor.RecoverAsync(rc, _files, live.Store, pair, cancellationToken);
             var folder = _paths.SyncPairDir(pair.Id);
             Directory.CreateDirectory(folder);
             var filters = Path.Combine(folder, "filter.txt");

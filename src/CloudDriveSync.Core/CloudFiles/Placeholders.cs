@@ -172,7 +172,9 @@ internal static unsafe partial class Placeholders
                 infos[i].Flags = CF_PLACEHOLDER_CREATE_FLAGS.CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC |
                     (item.IsDirectory ? CF_PLACEHOLDER_CREATE_FLAGS.CF_PLACEHOLDER_CREATE_FLAG_DISABLE_ON_DEMAND_POPULATION : 0);
             }
-            fixed (char* folderPointer = Path.GetFullPath(folder))
+            // Like Open: with the prefix for long paths, so folders deeper than 260 characters work also where Windows does not
+            // allow long paths for every program (the default on many PCs).
+            fixed (char* folderPointer = @"\\?\" + Path.GetFullPath(folder))
             fixed (CF_PLACEHOLDER_CREATE_INFO* array = infos)
             {
                 uint processed;

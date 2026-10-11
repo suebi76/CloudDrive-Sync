@@ -374,10 +374,17 @@ silently.
   423. `rclone serve webdav` cannot imitate Nextcloud; the test proxy (`RefusingProxy`) plays some of it (folder times,
   folders that cannot be read, shares to read only, locked files, the checksum after an upload), anything else needs a
   real test account.
-- **After a failed upload** rclone deletes the file at the target ("Remove failed upload") and tries an upload up to ten
-  times - with a locked file for minutes. Files on demand therefore upload with two tries at most (`LowLevelRetries`). If
-  an upload breaks off on a network error, the old version is missing in the cloud until the next run uploads the new
-  one - noted for 0.4.
+- **After a failed upload** rclone deletes the file at the target ("Remove failed upload", also with a full storage and
+  server errors; not with Nextcloud above 10 MB, which goes up in chunks) and tries an upload up to ten times - with a
+  locked file for minutes. Files on demand therefore upload with two tries at most (`LowLevelRetries`) and replace a file
+  the cloud has only with a copy beside it (`Executor.ReplaceAsync`): first copied on the server
+  (`CloudDrive-Sync-Sicherung-….tmp`, `*.tmp` is never synchronised), then the upload; afterwards the copy takes the
+  file's place again if the file is gone, and goes in any case. The note of it is in `items.db` (`upload-backup`); left
+  after a crash, the next run settles it before anything else (`RecoverAsync`). When the server does not even take the
+  copy because its storage is full, nothing is uploaded. Uploading under another name and renaming would be simpler, but
+  gives the file a new ID in Nextcloud - shares, versions and comments would be lost. Classic (bisync) keeps the limit:
+  the cloud has the file again only when the change goes up; "storage full" and "locked" count as passing there
+  (`RunSafety.IsStorageFull`, `IsLockedInCloud`: last good state, no rebuild).
 - **Upper and lower case:** Windows takes `Bericht.docx` and `bericht.docx` for the same file, the servers for two.
   bisync then stops with "out of sync"; `CaseRenames` aligns the spellings beforehand.
 - **rclone's deletion limit** counts folders as well (see above).

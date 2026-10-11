@@ -39,6 +39,38 @@ public class SafetyTests
         Assert.Equal(0, quiet.Final.Transfers);
     }
 
+    [Theory]
+    [InlineData(507, "CD-3006")]
+    [InlineData(423, "CD-4513")]
+    public async Task A_full_storage_or_a_locked_file_passes_without_a_rebuild(int status, string code)
+    {
+        // The storage is full (or someone has the file open): no question about a rebuild - it passes; the change stays on
+        // the PC and goes up once there is room again.
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        world.WriteCloud("Bericht.txt", "alte Fassung");
+        world.WriteCloud("Plan.txt", "Plan");
+        world.WriteCloud("Liste.txt", "Liste");
+        world.WriteCloud("Notiz.txt", "Notiz");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        world.WritePc("Bericht.txt", "neue, längere Fassung", later: true);
+        world.Proxy!.RefusalStatus = status;
+        world.Proxy.RefuseUploads = path => path.EndsWith("Bericht.txt", StringComparison.Ordinal);
+
+        var stopped = await world.RunAsync();
+        Assert.Equal(code, stopped.ErrorCode);
+        Assert.Equal(SyncDecision.None, stopped.Decision);
+        Assert.True(stopped.Retryable);
+        Assert.Equal("neue, längere Fassung", world.ReadPc("Bericht.txt"));
+
+        world.Proxy.RefuseUploads = null;
+        var again = await world.RunAsync();
+        Assert.True(again.Success, $"{again.ErrorCode}: {again.ErrorDetail}");
+        Assert.Equal("neue, längere Fassung", world.ReadCloud("Bericht.txt"));
+        Assert.Equal("Plan", world.ReadPc("Plan.txt"));
+    }
+
     [Fact]
     public async Task A_change_the_server_does_not_take_stays_on_the_PC_and_the_rest_goes_on()
     {

@@ -635,6 +635,91 @@ public class OnDemandTests
         Assert.False(File.Exists(world.Cloud("nur online.txt")));
     }
 
+    [Theory]
+    [InlineData(507, "CD-3006")]
+    [InlineData(500, "CD-4605")]
+    public async Task An_upload_the_server_cannot_take_never_costs_the_version_in_the_cloud(int status, string code)
+    {
+        // The storage is full (or the server fails): the new version stays on the PC, and the cloud keeps the old one - rclone
+        // removes what it takes for a failed upload, which would be the file itself.
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("Bericht.txt", "alte Fassung"), refusingProxy: true);
+        Fetch(world, "Bericht.txt");
+        world.WritePc("Bericht.txt", "neue, längere Fassung", later: true);
+        world.Proxy!.RefusalStatus = status;
+        world.Proxy.RefuseUploads = path => path.EndsWith("Bericht.txt", StringComparison.Ordinal);
+
+        var failed = await world.RunAsync();
+        Assert.False(failed.Success);
+        Assert.Equal(code, failed.ErrorCode);
+        Assert.Equal("alte Fassung", world.ReadCloud("Bericht.txt"));
+        Assert.Equal("neue, längere Fassung", world.ReadPc("Bericht.txt"));
+
+        // Room again: the new version goes up - and no copy is left beside it.
+        world.Proxy.RefuseUploads = null;
+        await RunAsync(world);
+        Assert.Equal("neue, längere Fassung", world.ReadCloud("Bericht.txt"));
+        Assert.Empty(Directory.GetFiles(world.Cloud(""), "CloudDrive-Sync-Sicherung-*", SearchOption.AllDirectories));
+        AssertInStep(world);
+    }
+
+    [Fact]
+    public async Task A_storage_too_full_for_the_copy_on_the_server_is_not_even_tried()
+    {
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud("Bericht.txt", "alte Fassung"), refusingProxy: true);
+        Fetch(world, "Bericht.txt");
+        world.WritePc("Bericht.txt", "neue, längere Fassung", later: true);
+        world.Proxy!.CopyStatus = 507;
+        world.Proxy.RefusalStatus = 507;
+        world.Proxy.RefuseUploads = _ => true;
+
+        var full = await world.RunAsync();
+        Assert.Equal("CD-3006", full.ErrorCode);
+        Assert.Equal(0, world.Proxy.RefusedUploads);
+        Assert.Equal("alte Fassung", world.ReadCloud("Bericht.txt"));
+        Assert.Equal("neue, längere Fassung", world.ReadPc("Bericht.txt"));
+    }
+
+    [Fact]
+    public async Task A_copy_left_on_the_server_by_a_stop_in_between_is_settled_by_the_next_run()
+    {
+        await using var world = await WorldAsync(cloud: w => { w.WriteCloud("Ordner/Bericht.txt", "alte Fassung"); w.WriteCloud("Ordner/Plan.txt", "Plan"); });
+        // As if CloudDrive-Sync stopped right after a failed upload took the file: the copy is there, the file is not.
+        world.WriteCloud("Ordner/CloudDrive-Sync-Sicherung-0badc0de.tmp", "alte Fassung");
+        File.Delete(world.Cloud("Ordner/Bericht.txt"));
+        // And one left after an upload that went well.
+        world.WriteCloud("Ordner/CloudDrive-Sync-Sicherung-0000000a.tmp", "Plan");
+        using (var store = ItemStore.Open(Path.Combine(world.Host.Paths.SyncPairDir(world.Pair.Id), "items.db")))
+            store.SetMeta("upload-backup", "Ordner/Bericht.txt\nOrdner/CloudDrive-Sync-Sicherung-0badc0de.tmp");
+
+        await RunAsync(world);
+        Assert.Equal("alte Fassung", world.ReadCloud("Ordner/Bericht.txt"));
+        Assert.Equal("alte Fassung", Fetch(world, "Ordner/Bericht.txt"));
+        Assert.False(File.Exists(world.Cloud("Ordner/CloudDrive-Sync-Sicherung-0badc0de.tmp")));
+        // Only what was noted is touched; the copy never reaches a PC either way.
+        Assert.False(File.Exists(world.Pc("Ordner/CloudDrive-Sync-Sicherung-0000000a.tmp")));
+    }
+
+    [Fact]
+    public async Task A_folder_deeper_than_260_characters_works_like_any_other()
+    {
+        // Deep folders of a school (Fachschaft › Unterrichtsmaterial › Klasse › Thema …): a path on the PC beyond the old
+        // limit of Windows. Placeholders are made, fetched, changed, renamed and deleted there as anywhere else.
+        const string deep = "Fachschaft Mathematik/Unterrichtsmaterial für die Sekundarstufe I/Klasse 7 Lineare Funktionen und Gleichungen/"
+            + "Arbeitsblätter mit ausführlichen Lösungen und Hinweisen/Übungen zur Vertiefung im zweiten Halbjahr";
+        await using var world = await WorldAsync(cloud: w => w.WriteCloud($"{deep}/Aufgabe 1.txt", "Aufgabe"));
+        Assert.True(world.Pc($"{deep}/Aufgabe 1.txt").Length > 260, $"only {world.Pc($"{deep}/Aufgabe 1.txt").Length} characters");
+        world.WriteCloud($"{deep}/Aufgabe 2.txt", "Neu aus der Cloud", later: true);
+        await RunAsync(world);
+        Assert.Equal("Neu aus der Cloud", Fetch(world, $"{deep}/Aufgabe 2.txt"));
+
+        world.WritePc($"{deep}/Aufgabe 1.txt", "Am PC bearbeitet", later: true);
+        File.Move(world.Pc($"{deep}/Aufgabe 2.txt"), world.Pc($"{deep}/Aufgabe 2 umbenannt.txt"));
+        await RunAsync(world);
+        Assert.Equal("Am PC bearbeitet", world.ReadCloud($"{deep}/Aufgabe 1.txt"));
+        Assert.Equal("Neu aus der Cloud", world.ReadCloud($"{deep}/Aufgabe 2 umbenannt.txt"));
+        AssertInStep(world);
+    }
+
     [Fact]
     public async Task Files_on_demand_are_not_offered_inside_or_above_a_registered_folder()
     {

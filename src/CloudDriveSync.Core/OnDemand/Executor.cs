@@ -326,7 +326,8 @@ internal sealed partial class Executor
         _uploading.Start();
         try
         {
-            await CopyUpAsync(local);
+            // A file the cloud has is replaced so that a failed upload never costs its version there.
+            await (known is not null && before is not null ? ReplaceAsync(local) : CopyUpAsync(local));
         }
         catch (CdException e) when (Refused(e))
         {

@@ -37,8 +37,27 @@ public static class SyncRoots
     /// <summary>
     /// Registers (or updates) a sync root. Full hydration (a file comes completely when opened), all entries created by
     /// CloudDrive-Sync itself, no automatic freeing of space by Windows - CloudDrive-Sync's own setting decides that.
+    /// Windows now and then answers "no more data" (0x80070103) while another registration changes at the same moment -
+    /// seen while folders were registered and unregistered at once -: one more try a moment later. Anything else is
+    /// reported at once.
     /// </summary>
-    public static void Register(SyncRootSpec spec) => WinRtSyncRootManager.Register(spec);
+    public static void Register(SyncRootSpec spec)
+    {
+        try
+        {
+            RegisterCore(spec);
+        }
+        catch (CloudFileException e) when (e.HResult == NoMoreItems)
+        {
+            Thread.Sleep(TimeSpan.FromMilliseconds(500));
+            RegisterCore(spec);
+        }
+    }
+
+    private const int NoMoreItems = unchecked((int)0x80070103);
+
+    /// <summary>The registration itself; tests stand in for Windows.</summary>
+    internal static Action<SyncRootSpec> RegisterCore { get; set; } = WinRtSyncRootManager.Register;
 
     /// <summary>
     /// Ends a registration. Windows turns placeholders whose data is on the PC into normal files and removes those that

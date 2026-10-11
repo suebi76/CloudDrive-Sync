@@ -373,10 +373,18 @@ sie still endgültig zu löschen.
   geöffnete Datei mit 423. `rclone serve webdav` kann Nextcloud nicht nachbilden; der Testproxy (`RefusingProxy`) bildet
   einiges nach (Ordnerzeiten, nicht lesbare Ordner, Freigaben nur zum Lesen, gesperrte Dateien, die Prüfsumme nach dem
   Hochladen), alles Weitere braucht einen echten Testzugang.
-- **Nach einem gescheiterten Hochladen** löscht rclone die Datei am Ziel („Remove failed upload“) und versucht das
-  Hochladen bis zu zehnmal – bei einer gesperrten Datei minutenlang. „Bei Bedarf“ lädt deshalb mit höchstens zwei
-  Versuchen hoch (`LowLevelRetries`). Bricht das Hochladen eines Netzfehlers wegen ab, fehlt die alte Fassung in der
-  Cloud, bis der nächste Lauf die neue hochlädt – vorgemerkt für 0.4.
+- **Nach einem gescheiterten Hochladen** löscht rclone die Datei am Ziel („Remove failed upload“, auch bei „Speicher
+  voll“ und Serverfehlern; bei Nextcloud über 10 MB nicht, dort wird in Stücken hochgeladen) und versucht das Hochladen
+  bis zu zehnmal – bei einer gesperrten Datei minutenlang. „Bei Bedarf“ lädt deshalb mit höchstens zwei Versuchen hoch
+  (`LowLevelRetries`) und ersetzt eine Datei, die die Cloud hat, nur mit einer Kopie daneben (`Executor.ReplaceAsync`):
+  erst auf dem Server kopieren (`CloudDrive-Sync-Sicherung-….tmp`, `*.tmp` wird nie abgeglichen), dann hochladen; danach
+  kommt die Kopie an ihren Platz zurück, falls die Datei fehlt, und geht in jedem Fall. Die Notiz dazu steht in
+  `items.db` (`upload-backup`); bleibt sie nach einem Absturz stehen, erledigt der nächste Lauf sie vor allem anderen
+  (`RecoverAsync`). Nimmt der Server schon die Kopie nicht, weil der Speicher voll ist, wird nicht hochgeladen. Hochladen
+  unter anderem Namen und Umbenennen wäre einfacher, gäbe der Datei bei Nextcloud aber eine neue ID – Freigaben,
+  Versionen und Kommentare gingen verloren. Klassisch (bisync) bleibt die Grenze: Die Cloud hat die Datei erst wieder,
+  wenn die Änderung hochgeht; „Speicher voll“ und „gesperrt“ gelten dort als vorübergehend (`RunSafety.IsStorageFull`,
+  `IsLockedInCloud`: letzter guter Stand, kein Neuaufbau).
 - **Groß- und Kleinschreibung:** Windows hält `Bericht.docx` und `bericht.docx` für dieselbe Datei, die Server für zwei.
   bisync stoppt dann mit „out of sync“; `CaseRenames` gleicht die Schreibweisen vorher an.
 - **rclones Löschgrenze** zählt Ordner mit (siehe oben).

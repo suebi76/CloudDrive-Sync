@@ -75,6 +75,12 @@ internal static partial class RunSafety
 
     public static bool IsFileInUse(string text) => FileInUsePattern().IsMatch(text);
 
+    /// <summary>The storage in the cloud is full ("507 Insufficient Storage", a quota reached): passes once there is room.</summary>
+    public static bool IsStorageFull(string text) => StorageFullPattern().IsMatch(text);
+
+    /// <summary>Someone has a file open in the cloud ("423 Locked", e.g. Nextcloud Office): passes once it is closed.</summary>
+    public static bool IsLockedInCloud(string text) => LockedInCloudPattern().IsMatch(text);
+
     /// <summary>
     /// Files bisync could not upload because the server did not take them (a folder to read only), relative to the
     /// synchronised folder. Only uploads count - bisync's queue of copies to path 1 names them.
@@ -105,11 +111,17 @@ internal static partial class RunSafety
     [GeneratedRegex(@"(?i)Bisync critical error|cannot find prior Path1 or Path2 listings")]
     private static partial Regex CriticalPattern();
 
-    [GeneratedRegex(@"(?i)being used by another process|cannot access the file|failed to open source object|i/o timeout|connection reset|connection refused|unexpected EOF|context deadline exceeded|TLS handshake timeout|no such host|network is unreachable|50[234] |429 Too Many Requests|423 Locked|cannot find prior Path1 or Path2 listings")]
+    [GeneratedRegex(@"(?i)being used by another process|cannot access the file|failed to open source object|i/o timeout|connection reset|connection refused|unexpected EOF|context deadline exceeded|TLS handshake timeout|no such host|network is unreachable|50[234] |429 Too Many Requests|423 Locked|507 Insufficient Storage|insufficient storage|quota (?:limit )?(?:reached|exceeded)|cannot find prior Path1 or Path2 listings")]
     private static partial Regex PassingPattern();
 
     [GeneratedRegex(@"(?i)being used by another process|cannot access the file")]
     private static partial Regex FileInUsePattern();
+
+    [GeneratedRegex(@"(?i)507 Insufficient Storage|insufficient storage|quota (?:limit )?(?:reached|exceeded)")]
+    private static partial Regex StorageFullPattern();
+
+    [GeneratedRegex(@"(?im):\s*423 Locked\s*$|Exception\\FileLocked")]
+    private static partial Regex LockedInCloudPattern();
 
     [GeneratedRegex(@"(?m)Queue copy to Path1\s+-\s+(.+?)\s*$")]
     private static partial Regex UploadQueuePattern();

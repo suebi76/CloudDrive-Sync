@@ -98,6 +98,9 @@ internal sealed class RefusingProxy : IAsyncDisposable
         else _locked.TryRemove(file.Trim('/'), out _);
     }
 
+    /// <summary>Copies on the server (COPY) get this status when set - e.g. 507, a storage that is full.</summary>
+    public int? CopyStatus { get; set; }
+
     /// <summary>Changes refused so far with "403 Forbidden" or "423 Locked".</summary>
     public int Forbidden => Volatile.Read(ref _forbidden);
 
@@ -168,6 +171,15 @@ internal sealed class RefusingProxy : IAsyncDisposable
                 var message = code == 423 ? $"\"{Path.GetFileName(path)}\" is locked" : "";
                 var document = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
                     + $"  <s:exception>{exception}</s:exception>\n  <s:message>{message}</s:message>\n</d:error>\n";
+                await response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(document));
+                return;
+            }
+            if (request.HttpMethod == "COPY" && CopyStatus is { } copyStatus)
+            {
+                response.StatusCode = copyStatus;
+                response.ContentType = "application/xml; charset=utf-8";
+                var document = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
+                    + "  <s:exception>Sabre\\DAV\\Exception\\InsufficientStorage</s:exception>\n  <s:message></s:message>\n</d:error>\n";
                 await response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(document));
                 return;
             }

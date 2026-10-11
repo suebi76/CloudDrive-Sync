@@ -3,6 +3,27 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.17] – 2026-10-11
+
+Seventeenth test version on the way to 0.3: the first results of the bug hunt, module by module.
+
+### Fixed
+
+- An upload the server did not take - a storage that is full, a server error - could cost the file in the cloud: rclone
+  removes what it takes for the remains of a failed upload, and for a file that was there that is the file itself. The
+  cloud then had neither version, and other PCs took the file as deleted. Files on demand now copy the cloud's version on
+  the server first (under a name no synchronisation takes part in) and put it back when needed; with a storage too full
+  for that copy, the upload is not tried at all ("Cloud-Speicher ist voll"). Should CloudDrive-Sync stop in between, the
+  next run settles it.
+- Classic synchronisations: a full storage asked for a rebuild (CD-4504), and a file someone has open in the cloud was
+  reported as a network error. Both now pass without a rebuild - "Cloud-Speicher ist voll" (CD-3006) or "Datei ist in der
+  Cloud gerade gesperrt" (CD-4513) - and the change goes up once there is room. (The upload itself is bisync's there: the
+  cloud's copy of such a file is missing until then. Files on demand do not have this limit.)
+- Folders deeper than 260 characters: new placeholders are made there also on PCs where Windows does not allow long
+  paths for every program (the default).
+- Windows refusing the registration of a folder for a moment ("no more data", seen while folders were registered and
+  unregistered at the same time) no longer fails setting up or connecting: it is tried once more.
+
 ## [0.3.0-preview.16] – 2026-10-11
 
 Sixteenth test version on the way to 0.3: several PCs with the same folders.
