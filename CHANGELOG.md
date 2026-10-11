@@ -23,6 +23,8 @@ Seventeenth test version on the way to 0.3: the first results of the bug hunt, m
   paths for every program (the default).
 - Windows refusing the registration of a folder for a moment ("no more data", seen while folders were registered and
   unregistered at the same time) no longer fails setting up or connecting: it is tried once more.
+- An engine (rclone) that hung - still running, but answering nothing - was never started again: the start saw it running
+  and did nothing, and every run failed with "Die Engine antwortet nicht". It is restarted now.
 
 ## [0.3.0-preview.16] – 2026-10-11
 

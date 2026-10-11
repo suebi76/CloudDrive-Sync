@@ -78,19 +78,33 @@ public sealed class RcloneEngine : IAsyncDisposable
         }
     }
 
-    /// <summary>Makes sure the engine runs and answers; restarts it when it does not.</summary>
+    /// <summary>
+    /// Makes sure the engine runs and answers; restarts it when it does not. Before, an engine whose process was still
+    /// there but answered nothing (hung) was never restarted: the start saw it running and did nothing, and every run
+    /// failed with "Die Engine antwortet nicht".
+    /// </summary>
     public async Task<RcClient> EnsureRunningAsync(CancellationToken cancellationToken = default)
     {
-        if (IsRunning)
+        if (_rc is { } rc && IsRunning)
         {
             try
             {
-                await Rc.CallAsync("rc/noop", timeout: TimeSpan.FromSeconds(10), cancellationToken: cancellationToken);
-                return Rc;
+                await rc.CallAsync("rc/noop", timeout: TimeSpan.FromSeconds(10), cancellationToken: cancellationToken);
+                return rc;
             }
             catch (CdException e) when (e.Code == "CD-5003")
             {
                 Log.Warn("Engine", "The engine does not answer, restarting it.");
+                await _startGate.WaitAsync(cancellationToken);
+                try
+                {
+                    // Only the engine that did not answer goes - another caller may have started a new one meanwhile.
+                    if (ReferenceEquals(_rc, rc)) await StopCoreAsync();
+                }
+                finally
+                {
+                    _startGate.Release();
+                }
             }
         }
         await StartAsync(cancellationToken: cancellationToken);
