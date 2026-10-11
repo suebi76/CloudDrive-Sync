@@ -92,15 +92,17 @@ public sealed partial class SyncRunner
             }
         }
 
-        // Servers without modification times of their own: CloudDrive-Sync catches same-size changes there itself.
+        // Servers without modification times of their own: CloudDrive-Sync catches same-size changes there itself - and
+        // before a rebuild (the first run, "Auswahl ändern", the answer to a question) it settles every file on both sides,
+        // since bisync then lets the cloud's version win wherever they differ (see PrepareRebuildAsync).
         var quiet = account.Kind == WebDavKind.Nextcloud ? null : new QuietServerChanges(rc, pair, folder, filtersFile);
         QuietServerChanges.Result? before = null;
-        if (quiet is not null && mode != BisyncMode.Resync)
+        if (quiet is not null)
         {
             try
             {
                 var trash = keepTrash ? Path.Combine(pair.LocalPath, SyncFilters.TrashFolder, SyncTrash.NewStamp()) : null;
-                before = await quiet.FetchAsync(trash, cancellationToken);
+                before = mode == BisyncMode.Resync ? await quiet.PrepareRebuildAsync(trash, cancellationToken) : await quiet.FetchAsync(trash, cancellationToken);
             }
             catch (Exception e) when (e is CdException or IOException or UnauthorizedAccessException)
             {

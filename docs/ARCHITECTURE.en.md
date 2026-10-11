@@ -302,7 +302,12 @@ silently.
   stay. Covered by `MultiDeviceTests` (two PCs on one server, both modes, IServ and Nextcloud - also: only the sentinel
   file in the cloud, unchanged).
 - **Server times of its own** (`QuietServerChanges`) for servers without reliable modification times, so same-size
-  changes are not lost.
+  changes are not lost. Before a rebuild (the first run, "Auswahl ändern", the answer to a question)
+  `PrepareRebuildAsync` settles every file on both sides itself: without server times bisync would let the cloud win
+  wherever the sides differ - a change on the PC since the last run went into the recycle bin without a word, a
+  same-size one in the cloud went unseen. By the record of the last run: changed in the cloud only → the cloud wins
+  (same size: fetched here); on the PC only → uploaded now; on both or not known (the first run) → the PC's version
+  stays beside it as `Name.Konflikt-PC1.ext`, unless the content is the same (read and compared).
 - **The last good state** (`RunSafety`): passing problems no longer cost a rebuild.
 - **Refused files stay on the PC** (`LocalOnly`) instead of forcing a rebuild; the checksum of the filter file is renewed
   deliberately for that. Refused is what the server answers with 403, 404, 405, 409 or 415 - with a whole error page (a
@@ -455,7 +460,7 @@ retries, decisions and history are the same. Only the run itself differs (`SyncS
   same content - checked by the server's checksum or, where it has none (IServ), by reading the content from the cloud
   and comparing it (`Executor.SameContentAsync`, stopping at the first difference). Otherwise both stay. Only when
   switching a classic synchronisation, what is unchanged on both sides since bisync's last run counts as the same without
-  reading (`Adopt.Proven`). Classic (bisync) keeps "same size = same" on its first run where the server has no checksum.
+  reading (`Adopt.Proven`). Classic synchronisations get the same from `PrepareRebuildAsync` before bisync's first run.
 - A normal file in the place of a placeholder is a change (that is how Office saves). A placeholder in a new place was
   renamed or moved - it is moved in the cloud, not uploaded again; a folder takes its content along. While a file's
   placeholder lies anywhere on the PC, the file never counts as "deleted on the PC".

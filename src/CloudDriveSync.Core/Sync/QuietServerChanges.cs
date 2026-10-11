@@ -120,6 +120,100 @@ internal sealed class QuietServerChanges
         return new Result(listing, fetched, copies, uploaded, changes);
     }
 
+    /// <summary>
+    /// Before a rebuild (bisync's resync - the first run, "Auswahl ändern", the answer to a question). Without times of their
+    /// own on the server bisync cannot tell the newer version: wherever the two sides differ, the cloud's takes the place and
+    /// the PC's goes to the recycle bin - a change on the PC since the last run was put aside without a word, and a
+    /// same-size change in the cloud was not seen at all. So every file on both sides is settled first, by the record of the
+    /// last run:
+    /// - changed in the cloud only: its version wins (one of the same size is fetched here; bisync would not see it);
+    /// - changed on the PC only: it goes up now;
+    /// - changed on both, or not known (the first run): the PC's version stays beside it as a conflict copy
+    ///   ("Plan.Konflikt-PC1.txt") - unless both have the same content (then nothing happens).
+    /// </summary>
+    public async Task<Result> PrepareRebuildAsync(string? trashFolder, CancellationToken cancellationToken)
+    {
+        var snapshot = Load();
+        var listing = await ListCloudAsync(cancellationToken);
+        int fetched = 0, copies = 0, uploaded = 0;
+        var changes = new List<FileChange>();
+        foreach (var (path, now) in listing)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var local = LocalPath(path);
+            var info = new FileInfo(local);
+            if (!info.Exists) continue;
+            long[]? before = snapshot is not null && snapshot.TryGetValue(path, out var noted) ? noted : null;
+            var pcChanged = before is null || info.Length != before[2] || info.LastWriteTimeUtc.Ticks != before[3];
+            var cloudChanged = before is null || now.Size != before[0] || Math.Abs(now.Time - before[1]) >= 1;
+            try
+            {
+                if (before is not null && !pcChanged && !cloudChanged) continue;
+                if (before is not null && !pcChanged)
+                {
+                    // Changed in the cloud only: its version wins - one of the same size is fetched (bisync would skip it).
+                    if (info.Length != now.Size) continue;
+                    await ReplaceOnPcAsync(path, trashFolder, cancellationToken);
+                    fetched++;
+                    changes.Add(new FileChange(ChangeKind.Downloaded, path));
+                    continue;
+                }
+                if (before is not null && !cloudChanged)
+                {
+                    // Changed on the PC only: it goes up now, so the rebuild finds both sides the same.
+                    await UploadAsync(path, cancellationToken);
+                    uploaded++;
+                    changes.Add(new FileChange(ChangeKind.Uploaded, path));
+                    continue;
+                }
+                // Changed on both sides, or not known: both versions stay, unless they are the same.
+                if (info.Length == now.Size && await SameAsCloudAsync(path, cancellationToken)) continue;
+                var copy = ConflictName(path, listing, "PC");
+                File.Move(local, LocalPath(copy));
+                copies++;
+                Log.Info("Sync", $"'{_pair.Id}': '{path}' differs on both sides before the rebuild; the PC's version stays as '{copy}'.");
+            }
+            catch (IOException e)
+            {
+                // Open in a program, for example: as before, the rebuild decides (the PC's version into the recycle bin).
+                Log.Warn("Sync", $"'{_pair.Id}': '{path}' not settled before the rebuild: {e.Message}");
+            }
+        }
+        if (fetched + copies + uploaded > 0)
+            Log.Info("Sync", $"'{_pair.Id}': before the rebuild - {fetched} fetched, {uploaded} uploaded, {copies} conflict copy(ies) of the PC's version.");
+        return new Result(listing, fetched, copies, uploaded, changes);
+    }
+
+    /// <summary>The server's version takes the file's place on the PC; the PC's waits in the recycle bin.</summary>
+    private async Task ReplaceOnPcAsync(string path, string? trashFolder, CancellationToken cancellationToken)
+    {
+        var local = LocalPath(path);
+        var temporary = $".clouddrive-holen-{Guid.NewGuid():N}.tmp";
+        await CopyToPcAsync(path, temporary, cancellationToken);
+        if (trashFolder is not null)
+        {
+            var backup = Path.Combine(trashFolder, path.Replace('/', '\\'));
+            Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+            File.Copy(local, backup, overwrite: true);
+        }
+        File.Move(LocalPath(temporary), local, overwrite: true);
+    }
+
+    /// <summary>Whether the file on the PC has the content of the server's - fetched beside it and compared.</summary>
+    private async Task<bool> SameAsCloudAsync(string path, CancellationToken cancellationToken)
+    {
+        var temporary = $".clouddrive-vergleich-{Guid.NewGuid():N}.tmp";
+        await CopyToPcAsync(path, temporary, cancellationToken);
+        try
+        {
+            return SameContent(LocalPath(path), LocalPath(temporary));
+        }
+        finally
+        {
+            File.Delete(LocalPath(temporary));
+        }
+    }
+
     /// <summary>Uploads a file even when rclone takes it for unchanged; returns the server's new time (Unix seconds).</summary>
     private async Task<long?> UploadAsync(string path, CancellationToken cancellationToken)
     {
@@ -216,7 +310,7 @@ internal sealed class QuietServerChanges
     }
 
     /// <summary>"Plan.Konflikt-Cloud1.txt" - the first number that is free on both sides.</summary>
-    private string ConflictName(string path, IReadOnlyDictionary<string, CloudFile> listing)
+    private string ConflictName(string path, IReadOnlyDictionary<string, CloudFile> listing, string side = "Cloud")
     {
         var folder = path.Contains('/') ? path[..(path.LastIndexOf('/') + 1)] : "";
         var name = path[folder.Length..];
@@ -224,7 +318,7 @@ internal sealed class QuietServerChanges
         var (stem, extension) = dot > 0 ? (name[..dot], name[dot..]) : (name, "");
         for (var number = 1; ; number++)
         {
-            var candidate = $"{folder}{stem}.Konflikt-Cloud{number}{extension}";
+            var candidate = $"{folder}{stem}.Konflikt-{side}{number}{extension}";
             if (!listing.ContainsKey(candidate) && !File.Exists(LocalPath(candidate))) return candidate;
         }
     }

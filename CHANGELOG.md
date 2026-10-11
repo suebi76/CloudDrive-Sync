@@ -13,8 +13,13 @@ Nineteenth test version on the way to 0.3: more of the bug hunt.
   again): on servers without checksums (IServ) a file of the same size on both sides counted as the same. A file changed
   in the cloud meanwhile that kept its size - a date in a text - was then taken as the PC's older copy, and that would
   later have gone up over the newer one. Now its content is compared (read from the cloud, stopping at the first
-  difference); different content keeps both versions. Classic synchronisations keep "same size = same" on their first
-  run - set up new folders with files on demand.
+  difference); different content keeps both versions.
+- Classic synchronisations with IServ and other servers without times of their own, at a rebuild (the first run with
+  files in the folder, "Auswahl ändern", the answer to a question): wherever the two sides differed, the cloud's version
+  took the place and the PC's went into CloudDrive-Sync's recycle bin - also a change made on the PC since the last run.
+  A change in the cloud that kept its size was not seen at all. Now every file on both sides is settled before: changed
+  on the PC only, it goes up; changed in the cloud only, the cloud's version comes; changed on both sides or not known,
+  both versions stay (unless the content is the same).
 
 ## [0.3.0-preview.18] – 2026-10-11
 

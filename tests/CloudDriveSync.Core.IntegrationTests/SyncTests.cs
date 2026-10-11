@@ -125,6 +125,66 @@ public class SyncTests
     }
 
     [Fact]
+    public async Task A_change_on_the_server_with_the_same_size_arrives_also_with_a_rebuild()
+    {
+        // A rebuild (after "Auswahl ändern", or as the answer to a question) compares by size, too: a same-size change on
+        // the server must arrive, and one on both sides keeps both versions.
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Gleich.txt", "Version 1");
+        world.WriteCloud("Beide.txt", "Fassung 1");
+        world.WriteCloud("Nur PC.txt", "alt");
+        world.WriteCloud("Anderes.txt", "bleibt");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        Assert.True((await world.RunAsync()).Success);
+
+        world.WriteCloud("Gleich.txt", "Version 2", later: true);
+        world.WriteCloud("Beide.txt", "Fassung C", later: true);
+        world.WritePc("Beide.txt", "Fassung PC, länger", later: true);
+        // A change on the PC only: bisync's rebuild would let the cloud's older version win (no times of its own).
+        world.WritePc("Nur PC.txt", "am PC geändert", later: true);
+        var rebuilt = await world.RunAsync(BisyncMode.Resync);
+
+        Assert.True(rebuilt.Success, rebuilt.ErrorDetail);
+        Assert.Equal("Version 2", world.ReadPc("Gleich.txt"));
+        Assert.Equal("Version 2", world.ReadCloud("Gleich.txt"));
+        Assert.Equal("am PC geändert", world.ReadCloud("Nur PC.txt"));
+        Assert.Equal("am PC geändert", world.ReadPc("Nur PC.txt"));
+        Assert.DoesNotContain(world.CloudFiles(), f => f.StartsWith("Nur PC.Konflikt", StringComparison.Ordinal));
+        var both = world.CloudFiles().Where(f => f.StartsWith("Beide", StringComparison.Ordinal)).Select(world.ReadCloud).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(["Fassung C", "Fassung PC, länger"], both);
+        var quiet = await world.RunAsync();
+        Assert.True(quiet.Success, quiet.ErrorDetail);
+        Assert.Equal("Version 2", world.ReadPc("Gleich.txt"));
+    }
+
+    [Fact]
+    public async Task A_first_run_with_files_on_the_PC_already_keeps_every_version_that_differs()
+    {
+        // Set up on a folder with copies (a USB stick): what is the same is taken as it is, what differs - also with the
+        // same size - stays in both versions. Before, the cloud's version took the place and the PC's went to the recycle bin.
+        await using var world = await SyncWorld.CreateAsync();
+        world.WriteCloud("Gleich.txt", "unverändert");
+        world.WriteCloud("Termine.txt", "Elternabend am 10.10.");
+        world.WriteCloud("Länger.txt", "kurz");
+        world.WritePc("Gleich.txt", "unverändert");
+        world.WritePc("Termine.txt", "Elternabend am 09.10.");
+        world.WritePc("Länger.txt", "am PC viel länger geschrieben");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+
+        var first = await world.RunAsync(BisyncMode.Resync);
+        Assert.True(first.Success, first.ErrorDetail);
+        string[] Texts(string prefix) => world.CloudFiles().Where(f => f.StartsWith(prefix, StringComparison.Ordinal)).Select(world.ReadCloud).Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(["Elternabend am 09.10.", "Elternabend am 10.10."], Texts("Termine"));
+        Assert.Equal(["am PC viel länger geschrieben", "kurz"], Texts("Länger"));
+        Assert.Equal(["unverändert"], Texts("Gleich"));
+        Assert.Equal(world.CloudFiles(), world.PcFiles());
+        Assert.True((await world.RunAsync()).Success);
+    }
+
+    [Fact]
     public async Task A_same_size_change_on_the_server_and_a_change_on_the_PC_keep_both_versions()
     {
         await using var world = await SyncWorld.CreateAsync();

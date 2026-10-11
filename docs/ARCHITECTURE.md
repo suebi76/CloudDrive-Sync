@@ -301,7 +301,12 @@ sie still endgültig zu löschen.
   ihres PCs. Bei Bedarf schaut jeder Schritt vorher nach, beide bleiben. Abgesichert durch `MultiDeviceTests` (zwei PCs
   an einem Server, beide Modi, IServ und Nextcloud – auch: nur die Wächterdatei in der Cloud, unverändert).
 - **Eigene Serverzeiten** (`QuietServerChanges`) für Server ohne verlässliche Änderungszeiten, damit gleich große
-  Änderungen nicht verloren gehen.
+  Änderungen nicht verloren gehen. Vor einem Neuaufbau (erster Lauf, „Auswahl ändern“, Antwort auf eine Frage) klärt
+  `PrepareRebuildAsync` jede Datei auf beiden Seiten selbst: Ohne Serverzeiten ließe bisync dort überall, wo die Seiten
+  sich unterscheiden, die Cloud gewinnen – eine Änderung am PC seit dem letzten Lauf landete stumm im Papierkorb, eine
+  gleich große in der Cloud fiel nicht auf. Nach dem Stand des letzten Laufs: nur in der Cloud geändert → die Cloud
+  gewinnt (gleich groß: hier geholt); nur am PC → jetzt hochgeladen; auf beiden Seiten oder unbekannt (erster Lauf) →
+  die PC-Fassung bleibt als `Name.Konflikt-PC1.ext` daneben, außer der Inhalt ist gleich (gelesen und verglichen).
 - **Der letzte gute Zustand** (`RunSafety`): Vorübergehende Probleme kosten keinen Neuaufbau mehr.
 - **Abgelehnte Dateien bleiben am PC** (`LocalOnly`) statt einen Neuaufbau zu erzwingen; die Prüfsumme der Filterdatei
   wird dafür gezielt erneuert. Als abgelehnt gilt, was der Server mit 403, 404, 405, 409 oder 415 beantwortet – bei einer
@@ -459,8 +464,8 @@ Stand abweicht):
   gleich groß ist und denselben Inhalt hat – geprüft über die Prüfsumme des Servers oder, wo er keine hat (IServ), indem
   der Inhalt aus der Cloud gelesen und verglichen wird (`Executor.SameContentAsync`, Abbruch beim ersten Unterschied).
   Sonst bleiben beide. Nur beim Umstellen einer klassischen Synchronisation gilt, was seit bisyncs letztem Lauf auf beiden
-  Seiten unverändert ist, ohne Lesen als gleich (`Adopt.Proven`). Klassisch (bisync) gilt beim ersten Abgleich weiter
-  „gleich groß = gleich“, wo der Server keine Prüfsumme hat.
+  Seiten unverändert ist, ohne Lesen als gleich (`Adopt.Proven`). Klassisch erledigt das `PrepareRebuildAsync` vor
+  bisyncs erstem Lauf.
 - Eine normale Datei am Platz eines Platzhalters ist eine Änderung (so speichert Office). Ein Platzhalter an einem neuen
   Platz wurde umbenannt oder verschoben – er wird in der Cloud verschoben, nicht neu hochgeladen; ein Ordner nimmt seinen
   Inhalt mit. Liegt der Platzhalter einer Datei noch irgendwo am PC, gilt sie nie als „am PC gelöscht“.
