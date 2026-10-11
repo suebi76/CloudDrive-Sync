@@ -3,6 +3,24 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.23] – 2026-10-11
+
+Twenty-third test version on the way to 0.3: privacy and IT security, written down and checked.
+
+### Added
+
+- [docs/PRIVACY-SECURITY.md](docs/PRIVACY-SECURITY.md) (English: [PRIVACY-SECURITY.en.md](docs/PRIVACY-SECURITY.en.md)):
+  an overview for data protection officers and IT staff - data flows, every connection, what is stored where and for how
+  long, logs, credentials, local services, removing and uninstalling, and a threat model with what remains.
+
+### Fixed
+
+- Logs are kept 14 days - now really: CloudDrive-Sync's own log only went at a start (a PC running for weeks kept it
+  longer), and rclone's log, which names every file transferred, was only split by size - on a quiet PC it held entries
+  for months. Now both go after 14 days, also at every new day; a part of rclone's log with entries older than that is
+  closed at the start.
+- The empty folder "backup" that versions before 0.2.0 made in the data folder is removed.
+
 ## [0.3.0-preview.22] – 2026-10-11
 
 Twenty-second test version on the way to 0.3: conflicts that are seen, logs that stay readable.

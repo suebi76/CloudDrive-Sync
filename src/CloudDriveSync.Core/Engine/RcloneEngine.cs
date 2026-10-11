@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -158,6 +159,7 @@ public sealed class RcloneEngine : IAsyncDisposable
 
     private async Task StartProcessAsync(string exe, string configKey, CancellationToken cancellationToken)
     {
+        CloseOldLog(_paths.RcloneLog, Log.Keep);
         var port = FreePort();
         var user = RandomToken(12);
         var password = RandomToken(24);
@@ -173,7 +175,7 @@ public sealed class RcloneEngine : IAsyncDisposable
                      "--config", _paths.RcloneConfig,
                      "--cache-dir", _paths.CacheDir,
                      "--log-file", _paths.RcloneLog, "--log-level", "INFO",
-                     "--log-file-max-size", "10M", "--log-file-max-backups", "5",
+                     "--log-file-max-size", "10M", "--log-file-max-backups", "5", "--log-file-max-age", $"{Log.Keep.TotalDays:0}d",
                      "--rc-job-expire-duration", "10m",
                  })
             start.ArgumentList.Add(argument);
@@ -251,6 +253,31 @@ public sealed class RcloneEngine : IAsyncDisposable
         }
         process?.Dispose();
         rc?.Dispose();
+    }
+
+    /// <summary>
+    /// rclone closes a part of its log only when it is full (10 MB) - on a quiet PC that takes months, and the log names
+    /// every file it moves. A part whose first entry is older than <paramref name="keep"/> is closed before the engine
+    /// starts ("rclone-....log", the way rclone names them); closed parts go after <paramref name="keep"/>
+    /// (<see cref="Log"/>, and rclone itself with --log-file-max-age).
+    /// </summary>
+    internal static void CloseOldLog(string file, TimeSpan keep)
+    {
+        try
+        {
+            string first;
+            using (var reader = new StreamReader(new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)))
+                first = reader.ReadLine() ?? "";
+            // rclone's lines begin with the time: "2026/10/11 02:08:55".
+            if (first.Length < 19 || !DateTime.TryParseExact(first[..19], "yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var since))
+                return;
+            if (since >= Log.Clock.GetLocalNow().DateTime - keep) return;
+            File.Move(file, Path.Combine(Path.GetDirectoryName(file)!, $"rclone-{File.GetLastWriteTime(file):yyyy-MM-ddTHH-mm-ss.fff}.log"));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // No log yet, or held: tried again at the next start.
+        }
     }
 
     private static int FreePort()

@@ -98,7 +98,7 @@ liegt woanders: `%LOCALAPPDATA%\CloudDriveSync\current` (Velopack).
 |---|---|
 | `settings.json` (+ `.bak`) | Konten, Synchronisationen, Einstellungen – **nie ein Geheimnis**. Gespeichert wird über eine temporäre Datei mit Sicherung; ist die Datei beschädigt, nimmt `SettingsStore` die Sicherung. |
 | `rclone.conf` | Die rclone-Konfiguration mit den Zugängen. **Immer verschlüsselt** (`RCLONE_ENCRYPT_V0:`). |
-| `logs\` | `clouddrive-sync-<Datum>.log` (14 Tage), `rclone.log` (10 MB × 5). |
+| `logs\` | `clouddrive-sync-<Datum>.log`, `rclone.log` (Teile zu 10 MB, höchstens 6) – beides 14 Tage (`Log.Keep`): gelöscht beim Start und bei jedem Tageswechsel; einen Teil von rclone mit älteren Einträgen schließt `RcloneEngine.CloseOldLog` beim Start ab. |
 | `deps\rclone\1.75.1\` | `rclone.exe` in der festgelegten Version. |
 | `cache\` | Zwischenspeicher von rclone. |
 | `sync\<id>\` | Zustand einer Synchronisation, siehe unten. |

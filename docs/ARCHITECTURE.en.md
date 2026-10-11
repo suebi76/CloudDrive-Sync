@@ -100,7 +100,7 @@ lives elsewhere: `%LOCALAPPDATA%\CloudDriveSync\current` (Velopack).
 |---|---|
 | `settings.json` (+ `.bak`) | Accounts, synchronisations, preferences - **never a secret**. Saved through a temporary file with a backup; when the file is damaged, `SettingsStore` takes the backup. |
 | `rclone.conf` | The rclone configuration with the sign-ins. **Always encrypted** (`RCLONE_ENCRYPT_V0:`). |
-| `logs\` | `clouddrive-sync-<date>.log` (14 days), `rclone.log` (10 MB × 5). |
+| `logs\` | `clouddrive-sync-<date>.log`, `rclone.log` (parts of 10 MB, 6 at most) - both 14 days (`Log.Keep`): deleted at the start and at every new day; a part of rclone's with older entries is closed by `RcloneEngine.CloseOldLog` at the start. |
 | `deps\rclone\1.75.1\` | `rclone.exe` in the pinned version. |
 | `cache\` | rclone's cache. |
 | `sync\<id>\` | State of one synchronisation, see below. |

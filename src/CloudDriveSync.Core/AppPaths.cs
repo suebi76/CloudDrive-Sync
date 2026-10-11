@@ -58,5 +58,23 @@ public sealed class AppPaths
     {
         foreach (var dir in new[] { Home, LogDir, CacheDir, DepsDir, SyncDir })
             Directory.CreateDirectory(dir);
+        RemoveEmptyLegacyFolder();
+    }
+
+    /// <summary>
+    /// "backup", which versions before 0.2.0 made and nothing uses any more, goes when it is empty - no empty folder of an
+    /// old version stays behind. One with anything in it is left alone (uninstalling takes it with the data folder).
+    /// </summary>
+    private void RemoveEmptyLegacyFolder()
+    {
+        var legacy = Path.Combine(Home, "backup");
+        try
+        {
+            if (Directory.Exists(legacy) && !Directory.EnumerateFileSystemEntries(legacy).Any()) Directory.Delete(legacy);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Tried again at the next start.
+        }
     }
 }

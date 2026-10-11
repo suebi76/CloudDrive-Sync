@@ -20,7 +20,7 @@ CloudDrive-Sync ist ein Open-Source-Programm, das vollständig **auf deinem Wind
   herunter und prüft seine Prüfsumme. Auch dabei werden nur die technischen Angaben der Webanfrage übertragen.
 - **Lokale Dateien:** Einstellungen, Protokolle und der Zustand der Synchronisationen liegen unter
   `%LOCALAPPDATA%\CloudDrive-Sync`, das Programm unter `%LOCALAPPDATA%\CloudDriveSync`. Protokolle enthalten keine
-  Passwörter. Beim Deinstallieren werden Einstellungen, Anmeldungen (samt Schlüssel in der
+  Passwörter, aber Datei- und Ordnernamen; sie werden nach 14 Tagen gelöscht. Beim Deinstallieren werden Einstellungen, Anmeldungen (samt Schlüssel in der
   Windows-Anmeldeinformationsverwaltung), Protokolle und rclone gelöscht; deine synchronisierten Ordner bleiben.
 - **Dateien bei Bedarf und Explorer:** Für „Dateien bei Bedarf“ meldet CloudDrive-Sync den Ordner bei Windows an, wie
   es OneDrive tut; Windows hält dann Name und Pfad des Ordners fest und zeigt ihn im Explorer. Die Daten einer Datei
@@ -46,7 +46,8 @@ CloudDrive-Sync is open-source software that runs entirely **on your Windows PC*
 - **rclone:** at its first start, CloudDrive-Sync downloads the tool rclone from downloads.rclone.org (or else from GitHub)
   and checks its checksum. Here, too, only the technical details of the web request are transferred.
 - **Local files:** settings, logs and the state of the synchronisations live in `%LOCALAPPDATA%\CloudDrive-Sync`, the
-  program in `%LOCALAPPDATA%\CloudDriveSync`. Logs contain no passwords. Uninstalling deletes settings, sign-ins (with
+  program in `%LOCALAPPDATA%\CloudDriveSync`. Logs contain no passwords, but file and folder names; they are deleted
+  after 14 days. Uninstalling deletes settings, sign-ins (with
   their key in Windows' credential manager), logs and rclone; your synchronised folders stay.
 - **Files on demand and Explorer:** for files on demand, CloudDrive-Sync registers the folder with Windows, as OneDrive
   does; Windows then keeps the folder's name and path and shows it in Explorer. When a file is opened, CloudDrive-Sync

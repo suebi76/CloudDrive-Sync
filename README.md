@@ -62,6 +62,8 @@ Richtungen, mit einer Oberfläche im Stil von Windows 11.
 - Laufzeitdaten liegen nie in diesem Repository (`.gitignore` arbeitet mit einer Positivliste).
 - Was CloudDrive-Sync mit wem austauscht, steht in der [Datenschutzerklärung](PRIVACY.md): keine Telemetrie, nur deine
   Server, GitHub für Updates und einmal rclone.org für rclone.
+- Für Datenschutzbeauftragte und IT-Verantwortliche: [Datenschutz und IT-Sicherheit](docs/PRIVACY-SECURITY.md) –
+  Datenflüsse, was wo wie lange gespeichert wird, Protokolle, Zugangsdaten, Deinstallation und ein Bedrohungsmodell.
 
 ## Zusammenspiel mit CloudDrives
 
@@ -135,7 +137,8 @@ OneDrive: every file shows in Explorer at once and takes space only when opened,
 Install it from the [releases](https://github.com/suebi76/CloudDrive-Sync/releases) (`CloudDrive-Sync-Setup.exe`, per
 user, no administrator rights). The user interface is German. Developer documentation in English:
 [architecture](docs/ARCHITECTURE.en.md), [developer handbook](docs/DEVELOPMENT.en.md),
-[contributing and code rules](CONTRIBUTING.en.md).
+[contributing and code rules](CONTRIBUTING.en.md). For data protection officers and IT staff:
+[privacy and IT security](docs/PRIVACY-SECURITY.en.md).
 
 ## Lizenz
 

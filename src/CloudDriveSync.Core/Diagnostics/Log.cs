@@ -4,19 +4,31 @@ namespace CloudDriveSync.Core.Diagnostics;
 
 /// <summary>
 /// Application log: one text file per day in the log folder, lines with time, level and component. Secrets are
-/// redacted before anything is written. Logging never throws.
+/// redacted before anything is written. Logging never throws. Logs older than <see cref="Keep"/> go - CloudDrive-Sync's
+/// and rclone's closed parts - at the start and at every new day, so also while CloudDrive-Sync runs for weeks.
 /// </summary>
 public static partial class Log
 {
+    /// <summary>How long logs are kept.</summary>
+    public static readonly TimeSpan Keep = TimeSpan.FromDays(14);
+
     private static readonly object Gate = new();
     private static string? _directory;
+    private static string? _file;
     private static readonly AsyncLocal<List<string>?> Captured = new();
+
+    /// <summary>The clock for the names of the files and their age; tests set another one.</summary>
+    internal static TimeProvider Clock { get; set; } = TimeProvider.System;
 
     public static void Initialize(string directory)
     {
         Directory.CreateDirectory(directory);
-        _directory = directory;
-        CleanUp(directory, TimeSpan.FromDays(14));
+        lock (Gate)
+        {
+            _directory = directory;
+            _file = null;
+        }
+        CleanUp(directory, Keep);
     }
 
     public static void Debug(string component, string message) => Write("DEBUG", component, message);
@@ -41,10 +53,18 @@ public static partial class Log
             lock (captured) captured.Add($"[{level}] [{component}] {Redact(message)}");
         var directory = _directory;
         if (directory is null) return;
-        var line = $"{DateTimeOffset.Now:yyyy-MM-ddTHH:mm:ss.fffzzz} [{level,-5}] [{component}] {Redact(message)}{Environment.NewLine}";
+        var now = Clock.GetLocalNow();
+        var line = $"{now:yyyy-MM-ddTHH:mm:ss.fffzzz} [{level,-5}] [{component}] {Redact(message)}{Environment.NewLine}";
         try
         {
-            lock (Gate) File.AppendAllText(Path.Combine(directory, $"clouddrive-sync-{DateTime.Now:yyyy-MM-dd}.log"), line);
+            lock (Gate)
+            {
+                var file = Path.Combine(directory, $"clouddrive-sync-{now:yyyy-MM-dd}.log");
+                // A new day: what is older than the time logs are kept goes.
+                if (_file is not null && file != _file) CleanUp(directory, Keep);
+                _file = file;
+                File.AppendAllText(file, line);
+            }
         }
         catch (IOException)
         {
@@ -69,10 +89,12 @@ public static partial class Log
     {
         try
         {
-            // "clouddrives-*.log": the name versions up to 0.2.0-preview.2 used; those files expire as well.
-            foreach (var pattern in new[] { "clouddrive-sync-*.log", "clouddrives-*.log" })
+            // "clouddrives-*.log": the name versions up to 0.2.0-preview.2 used; those files expire as well. "rclone-*.log":
+            // the closed parts of rclone's log (rclone.log itself is the engine's open part, see RcloneEngine).
+            var before = Clock.GetLocalNow().DateTime - keep;
+            foreach (var pattern in new[] { "clouddrive-sync-*.log", "clouddrives-*.log", "rclone-*.log" })
                 foreach (var file in Directory.EnumerateFiles(directory, pattern))
-                    if (File.GetLastWriteTime(file) < DateTime.Now - keep) File.Delete(file);
+                    if (File.GetLastWriteTime(file) < before) File.Delete(file);
         }
         catch (IOException)
         {
