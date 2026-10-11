@@ -38,7 +38,10 @@ public class SourceFileTests
             }
             var unixLineEnds = extension is ".yml" or ".yaml";
             var lineEnd = unixLineEnds ? "\n" : "\r\n";
-            if (unixLineEnds ? text.Contains('\r') : text.Replace("\r\n", "").Contains('\n')) problems.Add($"{name}: line ends must be {(unixLineEnds ? "LF" : "CRLF")}");
+            // Also no line end of two carriage returns ("\r\r\n" - a script that wrote "\r\n" in text mode): it compiles, but
+            // Git takes the file for no text at all.
+            if (unixLineEnds ? text.Contains('\r') : text.Replace("\r\n", "").IndexOfAny(['\r', '\n']) >= 0)
+                problems.Add($"{name}: line ends must be {(unixLineEnds ? "LF" : "CRLF")}");
             if (text.Length > 0 && !text.EndsWith(lineEnd, StringComparison.Ordinal)) problems.Add($"{name}: no line end at the end");
             if (text.EndsWith(lineEnd + lineEnd, StringComparison.Ordinal)) problems.Add($"{name}: empty lines at the end");
         }

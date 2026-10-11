@@ -489,7 +489,10 @@ hat; am PC gelöscht wird nur eine unveränderte Datei. Was sich inzwischen geä
 Hochladen setzt er `IgnoreTimes`, weil rclone auf Servern ohne eigene Zeiten sonst eine gleich große Änderung
 überspränge. „Abgeglichen“ setzt `Placeholders.FinishUpload` nur, wenn die Datei noch genau die hochgeladene Fassung ist –
 Prüfen, Umwandeln und Markieren geschehen, während eine Sperre jedes Schreiben verhindert. Dateien, deren Daten auf dem
-PC lagen und die die Cloud gelöscht hat, kommen als normale Dateien in den Papierkorb.
+PC lagen und die die Cloud gelöscht hat, kommen als normale Dateien in den Papierkorb. Der Code steht nach Themen in
+Teilen: `Executor.cs` (Reihenfolge, ein Schritt, Fortschritt), `.Moves`, `.Uploads`, `.Replace` (Kopie daneben),
+`.Conflicts`, `.Placeholders` (auch Anheften, Freigeben, Platz), `.Deletions` und `.Refusals` (was der Server nicht
+zulässt: zurückholen, daneben behalten, Verschieben rückgängig machen).
 
 **Der CloudFetcher** liefert nur die Fassung, für die ein Platzhalter steht: Vor dem ersten Byte muss die Größe beim
 Server stimmen, vor dem letzten Stück Größe, Zeit und – wo vorhanden – Prüfsumme. Sonst scheitert das Öffnen sauber

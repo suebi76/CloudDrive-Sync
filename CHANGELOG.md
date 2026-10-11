@@ -3,6 +3,18 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Changed
+
+- The part of files on demand that carries a plan out (`Executor`, 1,000 lines) is split by topic into files of its own -
+  moves, uploads, placeholders, deletions, what the server does not allow. Nothing in it changed; easier to follow.
+
+### Fixed
+
+- A test file had two carriage returns at every line end (Git took it for no text); the check of the source files now
+  catches that, and tools\Format-SourceFiles.ps1 makes one line end of it, not two.
+
 ## [0.3.0-preview.23] – 2026-10-11
 
 Twenty-third test version on the way to 0.3: privacy and IT security, written down and checked.

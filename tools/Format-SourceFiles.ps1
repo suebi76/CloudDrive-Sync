@@ -41,7 +41,8 @@ foreach ($file in $files) {
     $offset = 0
     if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $offset = 3 }
     $text = [Text.Encoding]::UTF8.GetString($bytes, $offset, $bytes.Length - $offset)
-    $normalized = ($text -replace "`r`n", "`n") -replace "`r", "`n"
+    # "`r`r`n" (a script that wrote "`r`n" in text mode) is one line end, not two.
+    $normalized = ($text -replace "`r+`n", "`n") -replace "`r", "`n"
     $normalized = $normalized.TrimEnd("`n") + "`n"
     if ($rule.Eol -eq "`r`n") { $normalized = $normalized -replace "`n", "`r`n" }
 

@@ -484,6 +484,9 @@ unchanged file. Whatever changed meanwhile is left for the next run. For uploads
 servers without times of their own rclone would skip a change of the same size. `Placeholders.FinishUpload` marks a file
 in sync only while it is still exactly the uploaded version - checking, converting and marking happen while a lock keeps
 every writer out. Files whose data was on the PC and which the cloud deleted go into the recycle bin as normal files.
+The code lives in parts by topic: `Executor.cs` (order, one step, progress), `.Moves`, `.Uploads`, `.Replace` (copy
+beside), `.Conflicts`, `.Placeholders` (also pinning, freeing up, space), `.Deletions` and `.Refusals` (what the server
+does not allow: bring back, keep beside, undo a move).
 
 **The CloudFetcher** delivers only the version a placeholder stands for: before the first byte the server's size must
 match, before the last piece size, time and - where available - checksum. Otherwise opening fails cleanly ("The cloud
