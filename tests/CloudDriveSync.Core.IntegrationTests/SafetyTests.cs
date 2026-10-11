@@ -1,4 +1,5 @@
 using CloudDriveSync.Core.Errors;
+using CloudDriveSync.Core.Settings;
 using CloudDriveSync.Core.Sync;
 
 namespace CloudDriveSync.Core.IntegrationTests;
@@ -37,6 +38,69 @@ public class SafetyTests
         var quiet = await world.RunAsync();
         Assert.True(quiet.Success, $"{quiet.ErrorCode}: {quiet.ErrorDetail}");
         Assert.Equal(0, quiet.Final.Transfers);
+    }
+
+    /// <summary>
+    /// A server that takes no file whose name begins with a dot (an admin's rule in Nextcloud, answered with an error page):
+    /// the protection file stays on the PC only, the refused file stays on the PC without being tried again, and "Künftig
+    /// ignorieren" leaves out names with a dot - never every file of its type (".notizen.txt" is no reason to leave out .txt).
+    /// </summary>
+    [Theory]
+    [InlineData(SyncMode.Classic)]
+    [InlineData(SyncMode.OnDemand)]
+    public async Task A_server_that_takes_no_names_with_a_dot_is_handled_once(SyncMode mode)
+    {
+        await using var world = await SyncWorld.CreateAsync(refusingProxy: true);
+        world.WriteCloud("Plan.txt", "Plan");
+        world.Proxy!.RefuseUploads = path => Path.GetFileName(path).StartsWith('.');
+        world.WritePc(".notizen.txt", "privat");
+        world.WritePc("Liste.txt", "Liste");
+        await world.AddAccountAsync();
+        await world.AddPairAsync(p => p.Mode = mode);
+        Assert.False(world.Host.Sync.FindPair(world.Pair.Id)!.CloudCheckFile);
+
+        var first = await world.RunAsync(BisyncMode.Resync);
+        Assert.True(first.Success, $"{first.ErrorCode}: {first.ErrorDetail}");
+        Assert.Equal([".notizen.txt"], first.LocalOnlyAdded);
+        world.Host.Sync.KeepLocalOnly(world.Pair.Id, first.LocalOnlyAdded!);
+        Assert.Equal("Liste", world.ReadCloud("Liste.txt"));
+
+        Assert.Equal([".*"], world.Host.Sync.IgnoreLocalOnly(world.Pair.Id));
+        Assert.Equal("Dateien, deren Name mit einem Punkt beginnt", SyncFilters.Describe(".*"));
+        var rebuilt = await world.RunAsync(BisyncMode.Resync);
+        Assert.True(rebuilt.Success, $"{rebuilt.ErrorCode}: {rebuilt.ErrorDetail}");
+        var refused = world.Proxy.RefusedUploads;
+        world.WritePc("Neu.txt", "neu");
+        world.WritePc(".auch-neu.txt", "auch privat");
+        var next = await world.RunAsync();
+        Assert.True(next.Success, $"{next.ErrorCode}: {next.ErrorDetail}");
+        Assert.Null(next.LocalOnlyAdded);
+        Assert.Equal(refused, world.Proxy.RefusedUploads);
+        // Other .txt files still go up; the ones with a dot stay on the PC.
+        Assert.Equal("neu", world.ReadCloud("Neu.txt"));
+        Assert.Equal("privat", world.ReadPc(".notizen.txt"));
+        Assert.Equal("auch privat", world.ReadPc(".auch-neu.txt"));
+        Assert.False(File.Exists(world.Cloud(".auch-neu.txt")));
+    }
+
+    [Fact]
+    public async Task Ignoring_what_the_server_did_not_take_leaves_out_no_more_than_that()
+    {
+        // The server takes the protection file (a dot is fine there): a refused ".htaccess" is left out by its name only, a
+        // refused folder with everything in it, a refused program file by its type.
+        await using var world = await SyncWorld.CreateAsync();
+        await world.AddAccountAsync();
+        await world.AddPairAsync(p => p.Mode = SyncMode.OnDemand);
+        Assert.True(world.Host.Sync.FindPair(world.Pair.Id)!.CloudCheckFile);
+        world.WritePc("Web/.htaccess", "Deny from all");
+        world.WritePc("Projekt.v2/Datei.txt", "x");
+        world.WritePc("Programm/werkzeug.dll", "binär");
+        world.Host.Sync.KeepLocalOnly(world.Pair.Id, ["Web/.htaccess", "Projekt.v2", "Programm/werkzeug.dll"]);
+
+        var rules = world.Host.Sync.IgnoreLocalOnly(world.Pair.Id);
+        Assert.Equal([".htaccess", "/Projekt.v2/**", "*.[dD][lL][lL]"], rules);
+        Assert.Equal("Dateien namens „.htaccess“", SyncFilters.Describe(".htaccess"));
+        Assert.Equal("Ordner „Projekt.v2“", SyncFilters.Describe("/Projekt.v2/**"));
     }
 
     [Theory]

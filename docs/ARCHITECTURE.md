@@ -331,8 +331,13 @@ sie still endgültig zu löschen.
 - **Ausgelassen und ignoriert.** Ordner, die der Server nicht lesen lässt, nennt die Karte (`SyncPairState.LeftOut`, in
   `state.json`), einmal auch als Benachrichtigung. Abgelehnte Dateien erklärt sie mit ihren Dateitypen und Lösungen. Beides
   lässt sich „Künftig ignorieren“: Dateitypen (`SyncFilters.TypeRule`, z. B. `*.[dD][lL][lL]`), einzelne Dateien oder
-  Ordner (`PathRule`) kommen als Regeln in `SyncSelection.Exclude` – ein Neuaufbau, bei dem nichts gelöscht wird; in den
-  Einstellungen der Synchronisation stehen sie unter „Ignoriert“ und lassen sich wieder abgleichen.
+  Ordner samt Inhalt (`PathRule`) kommen als Regeln in `SyncSelection.Exclude` – ein Neuaufbau, bei dem nichts gelöscht
+  wird; in den Einstellungen der Synchronisation stehen sie unter „Ignoriert“ und lassen sich wieder abgleichen. Ein Name
+  mit einem Punkt am Anfang ist kein Dateityp (sonst ließe `.notizen.txt` alle `.txt`-Dateien aus): Hat der Server schon
+  die Wächterdatei abgelehnt, nimmt er keinen solchen Namen – dann `SyncFilters.DotRule` (`.*`, alle); sonst nur dieser
+  Name (`NameRule`, z. B. `.htaccess`, das Nextcloud nie nimmt), denn `.*` träfe auch die Wächterdatei. Beim Neuaufbau
+  (auch dem ersten Lauf) nennt bisync keine Warteschlange: Als Upload gilt dort, was scheitert, während es die Dateien des
+  PCs in die Cloud kopiert (`RunSafety.RefusedUploads`) – vorher endete eine abgelehnte Datei dort mit einer Neuaufbau-Frage.
 - **Keine Schleifen.** Abgelehnte Dateien werden nicht in jedem Lauf wieder versucht (nur auf „Erneut versuchen“);
   gescheiterte Läufe warten 1, 2, 4 … Minuten bis zum Intervall, eine geöffnete Datei bekommt drei schnelle Versuche
   (`SyncService.RetryDelay`). Als abgelehnt gilt auch „400 Bad Request“ auf den Upload selbst (ein Name, den Nextcloud

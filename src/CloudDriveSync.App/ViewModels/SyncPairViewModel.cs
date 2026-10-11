@@ -322,8 +322,18 @@ public sealed partial class SyncPairViewModel : ObservableObject
     /// <summary>Why the server may have refused the files - a folder to read only, or types of files it blocks - and what helps.</summary>
     internal static string LocalOnlyExplained(IReadOnlyList<string> files)
     {
-        var types = files.Select(f => System.IO.Path.GetExtension(f).ToLowerInvariant()).Where(e => e.Length > 0).Distinct().Order().ToList();
-        var typeText = types.Count == 0 ? "" : $" – oder der Server sperrt diese Dateitypen: {string.Join(", ", types.Take(8))}{(types.Count > 8 ? " …" : "")}";
+        var names = files.Select(System.IO.Path.GetFileName).OfType<string>().ToList();
+        // A name with a dot at its start is refused for that, not for its ending (".notizen.txt" says nothing about .txt).
+        var dotted = names.Any(n => n.StartsWith('.'));
+        var types = names.Where(n => !n.StartsWith('.')).Select(n => System.IO.Path.GetExtension(n).ToLowerInvariant()).Where(e => e.Length > 0).Distinct().Order().ToList();
+        var typeText = types.Count == 0 ? "" : $"diese Dateitypen: {string.Join(", ", types.Take(8))}{(types.Count > 8 ? " …" : "")}";
+        typeText = (dotted, typeText.Length > 0) switch
+        {
+            (true, true) => $" – oder der Server sperrt Namen mit einem Punkt am Anfang und {typeText}",
+            (true, false) => " – oder der Server sperrt Namen mit einem Punkt am Anfang",
+            (false, true) => $" – oder der Server sperrt {typeText}",
+            _ => "",
+        };
         return $"Der Server hat sie nicht angenommen. Vielleicht darfst du dort nur lesen{typeText}. Sie bleiben auf diesem PC erhalten, " +
                "werden aber nicht hochgeladen und nicht immer wieder versucht." + Environment.NewLine +
                "Was hilft: die Administration des Servers fragen, ob diese Dateien erlaubt werden; sie in ein ZIP-Archiv packen (das nimmt " +

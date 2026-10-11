@@ -3,6 +3,21 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.20] – 2026-10-11
+
+Twentieth test version on the way to 0.3: servers that take no names with a dot.
+
+### Fixed
+
+- "Künftig ignorieren" for a refused file whose name begins with a dot took its ending as its type: ".notizen.txt" left
+  out every .txt file. Such names are now left out by their dot - all of them where the server refused even
+  CloudDrive-Sync's protection file (it takes no name with a dot at all), otherwise that name only (Nextcloud takes no
+  ".htaccess", for example). A refused folder is left out with everything in it; a dot in a folder's name ("Projekt.v2")
+  is no file type any more. The card no longer names ".txt" as the type the server blocks for ".notizen.txt".
+- Classic synchronisations: a file the server refused during the first run (or a rebuild) asked for a rebuild, which
+  failed on the same file again. It now stays on the PC as in every other run - the rebuild names its uploads
+  differently, and that was not recognised.
+
 ## [0.3.0-preview.19] – 2026-10-11
 
 Nineteenth test version on the way to 0.3: more of the bug hunt.

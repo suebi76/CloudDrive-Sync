@@ -27,6 +27,27 @@ public class LocalOnlyTests : IDisposable
     }
 
     [Fact]
+    public void Finds_the_uploads_the_server_refused_also_in_a_rebuild()
+    {
+        // A rebuild (the first run, too) names no queue: what fails while it copies the PC's files to the cloud is an upload,
+        // what fails while it copies the cloud's files to the PC is not. Before, a refused file there asked for a rebuild -
+        // which failed on it again.
+        const string report = """
+            2026/10/11 16:03:56 INFO  : Copying Path2 files to Path1
+            2026/10/11 16:03:56 INFO  : - Path2             Resync is copying files to                  - Path1
+            2026/10/11 16:03:56 INFO  : Liste.txt: Copied (new)
+            2026/10/11 16:03:57 ERROR : .notizen.txt: Failed to copy: unchunked simple update failed: 404 Not Found
+            2026/10/11 16:03:57 ERROR : Programm/werkzeug.dll: Failed to copy: unchunked simple update failed: <!DOCTYPE html>
+            <html><h2>Seite nicht gefunden</h2></html>: 404 Not Found
+            2026/10/11 16:03:57 INFO  : Copying Path1 files to Path2
+            2026/10/11 16:03:57 INFO  : - Path1             Resync is copying files to                  - Path2
+            2026/10/11 16:03:58 ERROR : Plan.txt: Failed to copy: 403 Forbidden
+            2026/10/11 16:03:58 ERROR : Bisync aborted. Must run --resync to recover.
+            """;
+        Assert.Equal([".notizen.txt", "Programm/werkzeug.dll"], RunSafety.RefusedUploads(report, "cd-nc:Ablage"));
+    }
+
+    [Fact]
     public void An_error_page_over_several_lines_counts_by_the_status_at_its_end()
     {
         // A filter in front of Nextcloud blocks some types of files with an error page of its own.

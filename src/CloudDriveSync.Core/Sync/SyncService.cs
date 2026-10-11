@@ -316,8 +316,14 @@ public sealed partial class SyncService : IAsyncDisposable
         {
             foreach (var path in pair.LocalOnly)
             {
-                var extension = Path.GetExtension(path);
-                var rule = extension.Length > 1 ? SyncFilters.TypeRule(extension) : SyncFilters.PathRule(path, folder: false);
+                // A folder with everything in it; a name with a dot at its start by that (never ".txt" for ".notizen.txt" -
+                // that left out every text file); anything else by its type.
+                var name = path[(path.LastIndexOf('/') + 1)..];
+                var extension = Path.GetExtension(name);
+                var rule = Directory.Exists(Path.Combine(pair.LocalPath, OnDemand.NameEncoding.ToLocalPath(path))) ? SyncFilters.PathRule(path, folder: true)
+                    // The server refused even the protection file: it takes no name with a dot at all.
+                    : name.StartsWith('.') ? (pair.CloudCheckFile ? SyncFilters.NameRule(name) : SyncFilters.DotRule)
+                    : extension.Length > 1 ? SyncFilters.TypeRule(extension) : SyncFilters.PathRule(path, folder: false);
                 if (!pair.Selection.Exclude.Contains(rule, StringComparer.Ordinal) && !added.Contains(rule, StringComparer.Ordinal)) added.Add(rule);
             }
             pair.Selection.Exclude.AddRange(added);

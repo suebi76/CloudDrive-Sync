@@ -95,7 +95,9 @@ internal static partial class RunSafety
 
     /// <summary>
     /// Files bisync could not upload because the server did not take them (a folder to read only), relative to the
-    /// synchronised folder. Only uploads count - bisync's queue of copies to path 1 names them.
+    /// synchronised folder. Only uploads count - bisync's queue of copies to path 1 names them; a rebuild (the first run,
+    /// too) names no queue, there what fails while it copies the PC's files to the cloud is an upload. Before, a file
+    /// refused there asked for a rebuild - which failed on it again.
     /// </summary>
     public static IReadOnlyList<string> RefusedUploads(string report, string cloudPath)
     {
@@ -106,11 +108,15 @@ internal static partial class RunSafety
             var target = queued.Groups[1].Value;
             if (target.StartsWith(prefix, StringComparison.Ordinal)) uploads.Add(target[prefix.Length..]);
         }
+        // Where a rebuild copies to the cloud (path 1) and where to the PC (path 2), by position in the report.
+        var sections = ResyncSectionPattern().Matches(report).Select(m => (m.Index, ToCloud: m.Groups["to"].Value == "1")).ToList();
         var refused = new List<string>();
         foreach (Match failed in FailedCopyPattern().Matches(report))
         {
             var path = failed.Groups["path"].Value;
-            if (uploads.Contains(path) && IsRefusal(failed.Groups["reason"].Value) && !refused.Contains(path)) refused.Add(path);
+            var section = sections.FindLast(s => s.Index < failed.Index);
+            var upload = uploads.Contains(path) || (section.Index > 0 && section.ToCloud);
+            if (upload && IsRefusal(failed.Groups["reason"].Value) && !refused.Contains(path)) refused.Add(path);
         }
         return refused;
     }
@@ -141,6 +147,9 @@ internal static partial class RunSafety
 
     [GeneratedRegex(@"(?m)Queue copy to Path1\s+-\s+(.+?)\s*$")]
     private static partial Regex UploadQueuePattern();
+
+    [GeneratedRegex(@"(?m)Resync is copying files to\s+-\s+Path(?<to>[12])\s*$")]
+    private static partial Regex ResyncSectionPattern();
 
     /// <summary>
     /// Removes bisync's lock files that an earlier engine left behind - a run broken off by a restart of Windows or a crash.

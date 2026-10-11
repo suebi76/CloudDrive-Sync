@@ -112,9 +112,21 @@ public static class SyncFilters
     /// <summary>The rule that leaves out one file or folder ("/" separated, relative to the synchronised folder).</summary>
     public static string PathRule(string path, bool folder) => folder ? $"/{EscapeGlob(path.Trim('/'))}/**" : $"/{EscapeGlob(path.Trim('/'))}";
 
+    /// <summary>
+    /// Leaves out every file whose name begins with a dot - for a server that takes none of them (an admin's rule in
+    /// Nextcloud). Only where the protection file stays on the PC: it is such a file itself.
+    /// </summary>
+    public const string DotRule = ".*";
+
+    /// <summary>Leaves out every file of this name, in any folder (e.g. ".htaccess", which Nextcloud never takes).</summary>
+    public static string NameRule(string name) => EscapeGlob(name);
+
     /// <summary>What a rule leaves out, in words - for the list of what is ignored.</summary>
     public static string Describe(string rule)
     {
+        if (rule == DotRule) return "Dateien, deren Name mit einem Punkt beginnt";
+        if (!rule.Contains('/', StringComparison.Ordinal) && !rule.Contains('*', StringComparison.Ordinal) && !rule.Contains('?', StringComparison.Ordinal))
+            return $"Dateien namens „{Unescape(rule)}“";
         if (rule.StartsWith("*.", StringComparison.Ordinal) && UnescapeType(rule[2..]) is { } type) return $"Dateien vom Typ .{type}";
         if (rule.StartsWith('/') && rule.EndsWith("/**", StringComparison.Ordinal)) return $"Ordner „{Unescape(rule[1..^3])}“";
         if (rule.StartsWith('/') && !rule.Contains('*', StringComparison.Ordinal)) return $"Datei „{Unescape(rule[1..])}“";

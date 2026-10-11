@@ -331,9 +331,14 @@ silently.
   None of this repeats in every run (`SharesTests`; the test server plays Nextcloud's answers).
 - **Left out and ignored.** Folders the server does not let be read are named on the card (`SyncPairState.LeftOut`, in
   `state.json`), once also as a notification. Refused files are explained with their file types and what helps. Both can
-  be ignored from now on: file types (`SyncFilters.TypeRule`, e.g. `*.[dD][lL][lL]`), single files or folders
-  (`PathRule`) go into `SyncSelection.Exclude` as rules - a rebuild that deletes nothing; the synchronisation's settings
-  list them under "Ignoriert", where each can take part again.
+  be ignored from now on: file types (`SyncFilters.TypeRule`, e.g. `*.[dD][lL][lL]`), single files or folders with
+  everything in them (`PathRule`) go into `SyncSelection.Exclude` as rules - a rebuild that deletes nothing; the
+  synchronisation's settings list them under "Ignoriert", where each can take part again. A name beginning with a dot is
+  no file type (otherwise `.notizen.txt` would leave out every `.txt` file): where the server refused even the sentinel
+  file, it takes no such name - then `SyncFilters.DotRule` (`.*`, all of them); otherwise that name only (`NameRule`, e.g.
+  `.htaccess`, which Nextcloud never takes), since `.*` would hit the sentinel file, too. A rebuild (the first run, too)
+  names no queue in bisync's report: there an upload is what fails while it copies the PC's files to the cloud
+  (`RunSafety.RefusedUploads`) - before, a refused file there ended with a question about a rebuild.
 - **No loops.** Refused files are not tried again in every run (only on "Erneut versuchen"); failed runs wait 1, 2, 4 …
   minutes up to the interval, a file open in another program gets three quick tries (`SyncService.RetryDelay`). A "400 Bad
   Request" to the upload itself (a name Nextcloud does not take) counts as refused, too - not one to a question after a
