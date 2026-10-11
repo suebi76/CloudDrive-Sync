@@ -277,7 +277,12 @@ silently.
   of reinventing synchronisation. For files on demand (version 0.3, Windows Cloud Files API) a core of its own is
   being built, see [below](#files-on-demand-from-version-03-under-construction).
 - **A deletion guard of its own, counted in files.** rclone's limit counts folders as well; in small folder trees it
-  triggers too late or too early. `DeleteGuard` counts files, the way people read "more than half".
+  triggers too late or too early. `DeleteGuard` counts files, the way people read "more than half" - and asks from a fixed
+  number, too (`MaxDeleteFiles`, 100 by default like the Nextcloud client), since in large folders a share would be many
+  thousand files. Whichever comes first counts (`DeleteGuard.Exceeds`, for files on demand through
+  `SyncPlan.TooManyDeletions`); "never" (100 %) turns both off. Classic: the fixed limit counts files deleted on the PC (to
+  be deleted in the cloud); what the cloud deleted from the PC is caught by bisync's share and goes into the PC's recycle
+  bin.
 - **A sentinel file on both sides** - and where the server takes no file (IServ: "Gruppen" itself, the whole account,
   read-only folders), `CloudFolderCheck` checks the cloud folder itself before every run. Several PCs share the sentinel
   file in the cloud: setting up leaves an existing one as it is, ending leaves it there (otherwise every other PC would

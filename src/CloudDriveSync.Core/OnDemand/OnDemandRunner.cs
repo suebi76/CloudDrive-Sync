@@ -136,10 +136,13 @@ internal sealed class OnDemandRunner
             var inStep = converting is null ? null : InStep(converting, cloud.Entries, local);
             var plan = Planner.Plan(new Planner.Input(known, cloud.Entries, local, Rebuild: mode == BisyncMode.Resync, leftOut, inStep));
             foreach (var skipped in plan.Skipped) Log.Info("OnDemand", $"'{pair.Id}': {skipped}");
-            if (mode == BisyncMode.Normal && plan.TooManyDeletions(pair.MaxDeletePercent, DeleteGuard.MinimumDeletions))
+            if (mode == BisyncMode.Normal && plan.TooManyDeletions(pair.MaxDeletePercent, pair.MaxDeleteFiles))
             {
                 Log.Warn("OnDemand", $"Run of '{pair.Id}' stopped: {plan.Deletions} of {plan.KnownFiles} files would be deleted.");
-                return Failed("CD-4502", $"too many deletes (>{pair.MaxDeletePercent}%, {plan.Deletions} of {plan.KnownFiles}) (CloudDrive-Sync, files on demand)",
+                // Path2 = deleted on the PC (would go in the cloud), Path1 = deleted in the cloud (would leave the PC).
+                var sides = plan.LocalDeletions == 0 ? ") on Path2" : plan.CloudDeletions == 0 ? ") on Path1"
+                    : $": {plan.CloudDeletions} on Path2, {plan.LocalDeletions} on Path1)";
+                return Failed("CD-4502", $"too many deletes ({DeleteGuard.Limits(pair)}, {plan.Deletions} of {plan.KnownFiles}{sides} (CloudDrive-Sync, files on demand)",
                     SyncDecision.Deletions, retryable: false);
             }
             Log.Info("OnDemand", $"Run of '{pair.Id}' started ({mode}): {plan.Actions.Count} step(s); cloud listed in {cloudTime.TotalSeconds:0.0} s "

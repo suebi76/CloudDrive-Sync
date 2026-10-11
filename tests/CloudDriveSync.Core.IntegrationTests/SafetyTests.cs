@@ -151,6 +151,23 @@ public class SafetyTests
     }
 
     [Fact]
+    public async Task More_than_the_fixed_number_of_deletions_stops_also_in_a_large_folder()
+    {
+        await using var world = await SyncWorld.CreateAsync();
+        for (var i = 1; i <= 300; i++) world.WriteCloud($"Ordner {i % 7}/{i:000}.txt", $"{i}");
+        await world.AddAccountAsync();
+        await world.AddPairAsync();
+        Assert.True((await world.RunAsync(BisyncMode.Resync)).Success);
+        Assert.True((await world.RunAsync()).Success);
+
+        for (var i = 1; i <= 101; i++) File.Delete(world.Pc($"Ordner {i % 7}/{i:000}.txt"));
+        var stopped = await world.RunAsync();
+        Assert.Equal("CD-4502", stopped.ErrorCode);
+        Assert.Contains("(>50% or >100 files, 101 of 300) on Path2", stopped.ErrorDetail);
+        Assert.Equal(300, world.CloudFiles().Count(f => !f.StartsWith(".clouddrive", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Too_many_deletions_stop_until_the_user_restores_or_confirms_them()
     {
         await using var world = await SyncWorld.CreateAsync();

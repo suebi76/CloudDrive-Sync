@@ -160,8 +160,10 @@
                         <TextBlock Text="Anhalten und nachfragen, wenn …" Margin="0,0,0,6" />
                         <ComboBox ItemsSource="{Binding DeleteChoices}" DisplayMemberPath="Title" SelectedValuePath="Value" SelectedValue="{Binding MaxDeletePercent}"
                                   AutomationProperties.Name="Löschschutz" />
+                        <ComboBox ItemsSource="{Binding DeleteFileChoices}" DisplayMemberPath="Title" SelectedValuePath="Value" SelectedValue="{Binding MaxDeleteFiles}"
+                                  Margin="0,8,0,0" IsEnabled="{Binding HasDeleteLimit}" AutomationProperties.Name="Feste Löschgrenze" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
-                                   Text="Schützt vor versehentlichem Löschen, z. B. wenn ein Ordner verschoben wurde oder ein Programm Dateien entfernt." />
+                                   Text="Schützt vor versehentlichem Löschen, z. B. wenn ein Ordner verschoben wurde oder ein Programm Dateien entfernt. Die feste Grenze gilt auch in großen Ordnern, in denen ein Anteil viele Tausend Dateien wäre." />
                     </StackPanel>
                 </Border>
             </StackPanel>

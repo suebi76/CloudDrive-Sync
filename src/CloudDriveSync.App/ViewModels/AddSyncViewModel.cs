@@ -113,7 +113,7 @@ public sealed partial class AddSyncViewModel : ObservableObject
         (OnDemand ? "Dateien bei Bedarf · " : "Alle Dateien auf diesem PC · ") +
         $"{SyncChoices.ConflictTitle(ConflictPolicy)} · {SyncChoices.IntervalTitle(IntervalMinutes)}" +
         (OnLocalChange ? " · Änderungen am PC sofort" : "") +
-        (MaxDeletePercent >= 100 ? " · ohne Löschschutz" : $" · Löschschutz ab {MaxDeletePercent} %");
+        (MaxDeletePercent >= 100 ? " · ohne Löschschutz" : $" · Löschschutz ab {MaxDeletePercent} % oder 100 Dateien");
 
     partial void OnStepChanged(AddSyncStep value)
     {

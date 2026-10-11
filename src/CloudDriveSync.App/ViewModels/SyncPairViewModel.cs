@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using CloudDriveSync.App.Infrastructure;
 using CloudDriveSync.Core.Accounts;
@@ -273,10 +274,16 @@ public sealed partial class SyncPairViewModel : ObservableObject
     /// <summary>"8 von 10 Dateien wurden am PC gelöscht." from bisync's report.</summary>
     internal static string DescribeDeletions(string? detail)
     {
-        var match = Regex.Match(detail ?? "", @"\(>?\d+%, (\d+) of (\d+)\) on (Path1|Path2)");
+        var match = Regex.Match(detail ?? "", @"\([^()]*?, (\d+) of (\d+)(?:: (\d+) on Path2, (\d+) on Path1)?\)(?: on (Path1|Path2))?");
         if (!match.Success) return "Es würden mehr Dateien gelöscht, als erlaubt ist.";
-        var side = match.Groups[3].Value == "Path1" ? "in der Cloud" : "am PC";
-        return $"{match.Groups[1].Value} von {match.Groups[2].Value} Dateien wurden {side} gelöscht.";
+        var count = Format.Number(long.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture));
+        var known = Format.Number(long.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture));
+        if (match.Groups[3].Success)
+            return $"{Format.Number(long.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture))} Dateien wurden am PC gelöscht und " +
+                   $"{Format.Number(long.Parse(match.Groups[4].Value, CultureInfo.InvariantCulture))} in der Cloud – zusammen {count} von {known}.";
+        if (!match.Groups[5].Success) return $"{count} von {known} Dateien würden gelöscht.";
+        var side = match.Groups[5].Value == "Path1" ? "in der Cloud" : "am PC";
+        return $"{count} von {known} Dateien wurden {side} gelöscht.";
     }
 
     [RelayCommand]

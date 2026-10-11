@@ -49,6 +49,33 @@ public class DeleteGuardTests : IDisposable
         Assert.Equal((3, 4), DeleteGuard.TooManyMissing(Path.Combine(_root, "state"), pair));
     }
 
+    [Theory]
+    [InlineData(150, 17000, 50, 100, true)]
+    [InlineData(100, 17000, 50, 100, false)]
+    [InlineData(101, 17000, 50, 100, true)]
+    [InlineData(150, 17000, 50, 0, false)]
+    [InlineData(150, 17000, 100, 100, false)]
+    [InlineData(9000, 17000, 50, 0, true)]
+    [InlineData(2, 3, 50, 1, false)]
+    public void The_share_or_the_fixed_number_whichever_comes_first(int deletions, int known, int maxPercent, int maxFiles, bool stops) =>
+        Assert.Equal(stops, DeleteGuard.Exceeds(deletions, known, maxPercent, maxFiles));
+
+    [Fact]
+    public void More_files_gone_than_the_fixed_limit_stop_also_in_a_large_folder()
+    {
+        var pair = Pair();
+        pair.MaxDeleteFiles = 100;
+        var files = Enumerable.Range(1, 300).Select(i => $"Ordner {i % 7}/{i}.txt").ToArray();
+        Write(files);
+        DeleteGuard.Remember(Path.Combine(_root, "state"), pair);
+        Delete(files.Take(101).ToArray());
+        Assert.Equal((101, 300), DeleteGuard.TooManyMissing(Path.Combine(_root, "state"), pair));
+        Assert.Equal(">50% or >100 files", DeleteGuard.Limits(pair));
+        pair.MaxDeleteFiles = 0;
+        Assert.Null(DeleteGuard.TooManyMissing(Path.Combine(_root, "state"), pair));
+        Assert.Equal(">50%", DeleteGuard.Limits(pair));
+    }
+
     [Fact]
     public void Ignores_temporary_files_own_files_and_files_outside_the_selection()
     {

@@ -278,7 +278,11 @@ sie still endgültig zu löschen.
   statt den Abgleich neu zu erfinden. Für „Dateien bei Bedarf“ (Version 0.3, Windows Cloud Files API) entsteht ein
   eigener Kern, siehe [unten](#dateien-bei-bedarf-ab-version-03-im-aufbau).
 - **Ein eigener Löschschutz in Dateien.** rclones Grenze zählt Ordner mit; in kleinen Ordnerbäumen schlägt sie zu spät
-  oder zu früh an. `DeleteGuard` zählt Dateien, so wie Menschen „mehr als die Hälfte“ lesen.
+  oder zu früh an. `DeleteGuard` zählt Dateien, so wie Menschen „mehr als die Hälfte“ lesen – und fragt außerdem ab einer
+  festen Zahl (`MaxDeleteFiles`, Standard 100 wie beim Nextcloud-Client), denn in großen Ordnern wäre ein Anteil viele
+  Tausend Dateien. Es gilt, was zuerst erreicht ist (`DeleteGuard.Exceeds`, für „bei Bedarf“ ebenso über
+  `SyncPlan.TooManyDeletions`); „nie“ (100 %) schaltet beides ab. Klassisch zählt die feste Grenze die am PC gelöschten
+  Dateien (in der Cloud zu löschen); am PC Gelöschtes aus der Cloud fängt bisyncs Anteil ab und landet im Papierkorb am PC.
 - **Wächterdatei auf beiden Seiten** – und wo der Server keine Datei annimmt (IServ: „Gruppen“ selbst, das ganze Konto,
   Ordner nur zum Lesen), prüft `CloudFolderCheck` den Cloud-Ordner vor jedem Lauf selbst. Mehrere PCs teilen sich die
   Wächterdatei in der Cloud: Beim Einrichten bleibt eine vorhandene unangetastet, beim Beenden bleibt sie stehen (sonst

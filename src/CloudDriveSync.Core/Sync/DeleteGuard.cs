@@ -16,6 +16,19 @@ internal static class DeleteGuard
 {
     public const int MinimumDeletions = 3;
 
+    /// <summary>
+    /// Whether deletions stop a run: at least <see cref="MinimumDeletions"/> files, and more than the share of the known
+    /// files or more than the fixed number the synchronisation allows (whichever comes first). "Never ask" (100 %) turns
+    /// both off.
+    /// </summary>
+    public static bool Exceeds(int deletions, int known, int maxPercent, int maxFiles) =>
+        maxPercent < 100 && deletions >= MinimumDeletions &&
+        ((known > 0 && deletions * 100L > (long)Math.Max(1, maxPercent) * known) || (maxFiles > 0 && deletions > maxFiles));
+
+    /// <summary>The limits of a synchronisation as the run's error detail names them (">50% or >100 files").</summary>
+    public static string Limits(SyncPairSettings pair) =>
+        pair.MaxDeleteFiles > 0 ? $">{pair.MaxDeletePercent}% or >{pair.MaxDeleteFiles} files" : $">{pair.MaxDeletePercent}%";
+
     private static string ListFile(string pairFolder) => Path.Combine(pairFolder, "local-files.txt");
 
     /// <summary>Files gone from the PC since the last run when they are more than allowed, otherwise null.</summary>
@@ -28,7 +41,7 @@ internal static class DeleteGuard
         var current = LocalFiles(pair, refused);
         // What is in a folder Windows refuses is unknown, not missing.
         var missing = known.Keys.Count(path => !current.ContainsKey(path) && !IsBelow(path, refused));
-        if (missing < MinimumDeletions || missing * 100L <= (long)pair.MaxDeletePercent * known.Count) return null;
+        if (!Exceeds(missing, known.Count, pair.MaxDeletePercent, pair.MaxDeleteFiles)) return null;
         return (missing, known.Count);
     }
 

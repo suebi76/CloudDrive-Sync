@@ -125,6 +125,11 @@ public sealed class SyncPairSettings
     public bool OnLocalChange { get; set; } = true;
     /// <summary>Stop and ask when more than this share of the files would be deleted.</summary>
     public int MaxDeletePercent { get; set; } = 50;
+    /// <summary>
+    /// Stop and ask, too, when more than this many files would be deleted at once - however large the folder: in 17,000
+    /// files half are 8,500 (like the Nextcloud client: 100). 0: no such limit. Off with <see cref="MaxDeletePercent"/> 100.
+    /// </summary>
+    public int MaxDeleteFiles { get; set; } = 100;
     public bool Paused { get; set; }
     public DateTimeOffset Created { get; set; }
     /// <summary>

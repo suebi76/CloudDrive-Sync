@@ -40,6 +40,14 @@ public static class SyncChoices
         new(100, "nie – Löschungen immer übernehmen"),
     ];
 
+    /// <summary>The fixed limit beside the share: however large the folder, more than so many deletions at once ask.</summary>
+    public static IReadOnlyList<Choice<int>> DeleteFileLimits { get; } =
+    [
+        new(50, "… oder mehr als 50 Dateien auf einmal"), new(100, "… oder mehr als 100 Dateien auf einmal (empfohlen)"),
+        new(250, "… oder mehr als 250 Dateien auf einmal"), new(500, "… oder mehr als 500 Dateien auf einmal"),
+        new(1000, "… oder mehr als 1.000 Dateien auf einmal"), new(0, "keine feste Grenze – nur der Anteil zählt"),
+    ];
+
     public static string IntervalTitle(int minutes) => Intervals.FirstOrDefault(c => c.Value == minutes)?.Title ?? $"alle {minutes} Minuten";
 
     public static string IntervalHint(int minutes) => Intervals.FirstOrDefault(c => c.Value == minutes)?.Description ?? "";

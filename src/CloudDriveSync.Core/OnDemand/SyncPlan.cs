@@ -53,9 +53,8 @@ public sealed record SyncPlan(IReadOnlyList<SyncAction> Actions, int KnownFiles,
     public int Deletions => CloudDeletions + LocalDeletions;
 
     /// <summary>
-    /// Whether the deletions exceed the limit of the synchronisation: more than <paramref name="maxPercent"/> of the
-    /// known files and at least <paramref name="minimum"/> of them.
+    /// Whether the deletions exceed the limits of the synchronisation: more than <paramref name="maxPercent"/> of the known
+    /// files or more than <paramref name="maxFiles"/> files (0: no such limit), at least <see cref="Sync.DeleteGuard.MinimumDeletions"/>.
     /// </summary>
-    public bool TooManyDeletions(int maxPercent, int minimum) =>
-        maxPercent < 100 && KnownFiles > 0 && Deletions >= minimum && Deletions * 100L > (long)Math.Max(1, maxPercent) * KnownFiles;
+    public bool TooManyDeletions(int maxPercent, int maxFiles = 0) => Sync.DeleteGuard.Exceeds(Deletions, KnownFiles, maxPercent, maxFiles);
 }

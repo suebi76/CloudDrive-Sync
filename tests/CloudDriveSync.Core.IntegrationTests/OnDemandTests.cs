@@ -223,6 +223,28 @@ public class OnDemandTests
     }
 
     [Fact]
+    public async Task More_than_the_fixed_number_of_deletions_stops_also_in_a_large_folder()
+    {
+        // 300 files: 101 deleted on the PC are a third - far below the share, above the fixed limit of 100.
+        await using var world = await WorldAsync(cloud: w =>
+        {
+            for (var i = 1; i <= 300; i++) w.WriteCloud($"Ordner {i % 7}/{i:000}.txt", $"{i}");
+        });
+        Assert.Equal(100, world.Host.Sync.FindPair(world.Pair.Id)!.MaxDeleteFiles);
+        for (var i = 1; i <= 101; i++) File.Delete(world.Pc($"Ordner {i % 7}/{i:000}.txt"));
+        var stopped = await world.RunAsync();
+        Assert.Equal("CD-4502", stopped.ErrorCode);
+        Assert.Equal(SyncDecision.Deletions, stopped.Decision);
+        Assert.Contains("(>50% or >100 files, 101 of 300) on Path2", stopped.ErrorDetail);
+        Assert.Equal(300, world.CloudFiles().Count(f => !f.StartsWith(".clouddrive", StringComparison.Ordinal)));
+
+        // Confirmed: the deletions go through.
+        var confirmed = await world.RunAsync(BisyncMode.Force);
+        Assert.True(confirmed.Success, $"{confirmed.ErrorCode}: {confirmed.ErrorDetail}");
+        Assert.Equal(199, world.CloudFiles().Count(f => !f.StartsWith(".clouddrive", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task A_missing_protection_file_in_the_cloud_stops_everything()
     {
         await using var world = await WorldAsync(cloud: w => w.WriteCloud("wichtig.txt", "x"));

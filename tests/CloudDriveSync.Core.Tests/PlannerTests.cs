@@ -196,19 +196,24 @@ public class PlannerTests
     }
 
     [Theory]
-    [InlineData(10, 6, 50, true)]
-    [InlineData(10, 5, 50, false)]
-    [InlineData(4, 3, 50, true)]
-    [InlineData(4, 2, 50, false)]
-    [InlineData(10, 10, 100, false)]
-    public void Too_many_deletions_are_counted_in_files(int known, int deleted, int maxPercent, bool tooMany)
+    [InlineData(10, 6, 50, 0, true)]
+    [InlineData(10, 5, 50, 0, false)]
+    [InlineData(4, 3, 50, 0, true)]
+    [InlineData(4, 2, 50, 0, false)]
+    [InlineData(10, 10, 100, 0, false)]
+    // The fixed limit: in a large folder a third is still far below the share - more than 100 files ask all the same.
+    [InlineData(300, 101, 50, 100, true)]
+    [InlineData(300, 100, 50, 100, false)]
+    [InlineData(300, 101, 50, 0, false)]
+    [InlineData(300, 101, 100, 100, false)]
+    public void Too_many_deletions_are_counted_in_files(int known, int deleted, int maxPercent, int maxFiles, bool tooMany)
     {
         var items = Enumerable.Range(1, known).Select(i => Known(i, $"f{i}.txt")).ToArray();
         var cloud = items.Select(i => Cloud(i.Path)).ToArray();
         var local = items.Skip(deleted).Select(i => Placeholder(i.Id, i.Path)).ToArray();
         var plan = Plan(items, cloud, local);
         Assert.Equal(deleted, plan.CloudDeletions);
-        Assert.Equal(tooMany, plan.TooManyDeletions(maxPercent, Sync.DeleteGuard.MinimumDeletions));
+        Assert.Equal(tooMany, plan.TooManyDeletions(maxPercent, maxFiles));
     }
 
     // --- A folder the server does not let be read (e.g. a share to upload only).

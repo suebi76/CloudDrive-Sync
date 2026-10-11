@@ -151,6 +151,7 @@ public sealed partial class SyncService : IAsyncDisposable
             IntervalMinutes = Math.Clamp(draft.IntervalMinutes, 1, 1440),
             OnLocalChange = draft.OnLocalChange,
             MaxDeletePercent = Math.Clamp(draft.MaxDeletePercent, 1, 100),
+            MaxDeleteFiles = Math.Max(0, draft.MaxDeleteFiles),
             Created = DateTimeOffset.Now,
             CloudCheckFile = cloudCheckFile,
         };

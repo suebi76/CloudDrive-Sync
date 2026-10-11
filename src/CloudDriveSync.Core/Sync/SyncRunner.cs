@@ -58,7 +58,8 @@ public sealed partial class SyncRunner
         if (mode == BisyncMode.Normal && DeleteGuard.TooManyMissing(folder, pair) is { } missing)
         {
             Log.Warn("Sync", $"Run of '{pair.Id}' stopped: {missing.Missing} of {missing.Known} files are gone from the PC.");
-            return Failed("CD-4502", $"too many deletes (>{pair.MaxDeletePercent}%, {missing.Missing} of {missing.Known}) on Path2 (CloudDrive-Sync)", SyncDecision.Deletions, retryable: false);
+            return Failed("CD-4502", $"too many deletes ({DeleteGuard.Limits(pair)}, {missing.Missing} of {missing.Known}) on Path2 (CloudDrive-Sync)", SyncDecision.Deletions,
+                retryable: false);
         }
 
         // A changed file another program holds exclusively would make rclone give the whole run up; wait for it instead.

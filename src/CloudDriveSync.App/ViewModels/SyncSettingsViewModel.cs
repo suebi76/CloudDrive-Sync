@@ -31,6 +31,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
         OnLocalChange = pair.OnLocalChange;
         ConflictPolicy = pair.Conflicts;
         MaxDeletePercent = pair.MaxDeletePercent;
+        MaxDeleteFiles = pair.MaxDeleteFiles;
         SwitchProblem = pair.Mode == SyncMode.Classic && SyncService.OnDemandSupported ? SyncService.OnDemandProblem(pair.LocalPath) ?? "" : "";
         _defaultExplorerName = SyncService.DefaultExplorerName(pair, account);
         ExplorerName = SyncService.ExplorerNameOf(pair, account);
@@ -130,6 +131,9 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
     public IReadOnlyList<Choice<int>> IntervalChoices => SyncChoices.Intervals;
     public IReadOnlyList<Choice<ConflictPolicy>> ConflictChoices => SyncChoices.Conflicts;
     public IReadOnlyList<Choice<int>> DeleteChoices => SyncChoices.DeleteLimits;
+    public IReadOnlyList<Choice<int>> DeleteFileChoices => SyncChoices.DeleteFileLimits;
+    /// <summary>The fixed limit means nothing when deletions are never asked about.</summary>
+    public bool HasDeleteLimit => MaxDeletePercent < 100;
     public string IntervalExplanation => SyncChoices.IntervalExplanation;
     public string IntervalHint => SyncChoices.IntervalHint(IntervalMinutes);
     public string ConflictHint => SyncChoices.ConflictHint(ConflictPolicy);
@@ -138,7 +142,8 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
     [ObservableProperty] public partial int IntervalMinutes { get; set; }
     [ObservableProperty] public partial bool OnLocalChange { get; set; }
     [ObservableProperty] public partial ConflictPolicy ConflictPolicy { get; set; }
-    [ObservableProperty] public partial int MaxDeletePercent { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDeleteLimit))] public partial int MaxDeletePercent { get; set; }
+    [ObservableProperty] public partial int MaxDeleteFiles { get; set; }
     [ObservableProperty] public partial string SelectionError { get; set; } = "";
     [ObservableProperty] public partial string Error { get; set; } = "";
 
@@ -201,6 +206,7 @@ public sealed partial class SyncSettingsViewModel : ObservableObject
                 pair.IntervalMinutes = IntervalMinutes;
                 pair.OnLocalChange = OnLocalChange;
                 pair.MaxDeletePercent = MaxDeletePercent;
+                pair.MaxDeleteFiles = MaxDeleteFiles;
             });
             Saved = true;
             CloseRequested?.Invoke(this, EventArgs.Empty);

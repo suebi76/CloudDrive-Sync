@@ -3,6 +3,19 @@
 All notable changes to CloudDrive-Sync are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versions follow [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0-preview.13] – 2026-10-11
+
+Thirteenth test version on the way to 0.3: a fixed deletion limit.
+
+### Added
+
+- The deletion guard asks also when more than a fixed number of files would be deleted at once - 100 by default, like
+  the Nextcloud client -, however large the folder. Before, only the share counted: in 17,000 files "more than half"
+  let 8,500 deletions through without a question. Whichever limit comes first stops the run; "nie – Löschungen immer
+  übernehmen" turns both off. The number can be set in the synchronisation's settings (50, 100, 250, 500, 1,000 or no
+  fixed limit); existing synchronisations get 100.
+- With files on demand the question names both sides: how many files were deleted on the PC and how many in the cloud.
+
 ## [0.3.0-preview.12] – 2026-10-10
 
 Twelfth test version on the way to 0.3: several PCs with one folder, files the server refuses, and a card that shows
